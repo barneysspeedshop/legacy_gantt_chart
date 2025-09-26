@@ -1,3 +1,7 @@
+## 2.2.1
+
+* **FIX**: Dart format again
+
 ## 2.2.0
 
 * **FEATURE**: Enhanced task hover tooltip to fully honor locale and display complete date/time information.

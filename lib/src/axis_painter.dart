@@ -124,9 +124,8 @@ class AxisPainter extends CustomPainter {
     for (final entry in tickPositions) {
       final tickX = entry.key;
       final tickTime = entry.value;
-      final label = timelineAxisLabelBuilder != null
-          ? timelineAxisLabelBuilder!(tickTime, tickInterval)
-          : labelFormat(tickTime);
+      final label =
+          timelineAxisLabelBuilder != null ? timelineAxisLabelBuilder!(tickTime, tickInterval) : labelFormat(tickTime);
 
       canvas.drawLine(
         Offset(tickX, y),

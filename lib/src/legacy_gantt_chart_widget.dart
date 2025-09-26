@@ -138,7 +138,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// tooltip's background color.
   final Color? resizeTooltipFontColor;
 
-    /// The width of the resize handles at the start and end of a task bar.
+  /// The width of the resize handles at the start and end of a task bar.
   final double resizeHandleWidth;
 
   /// A builder function to customize the labels displayed on the timeline axis.
