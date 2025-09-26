@@ -41,6 +41,9 @@ class AxisPainter extends CustomPainter {
   /// The theme data that defines the colors and styles for the grid lines and labels.
   final LegacyGanttTheme theme;
 
+  /// An optional builder function to customize the labels on the timeline axis.
+  final String Function(DateTime, Duration)? timelineAxisLabelBuilder;
+
   AxisPainter({
     required this.x,
     required this.y,
@@ -50,6 +53,7 @@ class AxisPainter extends CustomPainter {
     required this.domain,
     required this.visibleDomain,
     required this.theme,
+    this.timelineAxisLabelBuilder,
   });
 
   @override
@@ -120,7 +124,9 @@ class AxisPainter extends CustomPainter {
     for (final entry in tickPositions) {
       final tickX = entry.key;
       final tickTime = entry.value;
-      final label = labelFormat(tickTime);
+      final label = timelineAxisLabelBuilder != null
+          ? timelineAxisLabelBuilder!(tickTime, tickInterval)
+          : labelFormat(tickTime);
 
       canvas.drawLine(
         Offset(tickX, y),

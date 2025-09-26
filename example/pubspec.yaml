@@ -16,6 +16,9 @@ dependencies:
   legacy_timeline_scrubber: ^1.0.1
   provider: ^6.1.2
 
+  flutter_localizations:
+    sdk: flutter
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,17 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Legacy Gantt Chart Example',
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('en', 'US'),
+          Locale('fr', 'FR'),
+          Locale('de', 'DE'),
+          Locale('ja', 'JP'),
+        ],
         theme: ThemeData.from(
           colorScheme: ColorScheme.fromSeed(
             seedColor: Colors.blue,
@@ -37,14 +49,23 @@ class GanttView extends StatefulWidget {
   State<GanttView> createState() => _GanttViewState();
 }
 
+enum TimelineAxisFormat {
+  dayOfMonth,
+  dayAndMonth,
+  monthAndYear,
+  dayOfWeek,
+}
+
 class _GanttViewState extends State<GanttView> {
   late final GanttViewModel _viewModel;
   bool _isPanelVisible = true;
+  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth;
+  String _selectedLocale = 'en_US';
 
   @override
   void initState() {
     super.initState();
-    _viewModel = GanttViewModel();
+    _viewModel = GanttViewModel(initialLocale: _selectedLocale);
   }
 
   @override
@@ -138,14 +159,11 @@ class _GanttViewState extends State<GanttView> {
         SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
 
-  void _showTaskContextMenu(BuildContext context, LegacyGanttTask task, Offset tapPosition) {
-    final menuItems = _buildTaskContextMenuItems(context, task);
-    showContextMenu(
-      context: context,
-      menuItems: menuItems,
-      tapPosition: tapPosition,
-    );
-  }
+  void _showTaskContextMenu(BuildContext context, LegacyGanttTask task, Offset tapPosition) => showContextMenu(
+        context: context,
+        menuItems: _buildTaskContextMenuItems(context, task),
+        tapPosition: tapPosition,
+      );
 
   List<ContextMenuItem> _buildTaskContextMenuItems(BuildContext context, LegacyGanttTask task) {
     final dependencies = _viewModel.getDependenciesForTask(task);
@@ -211,6 +229,23 @@ class _GanttViewState extends State<GanttView> {
         ),
     ];
   }
+
+  String Function(DateTime, Duration) _getTimelineAxisLabelBuilder() {
+    switch (_selectedAxisFormat) {
+      case TimelineAxisFormat.dayOfMonth:
+        return (date, interval) => DateFormat('d', _selectedLocale).format(date);
+      case TimelineAxisFormat.dayAndMonth:
+        return (date, interval) => DateFormat.MMMd(_selectedLocale).format(date);
+      case TimelineAxisFormat.monthAndYear:
+        return (date, interval) => DateFormat.yMMM(_selectedLocale).format(date);
+      case TimelineAxisFormat.dayOfWeek:
+        return (date, interval) => DateFormat.E(_selectedLocale).format(date);
+    }
+  }
+
+  String Function(DateTime) _getResizeTooltipDateFormat() =>
+      // Always return a full date and time format, honoring the selected locale.
+      (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
 
   Widget _buildControlPanel(BuildContext context, GanttViewModel vm, bool isDarkMode) => Container(
         width: vm.controlPanelWidth ?? 350,
@@ -337,6 +372,45 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+            const Divider(height: 24),
+            Text('Timeline Label Format', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SegmentedButton<TimelineAxisFormat>(
+              multiSelectionEnabled: false,
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+              ),
+              segments: const [
+                ButtonSegment(value: TimelineAxisFormat.dayOfMonth, label: Text('Day')),
+                ButtonSegment(value: TimelineAxisFormat.dayAndMonth, label: Text('Month')),
+                ButtonSegment(value: TimelineAxisFormat.monthAndYear, label: Text('Year')),
+                ButtonSegment(value: TimelineAxisFormat.dayOfWeek, label: Text('Weekday')),
+              ],
+              selected: {_selectedAxisFormat},
+              onSelectionChanged: (newSelection) => setState(() => _selectedAxisFormat = newSelection.first),
+            ),
+            const Divider(height: 24),
+            Text('Locale', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              multiSelectionEnabled: false,
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+              ),
+              segments: const [
+                ButtonSegment(value: 'en_US', label: Text('EN')),
+                ButtonSegment(value: 'fr_FR', label: Text('FR')),
+                ButtonSegment(value: 'de_DE', label: Text('DE')),
+                ButtonSegment(value: 'ja_JP', label: Text('JA')),
+              ],
+              selected: {_selectedLocale},
+              onSelectionChanged: (newSelection) {
+                setState(() => _selectedLocale = newSelection.first);
+                vm.setSelectedLocale(newSelection.first);
+              },
+            ),
           ],
         ),
       );
@@ -360,6 +434,10 @@ class _GanttViewState extends State<GanttView> {
             builder: (context, vm, child) {
               final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
               final ganttTheme = _buildGanttTheme();
+              // Update the format after the current frame is built to avoid calling notifyListeners during build.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
+              });
 
               return Row(
                 children: [
@@ -446,6 +524,7 @@ class _GanttViewState extends State<GanttView> {
                                             width: ganttWidth,
                                             height: chartConstraints.maxHeight, // Constraints from LayoutBuilder
                                             child: LegacyGanttChartWidget(
+                                              timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
                                               scrollController: vm.scrollController, // Link to grid scroll controller
                                               data: vm.ganttTasks,
                                               dependencies: vm.dependencies,
@@ -466,8 +545,7 @@ class _GanttViewState extends State<GanttView> {
                                               },
                                               onEmptySpaceClick: (rowId, time) =>
                                                   vm.handleEmptySpaceClick(context, rowId, time),
-                                              resizeTooltipDateFormat: (date) =>
-                                                  DateFormat('MMM d, h:mm a').format(date.toLocal()),
+                                              resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
                                               resizeTooltipBackgroundColor: Colors.purple,
                                               resizeHandleWidth: vm.resizeHandleWidth,
                                               resizeTooltipFontColor: Colors.white,
@@ -625,18 +703,9 @@ class _DependencyManagerDialog extends StatelessWidget {
   });
 
   String _dependencyText(LegacyGanttTaskDependency dep) {
-    final bool isPredecessor = dep.predecessorTaskId == sourceTask.id;
-    final otherTaskId = isPredecessor ? dep.successorTaskId : dep.predecessorTaskId;
-    final otherTaskResult = tasks.where((t) => t.id == otherTaskId);
-    final otherTaskName = otherTaskResult.isEmpty ? 'Unknown Task' : (otherTaskResult.first.name ?? 'Unknown Task');
-
-    final relationship =
-        isPredecessor ? '${sourceTask.name} -> $otherTaskName' : '$otherTaskName -> ${sourceTask.name}';
-
-    // Make type name more readable
-    final typeName = dep.type.name.replaceAllMapped(RegExp(r'[A-Z]'), (match) => ' ${match.group(0)}').capitalize();
-
-    return '($typeName) $relationship';
+    final sourceTaskName = tasks.firstWhere((t) => t.id == dep.predecessorTaskId).name;
+    final targetTaskName = tasks.firstWhere((t) => t.id == dep.successorTaskId).name;
+    return '$sourceTaskName -> $targetTaskName';
   }
 
   @override
@@ -662,10 +731,6 @@ class _DependencyManagerDialog extends StatelessWidget {
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
         ],
       );
-}
-
-extension on String {
-  String capitalize() => isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
 
 /// A stateful widget for the "Create Task" dialog.

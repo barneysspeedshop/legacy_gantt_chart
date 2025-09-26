@@ -138,8 +138,27 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// tooltip's background color.
   final Color? resizeTooltipFontColor;
 
-  /// The width of the resize handles at the start and end of a task bar.
+    /// The width of the resize handles at the start and end of a task bar.
   final double resizeHandleWidth;
+
+  /// A builder function to customize the labels displayed on the timeline axis.
+  ///
+  /// This function is called for each label on the timeline and provides the
+  /// [DateTime] of the label and the current [Duration] of the tick interval.
+  /// This allows for flexible formatting, such as displaying month names,
+  /// fiscal year quarters, or any other custom representation.
+  ///
+  /// Example:
+  /// ```dart
+  /// timelineAxisLabelBuilder: (DateTime date, Duration interval) {
+  ///   if (interval.inDays > 20) {
+  ///     return DateFormat('MMM yyyy').format(date); // Display month and year
+  ///   } else {
+  ///     return DateFormat('d MMM').format(date); // Display day and month
+  ///   }
+  /// }
+  /// ```
+  final String Function(DateTime, Duration)? timelineAxisLabelBuilder;
 
   const LegacyGanttChartWidget({
     super.key, // Use super.key
@@ -172,6 +191,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.resizeTooltipBackgroundColor,
     this.resizeTooltipFontColor,
     this.resizeHandleWidth = 10.0,
+    this.timelineAxisLabelBuilder,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -288,6 +308,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             widget.visibleRows.isNotEmpty ? widget.visibleRows.first.hashCode : 0,
             widget.visibleRows.isNotEmpty ? widget.visibleRows.last.hashCode : 0,
             widget.rowMaxStackDepth,
+            widget.resizeTooltipDateFormat, // Add this line
           ),
         ),
         create: (_) => LegacyGanttViewModel(
@@ -316,6 +337,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
             vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
+            vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
 
             return LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
@@ -419,6 +441,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                   domain: vm.totalDomain,
                                   visibleDomain: vm.visibleExtent,
                                   theme: effectiveTheme,
+                                  timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
                                 ),
                               ),
                             ),

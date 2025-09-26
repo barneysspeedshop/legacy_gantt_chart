@@ -1,3 +1,9 @@
+## 2.2.0
+
+* **FEATURE**: Enhanced task hover tooltip to fully honor locale and display complete date/time information.
+* **FEATURE** Added `timelineAxisLabelBuilder` to allow custom date formatting for the timeline.
+* **EXAMPLE FEATURE**: Added locale selection to the example application for demonstration.
+
 ## 2.1.0
 
 * **EXAMPLE FEATURE**: Add support for "showConflicts" in the Example application

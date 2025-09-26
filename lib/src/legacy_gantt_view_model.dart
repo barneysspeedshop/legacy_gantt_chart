@@ -72,7 +72,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   final Function(String rowId, DateTime time)? onEmptySpaceClick;
 
   /// A function to format the date/time shown in the resize/drag tooltip.
-  final String Function(DateTime)? resizeTooltipDateFormat;
+  String Function(DateTime)? resizeTooltipDateFormat;
 
   /// A builder for creating a completely custom task bar widget.
   final Widget Function(LegacyGanttTask task)? taskBarBuilder;
@@ -115,6 +115,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _translateY = -scrollController!.offset;
     }
     scrollController?.addListener(_onExternalScroll);
+  }
+
+  void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
+    if (resizeTooltipDateFormat != newFormat) {
+      resizeTooltipDateFormat = newFormat;
+      notifyListeners();
+    }
   }
 
   // Internal State

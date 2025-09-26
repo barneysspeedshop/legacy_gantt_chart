@@ -221,6 +221,23 @@ LegacyGanttChartWidget(
 )
 ```
 
+### Custom Timeline Labels
+
+You can provide a `timelineAxisLabelBuilder` to customize the labels on the timeline. This is useful for displaying months, quarters, or other custom formats.
+
+```dart
+LegacyGanttChartWidget(
+  // ... other properties
+  timelineAxisLabelBuilder: (date, interval) {
+    if (interval.inDays > 14) {
+      return DateFormat('MMM').format(date);
+    } else {
+      return DateFormat('d').format(date);
+    }
+  },
+)
+```
+
 ### Theming
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.

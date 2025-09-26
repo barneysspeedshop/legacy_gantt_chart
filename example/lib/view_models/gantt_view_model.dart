@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
+import '../main.dart';
 
 import '../data/models.dart';
 import '../services/gantt_schedule_service.dart';
@@ -31,7 +32,12 @@ class GanttViewModel extends ChangeNotifier {
   int _range = 14; // Default range for data fetching
   int _personCount = 10;
   int _jobCount = 16;
+  String _selectedLocale = 'en_US'; // Default locale
+  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth; // Default format;
   bool _showConflicts = true;
+  String Function(DateTime)? _resizeTooltipDateFormat; // Internal storage for resize tooltip format
+
+  String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
 
   // Date range state for the Gantt chart view and scrubber
   DateTime? _totalStartDate;
@@ -101,7 +107,10 @@ class GanttViewModel extends ChangeNotifier {
     return rows;
   }
 
-  GanttViewModel() {
+  GanttViewModel({String? initialLocale}) {
+    if (initialLocale != null) {
+      _selectedLocale = initialLocale;
+    }
     _ganttHorizontalScrollController.addListener(_onGanttScroll);
     fetchScheduleData();
   }
@@ -178,6 +187,25 @@ class GanttViewModel extends ChangeNotifier {
     _jobCount = value;
     fetchScheduleData();
     notifyListeners();
+  }
+
+  void setSelectedLocale(String value) {
+    if (_selectedLocale == value) return;
+    _selectedLocale = value;
+    notifyListeners();
+  }
+
+  void setSelectedAxisFormat(TimelineAxisFormat value) {
+    if (_selectedAxisFormat == value) return;
+    _selectedAxisFormat = value;
+    notifyListeners();
+  }
+
+  void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
+    if (_resizeTooltipDateFormat != newFormat) {
+      _resizeTooltipDateFormat = newFormat;
+      notifyListeners();
+    }
   }
 
   Future<void> fetchScheduleData() async {
@@ -479,8 +507,8 @@ class GanttViewModel extends ChangeNotifier {
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Text('Start: ${DateFormat.yMd().add_jm().format(task.start.toLocal())}', style: textStyle),
-                  Text('End: ${DateFormat.yMd().add_jm().format(task.end.toLocal())}', style: textStyle),
+                  Text('Start: ${_getTooltipDateFormat()(task.start.toLocal())}', style: textStyle),
+                  Text('End: ${_getTooltipDateFormat()(task.end.toLocal())}', style: textStyle),
                 ],
               ),
             ),
@@ -850,6 +878,19 @@ class GanttViewModel extends ChangeNotifier {
     if (newList.length < initialCount) {
       _dependencies = newList;
       notifyListeners();
+    }
+  }
+
+  String Function(DateTime) _getTooltipDateFormat() {
+    switch (_selectedAxisFormat) {
+      case TimelineAxisFormat.dayOfMonth:
+        return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
+      case TimelineAxisFormat.dayAndMonth:
+        return (date) => DateFormat.MMMd(_selectedLocale).add_jm().format(date);
+      case TimelineAxisFormat.monthAndYear:
+        return (date) => DateFormat.yMMM(_selectedLocale).add_jm().format(date);
+      case TimelineAxisFormat.dayOfWeek:
+        return (date) => DateFormat.E(_selectedLocale).add_jm().format(date);
     }
   }
 }

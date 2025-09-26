@@ -52,6 +52,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Custom Task Content:** Add custom content like icons or progress bars inside the default task bars using `taskContentBuilder`.
 -   **Individual Task Styling:** Style tasks individually by setting a color in the data model or using logic in a builder.
 -   **Flexible Layout:** The chart widget is decoupled from the data grid. While the example shows a grid on the left for task details, you are free to build your UI however you see fit, or not include a data grid at all. You can also configure the height of the timeline axis and individual task rows.
+-   **Enhanced Localization**: Tooltips now fully respect locale settings for date and time formatting, providing a more natural user experience across different regions. The example application includes a locale selector to demonstrate this feature.
 -   **Localization:** Built with localization in mind, allowing you to format dates and text for different locales.
 
 ### Timeline & Dependencies
@@ -273,7 +274,12 @@ LegacyGanttChartWidget(
 
 ### Custom Task Appearance
 
-Use `taskContentBuilder` to replace the content *inside* the task bar, or `taskBarBuilder` to replace the *entire* task bar widget for full control.
+You have two options for customizing how tasks are rendered:
+
+1.  **`taskContentBuilder`**: Replaces only the content *inside* the task bar. The bar itself is still drawn by the chart. This is useful for adding custom icons, text, or progress indicators.
+2.  **`taskBarBuilder`**: Replaces the *entire* task bar widget. You get full control over the appearance and can add custom gestures.
+
+**Example using `taskContentBuilder`:**
 
 ```dart
 LegacyGanttChartWidget(
@@ -285,12 +291,10 @@ LegacyGanttChartWidget(
         children: [
           const Icon(Icons.star, color: Colors.yellow, size: 14),
           const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              task.name ?? '',
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
+          Text(
+            task.name ?? '',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -299,19 +303,26 @@ LegacyGanttChartWidget(
 )
 ```
 
-### Theming
+### Custom Timeline Labels
 
-Customize colors, text styles, and more by providing a `LegacyGanttTheme`.
+You can provide a `timelineAxisLabelBuilder` to customize the labels on the timeline. This is useful for displaying months, quarters, or other custom formats.
 
 ```dart
 LegacyGanttChartWidget(
   // ... other properties
-  theme: LegacyGanttTheme.fromTheme(Theme.of(context)).copyWith(
-    barColorPrimary: Colors.green,
-    gridColor: Colors.grey.shade800,
-  ),
+  timelineAxisLabelBuilder: (date, interval) {
+    if (interval.inDays > 14) {
+      return DateFormat('MMM').format(date);
+    } else {
+      return DateFormat('d').format(date);
+    }
+  },
 )
 ```
+
+### Theming
+
+Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
 
 
 ## API Documentation
