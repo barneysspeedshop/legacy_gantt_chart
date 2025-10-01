@@ -160,6 +160,28 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// ```
   final String Function(DateTime, Duration)? timelineAxisLabelBuilder;
 
+  /// A builder function to create a completely custom widget for the timeline header.
+  ///
+  /// If this is provided, the default timeline header painting is skipped, and this
+  /// widget is rendered instead. This gives you full control over the appearance
+  /// and behavior of the timeline header.
+  ///
+  /// The builder provides the following arguments:
+  /// - `context`: The build context.
+  /// - `scale`: A function that converts a `DateTime` to its corresponding horizontal (x-axis) pixel value.
+  /// - `visibleDomain`: The currently visible date range.
+  /// - `totalDomain`: The total date range of the entire chart.
+  /// - `theme`: The current Gantt chart theme.
+  /// - `totalContentWidth`: The total width of the chart's content area.
+  final Widget Function(
+    BuildContext context,
+    double Function(DateTime) scale,
+    List<DateTime> visibleDomain,
+    List<DateTime> totalDomain,
+    LegacyGanttTheme theme,
+    double totalContentWidth,
+  )? timelineAxisHeaderBuilder;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -192,6 +214,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.resizeTooltipFontColor,
     this.resizeHandleWidth = 10.0,
     this.timelineAxisLabelBuilder,
+    this.timelineAxisHeaderBuilder,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -426,23 +449,34 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                           Positioned(
                             top: 0,
                             left: 0,
-                            right: 0,
+                            width: totalContentWidth,
                             height: vm.timeAxisHeight,
-                            child: Container(
-                              color: effectiveTheme.backgroundColor,
-                              child: CustomPaint(
-                                size: Size(totalContentWidth, vm.timeAxisHeight),
-                                painter: AxisPainter(
-                                  x: 0,
-                                  y: vm.timeAxisHeight / 2,
-                                  width: totalContentWidth,
-                                  height: 0,
-                                  scale: vm.totalScale,
-                                  domain: vm.totalDomain,
-                                  visibleDomain: vm.visibleExtent,
-                                  theme: effectiveTheme,
-                                  timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
-                                ),
+                            child: ClipRect(
+                              child: Container(
+                                color: effectiveTheme.backgroundColor,
+                                child: widget.timelineAxisHeaderBuilder != null
+                                    ? widget.timelineAxisHeaderBuilder!(
+                                        context,
+                                        vm.totalScale,
+                                        vm.visibleExtent,
+                                        vm.totalDomain,
+                                        effectiveTheme,
+                                        totalContentWidth,
+                                      )
+                                    : CustomPaint(
+                                        size: Size(totalContentWidth, vm.timeAxisHeight),
+                                        painter: AxisPainter(
+                                          x: 0,
+                                          y: vm.timeAxisHeight / 2,
+                                          width: totalContentWidth,
+                                          height: 0,
+                                          scale: vm.totalScale,
+                                          domain: vm.totalDomain,
+                                          visibleDomain: vm.visibleExtent,
+                                          theme: effectiveTheme,
+                                          timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                        ),
+                                      ),
                               ),
                             ),
                           ),

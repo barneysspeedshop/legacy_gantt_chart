@@ -1,3 +1,9 @@
+## 2.3.0
+* **FEATURE**: Added timelineAxisHeaderBuilder to LegacyGanttChartWidget. This powerful new feature allows developers to completely replace the default time axis header with a custom Flutter widget, granting full control over the layout, styling, and complexity of the timeline visualization (e.g., multi-level headers for Month/Year/Day).
+* **FEATURE**: The height of the timeline axis is now dynamically controlled by the axisHeight property (or the default 27.0 if unset) to correctly size the custom header area.
+
+* **EXAMPLE FEATURE**: The example app was updated to demonstrate the new functionality, allowing users to switch to a "Custom" timeline format that displays a two-level header (Month/Year over Day number) using the new builder.
+
 ## 2.2.1
 
 * **FIX**: Dart format again

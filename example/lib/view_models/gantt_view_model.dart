@@ -891,6 +891,8 @@ class GanttViewModel extends ChangeNotifier {
         return (date) => DateFormat.yMMM(_selectedLocale).add_jm().format(date);
       case TimelineAxisFormat.dayOfWeek:
         return (date) => DateFormat.E(_selectedLocale).add_jm().format(date);
+      case TimelineAxisFormat.custom:
+        return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
     }
   }
 }

@@ -13,6 +13,8 @@ class GanttGrid extends StatelessWidget {
   final Function(String parentId) onAddLineItem;
   final Function(String parentId, bool isSummary) onSetParentTaskType;
   final List<LegacyGanttTask> ganttTasks;
+  final double rowHeight;
+  final double headerHeight;
 
   const GanttGrid({
     super.key,
@@ -26,9 +28,9 @@ class GanttGrid extends StatelessWidget {
     required this.onAddLineItem,
     required this.onSetParentTaskType,
     required this.ganttTasks,
+    this.rowHeight = 27.0,
+    this.headerHeight = 27.0,
   });
-
-  static const double _rowHeight = 27.0;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +72,7 @@ class GanttGrid extends StatelessWidget {
   }
 
   Widget _buildGridHeader(bool isDarkMode) => Container(
-        height: _rowHeight,
+        height: headerHeight,
         decoration: BoxDecoration(
           color: isDarkMode ? Colors.grey[700] : Colors.grey[200],
           border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
@@ -99,7 +101,7 @@ class GanttGrid extends StatelessWidget {
 
   Widget _buildGridRow(GanttGridData data, bool isDarkMode) {
     final int stackDepth = rowMaxStackDepth[data.id] ?? 1;
-    final double dynamicRowHeight = _rowHeight * stackDepth;
+    final double dynamicRowHeight = rowHeight * stackDepth;
     return Container(
       height: dynamicRowHeight,
       decoration: BoxDecoration(
@@ -179,7 +181,7 @@ class GanttGrid extends StatelessWidget {
   Widget _buildTreeCell(GanttGridData data) => GestureDetector(
         onTap: data.isParent ? () => onToggleExpansion(data.id) : null,
         child: SizedBox(
-          height: _rowHeight,
+          height: rowHeight,
           child: Container(
             color: Colors.transparent,
             padding: EdgeInsets.only(left: data.isParent ? 8.0 : 28.0, right: 8.0),

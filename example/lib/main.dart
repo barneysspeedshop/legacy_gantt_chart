@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
@@ -54,6 +56,7 @@ enum TimelineAxisFormat {
   dayAndMonth,
   monthAndYear,
   dayOfWeek,
+  custom,
 }
 
 class _GanttViewState extends State<GanttView> {
@@ -230,7 +233,9 @@ class _GanttViewState extends State<GanttView> {
     ];
   }
 
-  String Function(DateTime, Duration) _getTimelineAxisLabelBuilder() {
+  String Function(DateTime, Duration)? _getTimelineAxisLabelBuilder() {
+    if (_selectedAxisFormat == TimelineAxisFormat.custom) return null;
+
     switch (_selectedAxisFormat) {
       case TimelineAxisFormat.dayOfMonth:
         return (date, interval) => DateFormat('d', _selectedLocale).format(date);
@@ -240,8 +245,23 @@ class _GanttViewState extends State<GanttView> {
         return (date, interval) => DateFormat.yMMM(_selectedLocale).format(date);
       case TimelineAxisFormat.dayOfWeek:
         return (date, interval) => DateFormat.E(_selectedLocale).format(date);
+      case TimelineAxisFormat.custom:
+        return null;
     }
   }
+
+  Widget _buildCustomTimelineHeader(BuildContext context, double Function(DateTime) scale, List<DateTime> visibleDomain,
+          List<DateTime> totalDomain, LegacyGanttTheme theme, double totalContentWidth) =>
+      CustomPaint(
+        size: Size(totalContentWidth, 54.0),
+        painter: _CustomHeaderPainter(
+          scale: scale,
+          visibleDomain: visibleDomain,
+          totalDomain: totalDomain,
+          theme: theme,
+          selectedLocale: _selectedLocale,
+        ),
+      );
 
   String Function(DateTime) _getResizeTooltipDateFormat() =>
       // Always return a full date and time format, honoring the selected locale.
@@ -386,6 +406,7 @@ class _GanttViewState extends State<GanttView> {
                 ButtonSegment(value: TimelineAxisFormat.dayAndMonth, label: Text('Month')),
                 ButtonSegment(value: TimelineAxisFormat.monthAndYear, label: Text('Year')),
                 ButtonSegment(value: TimelineAxisFormat.dayOfWeek, label: Text('Weekday')),
+                ButtonSegment(value: TimelineAxisFormat.custom, label: Text('Custom')),
               ],
               selected: {_selectedAxisFormat},
               onSelectionChanged: (newSelection) => setState(() => _selectedAxisFormat = newSelection.first),
@@ -476,6 +497,7 @@ class _GanttViewState extends State<GanttView> {
                             SizedBox(
                               width: vm.gridWidth ?? constraints.maxWidth * 0.4,
                               child: GanttGrid(
+                                headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
                                 gridData: vm.visibleGridData,
                                 visibleGanttRows: vm.visibleGanttRows,
                                 rowMaxStackDepth: vm.rowMaxStackDepth,
@@ -525,13 +547,18 @@ class _GanttViewState extends State<GanttView> {
                                             height: chartConstraints.maxHeight, // Constraints from LayoutBuilder
                                             child: LegacyGanttChartWidget(
                                               timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
+                                              timelineAxisHeaderBuilder:
+                                                  _selectedAxisFormat == TimelineAxisFormat.custom
+                                                      ? _buildCustomTimelineHeader
+                                                      : null,
                                               scrollController: vm.scrollController, // Link to grid scroll controller
                                               data: vm.ganttTasks,
                                               dependencies: vm.dependencies,
                                               visibleRows: vm.visibleGanttRows,
                                               rowHeight: 27.0,
                                               rowMaxStackDepth: vm.rowMaxStackDepth,
-                                              axisHeight: 27.0, // Match grid header height
+                                              axisHeight:
+                                                  _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
                                               gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
                                               gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
                                               totalGridMin:
@@ -686,6 +713,99 @@ class _GanttViewState extends State<GanttView> {
           ),
         ),
       );
+}
+
+class _CustomHeaderPainter extends CustomPainter {
+  final double Function(DateTime) scale;
+  final List<DateTime> visibleDomain;
+  final List<DateTime> totalDomain;
+  final LegacyGanttTheme theme;
+  final String selectedLocale;
+
+  _CustomHeaderPainter({
+    required this.scale,
+    required this.visibleDomain,
+    required this.totalDomain,
+    required this.theme,
+    required this.selectedLocale,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (totalDomain.isEmpty || visibleDomain.isEmpty) {
+      return;
+    }
+    final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
+    final monthTextStyle = theme.axisTextStyle.copyWith(fontWeight: FontWeight.bold);
+    final dayTextStyle = theme.axisTextStyle.copyWith(fontSize: 10);
+
+    // Determine the tick interval based on the visible duration.
+    Duration tickInterval;
+    if (visibleDuration.inDays > 60) {
+      tickInterval = const Duration(days: 7);
+    } else if (visibleDuration.inDays > 14) {
+      tickInterval = const Duration(days: 2);
+    } else {
+      tickInterval = const Duration(days: 1);
+    }
+
+    DateTime current = totalDomain.first;
+    String? lastMonth;
+    while (current.isBefore(totalDomain.last)) {
+      final next = current.add(tickInterval);
+      final monthFormat = DateFormat('MMMM yyyy', selectedLocale);
+      final dayFormat = DateFormat('d', selectedLocale);
+
+      // Month label
+      final monthStr = monthFormat.format(current);
+      if (monthStr != lastMonth) {
+        lastMonth = monthStr;
+        final monthStart = DateTime(current.year, current.month, 1);
+        final monthEnd = DateTime(current.year, current.month + 1, 0);
+        final startX = scale(monthStart.isBefore(visibleDomain.first) ? visibleDomain.first : monthStart);
+        final endX = scale(monthEnd.isAfter(visibleDomain.last) ? visibleDomain.last : monthEnd);
+
+        final textSpan = TextSpan(text: monthStr, style: monthTextStyle);
+        final textPainter = TextPainter(
+          text: textSpan,
+          textAlign: TextAlign.center,
+          textDirection: ui.TextDirection.ltr,
+        );
+        textPainter.layout();
+        if (endX > startX) {
+          textPainter.paint(
+            canvas,
+            Offset(startX + (endX - startX) / 2 - textPainter.width / 2, 0),
+          );
+        }
+      }
+
+      // Day label
+      final dayX = scale(current);
+      final dayText = dayFormat.format(current);
+      final textSpan = TextSpan(text: dayText, style: dayTextStyle);
+      final textPainter = TextPainter(
+        text: textSpan,
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(dayX - textPainter.width / 2, 20),
+      );
+
+      current = next;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CustomHeaderPainter oldDelegate) =>
+      oldDelegate.scale != scale ||
+      !listEquals(oldDelegate.visibleDomain, visibleDomain) ||
+      !listEquals(oldDelegate.totalDomain, totalDomain) ||
+      oldDelegate.theme != theme ||
+      oldDelegate.selectedLocale != selectedLocale;
 }
 
 /// A dialog to manage (remove) dependencies for a task.
