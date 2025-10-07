@@ -1,6 +1,7 @@
 // packages/gantt_chart/lib/src/gantt_chart_widget.dart
 import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_theme.dart';
@@ -322,16 +323,13 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         key: ValueKey(
           Object.hash(
             tasks.length,
-            tasks.isNotEmpty ? tasks.first.hashCode : 0,
-            tasks.isNotEmpty ? tasks.last.hashCode : 0,
+            // The hashCode of individual list elements (tasks/dependencies/rows) is unstable
+            // if they contain closures (like cellBuilder) or are recreated on parent rebuilds.
+            // Rely only on lengths and the stable hash of the immutable map.
             dependencies.length,
-            dependencies.isNotEmpty ? dependencies.first.hashCode : 0,
-            dependencies.isNotEmpty ? dependencies.last.hashCode : 0,
             widget.visibleRows.length,
-            widget.visibleRows.isNotEmpty ? widget.visibleRows.first.hashCode : 0,
-            widget.visibleRows.isNotEmpty ? widget.visibleRows.last.hashCode : 0,
             widget.rowMaxStackDepth,
-            widget.resizeTooltipDateFormat, // Add this line
+            widget.axisHeight,
           ),
         ),
         create: (_) => LegacyGanttViewModel(
@@ -359,8 +357,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         ),
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
-            vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
-            vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
+            SchedulerBinding.instance.addPostFrameCallback((_) {
+              vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
+              vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
+            });
 
             return LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {

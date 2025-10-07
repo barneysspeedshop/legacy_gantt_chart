@@ -1,3 +1,7 @@
+## 2.3.1
+
+* **FIX**: Fix for an issue that prevented drag/drop and drag to resize for tasks.
+
 ## 2.3.0
 * **FEATURE**: Added timelineAxisHeaderBuilder to LegacyGanttChartWidget. This powerful new feature allows developers to completely replace the default time axis header with a custom Flutter widget, granting full control over the layout, styling, and complexity of the timeline visualization (e.g., multi-level headers for Month/Year/Day).
 * **FEATURE**: The height of the timeline axis is now dynamically controlled by the axisHeight property (or the default 27.0 if unset) to correctly size the custom header area.
