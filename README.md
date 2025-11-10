@@ -93,7 +93,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
 -   **Programmatic Validation:** Use callbacks like `onTaskUpdate` to validate user actions before committing them.
 
-[ ^ ](#table-of-contents)
+[ ^ Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -118,7 +118,7 @@ Now, import it in your Dart code:
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 ```
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -181,7 +181,7 @@ class MinimalGanttChart extends StatelessWidget {
 }
 ```
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## Running the Example
 
@@ -202,13 +202,13 @@ To see a full-featured demo of the `legacy_gantt_chart` in action, you can run t
     flutter run
     ```
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## API Documentation 
 
 For a complete overview of all available classes, methods, and properties, please see the API reference on pub.dev.
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## Advanced Usage
 
@@ -361,7 +361,7 @@ LegacyGanttChartWidget(
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -369,10 +369,10 @@ Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You c
 
 Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started, including our code style guide.
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## License
 
 This project is licensed under the MIT License.
 
-[ ^ ](#table-of-contents)
+[ ^Table of Contents ^ ](#table-of-contents)
