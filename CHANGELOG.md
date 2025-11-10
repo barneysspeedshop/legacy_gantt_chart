@@ -1,3 +1,7 @@
+## 2.3.2
+
+* **DOC**: Update README.md to add TOC and navigation
+
 ## 2.3.1
 
 * **FIX**: Fix for an issue that prevented drag/drop and drag to resize for tasks.
