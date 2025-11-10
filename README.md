@@ -37,6 +37,8 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 
 [![Legacy Gantt Chart Usage GIF](https://github.com/barneysspeedshop/legacy_gantt_chart/raw/main/assets/usage.gif)](https://barneysspeedshop.github.io/legacy_gantt_chart/)
 
+[ ^ ](#table-of-contents)
+
 ---
 
 ## Features
@@ -91,6 +93,8 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
 -   **Programmatic Validation:** Use callbacks like `onTaskUpdate` to validate user actions before committing them.
 
+[ ^ ](#table-of-contents)
+
 ---
 
 ## Installation
@@ -113,6 +117,8 @@ Now, import it in your Dart code:
 ```dart
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 ```
+
+[ ^ ](#table-of-contents)
 
 ---
 
@@ -175,6 +181,8 @@ class MinimalGanttChart extends StatelessWidget {
 }
 ```
 
+[ ^ ](#table-of-contents)
+
 ## Running the Example
 
 To see a full-featured demo of the `legacy_gantt_chart` in action, you can run the example application included in the repository.
@@ -194,9 +202,13 @@ To see a full-featured demo of the `legacy_gantt_chart` in action, you can run t
     flutter run
     ```
 
+[ ^ ](#table-of-contents)
+
 ## API Documentation 
 
 For a complete overview of all available classes, methods, and properties, please see the API reference on pub.dev.
+
+[ ^ ](#table-of-contents)
 
 ## Advanced Usage
 
@@ -349,13 +361,18 @@ LegacyGanttChartWidget(
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
 
+[ ^ ](#table-of-contents)
+
 ---
 
 ## Contributing
 
 Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started, including our code style guide.
 
+[ ^ ](#table-of-contents)
 
 ## License
 
 This project is licensed under the MIT License.
+
+[ ^ ](#table-of-contents)
