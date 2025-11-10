@@ -6,11 +6,38 @@
 
 A flexible and performant Gantt chart widget for Flutter. Supports interactive drag-and-drop, resizing, dynamic data loading, and extensive theming.
 
+## Table of Contents
+
+- [About the Name](#about-the-name)
+- [Features](#features)
+  - [Architecture & Platform](#architecture--platform)
+  - [Data & Backend](#data--backend)
+  - [Interactivity](#interactivity)
+  - [Customization & Theming](#customization--theming)
+  - [Timeline & Dependencies](#timeline--dependencies)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Running the Example](#running-the-example)
+- [API Documentation](#api-documentation)
+- [Advanced Usage](#advanced-usage)
+  - [Dynamic Data Loading with LegacyGanttController](#dynamic-data-loading-with-legacyganttcontroller)
+  - [Timeline Navigation with LegacyGanttTimelineScrubber](#timeline-navigation-with-legacygantttimelinescrubber)
+  - [Interactive Tasks (Drag & Drop, Resize)](#interactive-tasks-drag--drop-resize)
+  - [Custom Task Appearance](#custom-task-appearance)
+  - [Custom Timeline Labels](#custom-timeline-labels)
+  - [Theming](#theming)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## About the Name
 
 The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Legacy. It does not imply that the package is outdated or unmaintained. In fact, it is a modern, actively developed, and highly capable solution for building production-ready Flutter applications.
 
 [![Legacy Gantt Chart Example](https://github.com/barneysspeedshop/legacy_gantt_chart/raw/main/assets/example.png)](https://barneysspeedshop.github.io/legacy_gantt_chart/)
+
+[![Legacy Gantt Chart Usage GIF](https://github.com/barneysspeedshop/legacy_gantt_chart/raw/main/assets/usage.gif)](https://barneysspeedshop.github.io/legacy_gantt_chart/)
+
+[ ^ Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -66,6 +93,8 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
 -   **Programmatic Validation:** Use callbacks like `onTaskUpdate` to validate user actions before committing them.
 
+[ ^ Table of Contents ^ ](#table-of-contents)
+
 ---
 
 ## Installation
@@ -88,6 +117,8 @@ Now, import it in your Dart code:
 ```dart
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 ```
+
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -150,6 +181,8 @@ class MinimalGanttChart extends StatelessWidget {
 }
 ```
 
+[ ^Table of Contents ^ ](#table-of-contents)
+
 ## Running the Example
 
 To see a full-featured demo of the `legacy_gantt_chart` in action, you can run the example application included in the repository.
@@ -169,9 +202,13 @@ To see a full-featured demo of the `legacy_gantt_chart` in action, you can run t
     flutter run
     ```
 
+[ ^Table of Contents ^ ](#table-of-contents)
+
 ## API Documentation 
 
 For a complete overview of all available classes, methods, and properties, please see the API reference on pub.dev.
+
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## Advanced Usage
 
@@ -324,10 +361,7 @@ LegacyGanttChartWidget(
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
 
-
-## API Documentation
-
-For a complete overview of all available classes, methods, and properties, please see the API reference on pub.dev.
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ---
 
@@ -335,7 +369,10 @@ For a complete overview of all available classes, methods, and properties, pleas
 
 Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started, including our code style guide.
 
+[ ^Table of Contents ^ ](#table-of-contents)
 
 ## License
 
 This project is licensed under the MIT License.
+
+[ ^Table of Contents ^ ](#table-of-contents)
