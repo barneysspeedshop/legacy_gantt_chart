@@ -37,7 +37,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 
 [![Legacy Gantt Chart Usage GIF](https://github.com/barneysspeedshop/legacy_gantt_chart/raw/main/assets/usage.gif)](https://barneysspeedshop.github.io/legacy_gantt_chart/)
 
-[ ^ ](#table-of-contents)
+[ ^ Table of Contents ^ ](#table-of-contents)
 
 ---
 
