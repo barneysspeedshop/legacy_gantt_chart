@@ -59,6 +59,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// A callback invoked when a task is successfully moved or resized.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
 
+  /// A callback invoked when a task is double-tapped.
+  final Function(LegacyGanttTask task)? onTaskDoubleClick;
+
   /// A callback invoked when a task is deleted.
   final Function(LegacyGanttTask task)? onTaskDelete;
 
@@ -102,6 +105,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.enableDragAndDrop = false,
     this.enableResize = false,
     this.onTaskUpdate,
+    this.onTaskDoubleClick,
     this.onTaskDelete,
     this.onEmptySpaceClick,
     this.onPressTask,
@@ -360,6 +364,15 @@ class LegacyGanttViewModel extends ChangeNotifier {
       if (rowId != null && time != null) {
         onEmptySpaceClick!(rowId, time);
       }
+    }
+  }
+
+  /// Gesture handler for a double-tap gesture. Determines if a task was tapped
+  /// and invokes the `onTaskDoubleClick` callback.
+  void onDoubleTap(Offset localPosition) {
+    final hit = _getTaskPartAtPosition(localPosition);
+    if (hit != null) {
+      onTaskDoubleClick?.call(hit.task);
     }
   }
 

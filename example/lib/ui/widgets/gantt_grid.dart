@@ -12,6 +12,10 @@ class GanttGrid extends StatelessWidget {
   final VoidCallback onAddContact;
   final Function(String parentId) onAddLineItem;
   final Function(String parentId, bool isSummary) onSetParentTaskType;
+  final Function(String parentId) onEditParentTask;
+  final Function(String parentId) onEditDependentTasks;
+  final VoidCallback onEditAllParentTasks;
+  final Function(String rowId) onDeleteRow;
   final List<LegacyGanttTask> ganttTasks;
   final double rowHeight;
   final double headerHeight;
@@ -27,6 +31,10 @@ class GanttGrid extends StatelessWidget {
     required this.onAddContact,
     required this.onAddLineItem,
     required this.onSetParentTaskType,
+    required this.onEditParentTask,
+    required this.onEditDependentTasks,
+    required this.onEditAllParentTasks,
+    required this.onDeleteRow,
     required this.ganttTasks,
     this.rowHeight = 27.0,
     this.headerHeight = 27.0,
@@ -85,13 +93,25 @@ class GanttGrid extends StatelessWidget {
               width: 48 + 48, // Space for two icons to align with parent rows
               child: Align(
                 alignment: Alignment.centerRight,
-                child: IconButton(
-                  icon: const Icon(Icons.person_add),
-                  tooltip: 'Add Contact',
-                  onPressed: onAddContact,
-                  iconSize: 20,
-                  splashRadius: 20,
-                  color: isDarkMode ? Colors.white70 : Colors.black54,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.person_add),
+                      tooltip: 'Add Contact',
+                      onPressed: onAddContact,
+                      iconSize: 20,
+                      splashRadius: 20,
+                      color: isDarkMode ? Colors.white70 : Colors.black54,
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.edit, color: isDarkMode ? Colors.white70 : Colors.black54),
+                      tooltip: 'Edit All Parent Tasks',
+                      onPressed: onEditAllParentTasks,
+                      iconSize: 20,
+                      splashRadius: 20,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -124,14 +144,14 @@ class GanttGrid extends StatelessWidget {
           SizedBox(
             width: 48,
             child: data.isParent
-                ? IconButton(
+                ? _buildActionCell(IconButton(
                     icon: const Icon(Icons.add_circle_outline),
                     tooltip: 'Add Line Item',
-                    onPressed: () => onAddLineItem(data.id),
-                    iconSize: 18,
-                    splashRadius: 18,
-                    color: Colors.grey.shade600)
-                : null,
+                    onPressed: () => onAddLineItem(data.id)))
+                : _buildActionCell(IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'Delete Row',
+                    onPressed: () => onDeleteRow(data.id))),
           ),
           SizedBox(
             width: 48,
@@ -144,20 +164,37 @@ class GanttGrid extends StatelessWidget {
                         onSetParentTaskType(data.id, true);
                       } else if (value == 'make_regular') {
                         onSetParentTaskType(data.id, false);
+                      } else if (value == 'edit_task') {
+                        onEditParentTask(data.id);
+                      } else if (value == 'edit_dependent_tasks') {
+                        onEditDependentTasks(data.id);
+                      } else if (value == 'delete_row') {
+                        onDeleteRow(data.id);
                       }
                     },
                     itemBuilder: (BuildContext context) {
                       final bool isCurrentlySummary = ganttTasks.any((t) => t.rowId == data.id && t.isSummary);
                       return <PopupMenuEntry<String>>[
+                        if (isCurrentlySummary) const PopupMenuItem<String>(value: 'edit_task', child: Text('Edit Task')),
                         if (!isCurrentlySummary)
                           const PopupMenuItem<String>(value: 'make_summary', child: Text('Make Summary'))
                         else
                           const PopupMenuItem<String>(value: 'make_regular', child: Text('Make Regular')),
+                        if (data.children.isNotEmpty)
+                          const PopupMenuItem<String>(value: 'edit_dependent_tasks', child: Text('Edit Dependent Tasks')),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem<String>(value: 'delete_row', child: Text('Delete Row')),
                       ];
                     },
                     splashRadius: 20,
                   )
-                : null,
+                : ganttTasks.any((t) => t.rowId == data.id && !t.isTimeRangeHighlight)
+                    ? _buildActionCell(IconButton(
+                        icon: const Icon(Icons.edit),
+                        tooltip: 'Edit Task...',
+                        onPressed: () => onEditParentTask(data.id),
+                      ))
+                    : null,
           ),
         ],
       ),
@@ -250,4 +287,13 @@ class GanttGrid extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildActionCell(IconButton iconButton) => IconButton(
+          icon: iconButton.icon,
+          tooltip: iconButton.tooltip,
+          onPressed: iconButton.onPressed,
+          iconSize: 18,
+          splashRadius: 18,
+          color: Colors.grey.shade600,
+        );
 }

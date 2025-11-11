@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 
@@ -7,7 +8,6 @@ import '../data/models.dart';
 import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
-import '../utils/task_helpers.dart';
 
 enum ThemePreset {
   standard,
@@ -61,6 +61,7 @@ class GanttViewModel extends ChangeNotifier {
 
   final GanttScheduleService _scheduleService = GanttScheduleService();
   GanttResponse? _apiResponse;
+  GanttResponse? get apiResponse => _apiResponse;
 
   double? _gridWidth;
   double? _controlPanelWidth = 300.0;
@@ -647,12 +648,7 @@ class GanttViewModel extends ChangeNotifier {
 
       // Create new data objects
       final newJob = GanttJobData(
-          id: newJobId,
-          name: newLineItemName,
-          taskName: newLineItemName,
-          status: 'New',
-          taskColor: '9E9E9E',
-          completion: 0.0);
+          id: newJobId, name: newLineItemName, taskName: null, status: 'New', taskColor: '9E9E9E', completion: 0.0);
       final newGridItem = GanttGridData.fromJob(newJob);
 
       // Find the parent in both data structures and add the new child
@@ -804,6 +800,176 @@ class GanttViewModel extends ChangeNotifier {
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
   }
 
+  Future<void> editAllParentTasks(BuildContext context) async {
+    // Get all parent rows that are currently acting as summaries.
+    final parentRowIds = _gridData.where((g) => g.isParent).map((g) => g.id).toSet();
+    final parentSummaryTasks = _ganttTasks
+        .where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator)
+        .toList();
+
+    if (parentSummaryTasks.isEmpty) return;
+
+    final updatedTasks = await showDialog<List<LegacyGanttTask>>(
+      context: context,
+      builder: (context) => _EditTasksInRowDialog(tasks: parentSummaryTasks),
+    );
+
+    if (updatedTasks != null) {
+      _updateMultipleTasks(updatedTasks);
+    }
+  }
+
+  Future<void> editDependentTasks(BuildContext context, String parentId) async {
+    final parentData = _gridData.firstWhereOrNull((p) => p.id == parentId);
+    if (parentData == null || parentData.children.isEmpty) return;
+
+    final childRowIds = parentData.children.map((c) => c.id).toSet();
+    final dependentTasks = _ganttTasks
+        .where((t) =>
+            childRowIds.contains(t.rowId) && !t.isSummary && !t.isTimeRangeHighlight && !t.isOverlapIndicator)
+        .toList();
+
+    if (dependentTasks.isEmpty) return;
+
+    final updatedTasks = await showDialog<List<LegacyGanttTask>>(
+      context: context,
+      builder: (context) => _EditTasksInRowDialog(tasks: dependentTasks),
+    );
+
+    if (updatedTasks != null) {
+      _updateMultipleTasks(updatedTasks);
+    }
+  }
+
+  Future<void> editParentTask(BuildContext context, String rowId) async {
+    final parentData = _gridData.firstWhereOrNull((p) => p.id == rowId);
+    if (parentData != null && parentData.isParent) {
+      // It's a parent row, edit the summary task
+      final task = _ganttTasks.firstWhereOrNull((t) => t.rowId == rowId && t.isSummary);
+      if (task != null) {
+        _editTask(context, task);
+      }
+    } else {
+      // It's a child row, let the user pick a task to edit
+      await editChildTask(context, rowId);
+    }
+  }
+
+  Future<void> editChildTask(BuildContext context, String rowId) async {
+    final tasksInRow = _ganttTasks
+        .where((t) => t.rowId == rowId && !t.isTimeRangeHighlight && !t.isSummary && !t.isOverlapIndicator)
+        .toList();
+    if (tasksInRow.isEmpty) return;
+
+    if (tasksInRow.length == 1) {
+      // If there's only one task, edit it directly.
+      await _editTask(context, tasksInRow.first);
+    } else {
+      // If there are multiple tasks, show a dialog to choose which one to edit.
+      final updatedTasks = await showDialog<List<LegacyGanttTask>>(
+        context: context,
+        builder: (context) => _EditTasksInRowDialog(tasks: tasksInRow),
+      );
+
+      if (updatedTasks != null) {
+        _updateMultipleTasks(updatedTasks);
+      }
+    }
+  }
+
+  /// Shows the dialog to edit a specific task's start and end times.
+  Future<void> _editTask(BuildContext context, LegacyGanttTask task) async {
+    final updatedTaskData = await showDialog<({String name, DateTime start, DateTime end})>(
+      context: context,
+      builder: (context) => _EditTaskAlertDialog(task: task),
+    );
+
+    if (updatedTaskData != null) {
+      final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
+      final index = newTasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        newTasks[index] = newTasks[index].copyWith(
+          name: updatedTaskData.name,
+          start: updatedTaskData.start,
+          end: updatedTaskData.end,
+        );
+        final (recalculatedTasks, newMaxDepth) =
+            _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+        _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
+      }
+    }
+  }
+
+  /// Updates multiple tasks at once and recalculates stacking.
+  Future<void> _updateMultipleTasks(List<LegacyGanttTask> updatedTasks) async {
+    if (_apiResponse == null) return;
+
+    final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
+    for (final updatedTask in updatedTasks) {
+      final index = newTasks.indexWhere((t) => t.id == updatedTask.id);
+      if (index != -1) {
+        // Preserve original properties by only copying over the edited fields.
+        final originalTask = newTasks[index];
+        newTasks[index] = originalTask.copyWith(
+          name: updatedTask.name,
+          start: updatedTask.start,
+          end: updatedTask.end,
+        );
+
+        // Update the underlying GanttJobData in the API response to persist changes.
+        final parentResource =
+            _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == originalTask.rowId));
+        if (parentResource != null) {
+          final jobIndex = parentResource.children.indexWhere((j) => j.id == originalTask.rowId);
+          if (jobIndex != -1) {
+            final oldJob = parentResource.children[jobIndex];
+            parentResource.children[jobIndex] = oldJob.copyWith(name: updatedTask.name, taskName: updatedTask.name);
+          }
+        }
+      }
+    }
+    // Instead of manually updating parts of the state, re-run the full processing logic.
+    // This guarantees consistency across all data models.
+    await _reprocessDataFromApiResponse();
+  }
+
+  void deleteRow(String rowId) {
+    if (_apiResponse == null) return;
+
+    // Find the parent data to check if we are deleting a parent or a child.
+    final parentData = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
+
+    List<LegacyGanttTask> nextTasks;
+
+    if (parentData != null) {
+      // This is a child row (a job).
+      parentData.children.removeWhere((child) => child.id == rowId);
+      final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
+      parentResource?.children.removeWhere((job) => job.id == rowId);
+
+      nextTasks = _ganttTasks.where((task) => task.rowId != rowId).toList();
+    } else {
+      // This is a parent row (a person).
+      final parentToDelete = _gridData.firstWhereOrNull((p) => p.id == rowId);
+      if (parentToDelete != null) {
+        final childIds = parentToDelete.children.map((c) => c.id).toSet();
+        // Remove tasks associated with the parent and all its children.
+        nextTasks = _ganttTasks.where((task) => task.rowId != rowId && !childIds.contains(task.rowId)).toList();
+
+        // Remove from data sources
+        _gridData.removeWhere((parent) => parent.id == rowId);
+        _apiResponse?.resourcesData.removeWhere((resource) => resource.id == rowId);
+      } else {
+        nextTasks = List.from(_ganttTasks);
+      }
+    }
+
+    // After removing the row and its tasks, recalculate stacking.
+    final (recalculatedTasks, newMaxDepth) =
+        _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
+  }
+
   String? _getParentId(String rowId) {
     for (final parent in _gridData) {
       if (parent.id == rowId) {
@@ -816,6 +982,60 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// Re-processes the current `_apiResponse` to rebuild all UI-facing data models.
+  /// This is the most reliable way to ensure data consistency after a mutation.
+  Future<void> _reprocessDataFromApiResponse() async {
+    if (_apiResponse == null) {
+      await fetchScheduleData();
+      return;
+    }
+
+    // Preserve the expanded/collapsed state of parent rows before reprocessing.
+    final expansionStates = {for (var item in _gridData) item.id: item.isExpanded};
+
+    // Re-run the full processing logic from the service.
+    // This is a simplified version of the logic in `fetchAndProcessSchedule`.
+    final processedData = await _scheduleService.processGanttResponse(
+      _apiResponse!,
+      startDate: _startDate,
+      range: _range,
+      showConflicts: _showConflicts,
+    );
+
+    // Restore the expansion states.
+    for (var newItem in processedData.gridData) {
+      if (expansionStates.containsKey(newItem.id)) {
+        newItem.isExpanded = expansionStates[newItem.id]!;
+      }
+    }
+
+    // Update all the view model's state variables from the newly processed data.
+    _ganttTasks = processedData.ganttTasks;
+    _gridData = processedData.gridData;
+    _rowMaxStackDepth = processedData.rowMaxStackDepth;
+    _eventMap = processedData.eventMap;
+
+    // Recalculate total date range based on all tasks
+    if (_ganttTasks.isNotEmpty) {
+      DateTime minStart = _ganttTasks.first.start;
+      DateTime maxEnd = _ganttTasks.first.end;
+      for (final task in _ganttTasks) {
+        if (task.start.isBefore(minStart)) minStart = task.start;
+        if (task.end.isAfter(maxEnd)) maxEnd = task.end;
+      }
+      _totalStartDate = minStart;
+      _totalEndDate = maxEnd;
+    } else {
+      _totalStartDate = _startDate;
+      _totalEndDate = _startDate.add(Duration(days: _range));
+    }
+
+    _visibleStartDate = effectiveTotalStartDate;
+    _visibleEndDate = effectiveTotalEndDate;
+
+    notifyListeners();
   }
 
   /// Returns a list of tasks that can be selected as a predecessor or successor.
@@ -833,6 +1053,7 @@ class GanttViewModel extends ChangeNotifier {
         .where((task) =>
             !task.isSummary &&
             !task.isTimeRangeHighlight &&
+            !task.isOverlapIndicator &&
             task.id != sourceTask.id &&
             allRowIdsForParent.contains(task.rowId))
         .toList();
@@ -895,4 +1116,235 @@ class GanttViewModel extends ChangeNotifier {
         return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
     }
   }
+}
+
+class _EditTaskAlertDialog extends StatefulWidget {
+  final LegacyGanttTask task;
+
+  const _EditTaskAlertDialog({required this.task});
+
+  @override
+  State<_EditTaskAlertDialog> createState() => _EditTaskAlertDialogState();
+}
+
+class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
+  late final TextEditingController _nameController;
+  late DateTime _startDate;
+  late DateTime _endDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.task.name);
+    _startDate = widget.task.start;
+    _endDate = widget.task.end;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_nameController.text.isNotEmpty) {
+      Navigator.pop(context, (name: _nameController.text, start: _startDate, end: _endDate));
+    }
+  }
+
+  Future<void> _selectDateTime(BuildContext context, bool isStart) async {
+    final initialDate = isStart ? _startDate : _endDate;
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2030),
+    );
+
+    if (pickedDate == null || !context.mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDate),
+    );
+
+    if (pickedTime == null) return;
+
+    setState(() {
+      final newDateTime =
+          DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+      if (isStart) {
+        _startDate = newDateTime;
+        if (_endDate.isBefore(_startDate)) {
+          _endDate = _startDate.add(const Duration(hours: 1));
+        }
+      } else {
+        _endDate = newDateTime;
+        if (_startDate.isAfter(_endDate)) {
+          _startDate = _endDate.subtract(const Duration(hours: 1));
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+      title: const Text('Edit Task'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Task Name'),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Start:'),
+              TextButton(
+                  onPressed: () => _selectDateTime(context, true),
+                  child: Text(DateFormat.yMd().add_jm().format(_startDate)))
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('End:'),
+              TextButton(
+                  onPressed: () => _selectDateTime(context, false), child: Text(DateFormat.yMd().add_jm().format(_endDate)))
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: _submit, child: const Text('Save')),
+      ],
+    );
+}
+
+class _EditTasksInRowDialog extends StatefulWidget {
+  final List<LegacyGanttTask> tasks;
+
+  const _EditTasksInRowDialog({required this.tasks});
+
+  @override
+  State<_EditTasksInRowDialog> createState() => _EditTasksInRowDialogState();
+}
+
+class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
+  late List<LegacyGanttTask> _tasks;
+
+  @override
+  void initState() {
+    super.initState();
+    // Create a mutable copy to edit.
+    _tasks = widget.tasks.map((t) => t.copyWith()).toList();
+  }
+
+  Future<void> _editName(LegacyGanttTask task) async {
+    final controller = TextEditingController(text: task.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Task Name'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) Navigator.pop(context, controller.text);
+              },
+              child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (newName != null && newName.isNotEmpty) {
+      setState(() {
+        final index = _tasks.indexWhere((t) => t.id == task.id);
+        if (index != -1) {
+          _tasks[index] = _tasks[index].copyWith(name: newName);
+        }
+      });
+    }
+  }
+
+  Future<void> _editDate(LegacyGanttTask task, bool isStart) async {
+    final initialDate = isStart ? task.start : task.end;
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2030),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initialDate));
+    if (pickedTime == null) return;
+
+    setState(() {
+      final newDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+      final index = _tasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        var tempTask = _tasks[index];
+        if (isStart) {
+          tempTask = tempTask.copyWith(start: newDateTime);
+          if (tempTask.end.isBefore(tempTask.start)) {
+            tempTask = tempTask.copyWith(end: tempTask.start.add(const Duration(hours: 1)));
+          }
+        } else {
+          tempTask = tempTask.copyWith(end: newDateTime);
+          if (tempTask.start.isAfter(tempTask.end)) {
+            tempTask = tempTask.copyWith(start: tempTask.end.subtract(const Duration(hours: 1)));
+          }
+        }
+        _tasks[index] = tempTask;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+      title: const Text('Edit Tasks'),
+      scrollable: true,
+      content: SizedBox(
+        width: 500, // Give it a reasonable width
+        child: DataTable(
+          columnSpacing: 16,
+          columns: const [
+            DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Start', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
+            DataColumn(label: Text('End', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
+          ],
+          rows: _tasks.map((task) => DataRow(
+              cells: [
+                DataCell(
+                  Text(task.name ?? 'Unnamed Task', overflow: TextOverflow.ellipsis),
+                  onTap: () => _editName(task),
+                ),
+                DataCell(
+                  Text(DateFormat.yMd().add_jm().format(task.start)),
+                  onTap: () => _editDate(task, true),
+                ),
+                DataCell(
+                  Text(DateFormat.yMd().add_jm().format(task.end)),
+                  onTap: () => _editDate(task, false),
+                ),
+              ],
+            )).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _tasks),
+          child: const Text('Save'),
+        ),
+      ],
+    );
 }

@@ -3,7 +3,6 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import '../data/mock_api_service.dart';
 import '../data/models.dart';
 import '../ui/gantt_grid_data.dart';
-import '../utils/task_helpers.dart';
 
 // A view model to hold the processed data ready for the UI
 class ProcessedScheduleData {
@@ -46,6 +45,20 @@ class GanttScheduleService {
 
     final apiResponse = GanttResponse.fromJson(apiResponseJson);
 
+    return await processGanttResponse(apiResponse, startDate: startDate, range: range);
+  }
+
+  /// Processes a [GanttResponse] object to produce data ready for the UI.
+  ///
+  /// This logic is separated so it can be re-run on the existing API response
+  /// after in-memory mutations, ensuring data consistency without another API call.
+  Future<ProcessedScheduleData> processGanttResponse(
+    GanttResponse apiResponse, {
+    required DateTime startDate,
+    required int range,
+    bool showConflicts = true,
+    bool isFirstLoad = true,
+  }) async {
     if (!apiResponse.success) {
       throw Exception(apiResponse.error ?? 'Failed to load schedule data');
     }
@@ -124,7 +137,7 @@ class GanttScheduleService {
 
     // 4. Process resources to build the hierarchical grid data, filtering out rows with no tasks.
     final List<GanttGridData> processedGridData = [];
-    bool isFirstParent = true;
+    bool isFirstParent = isFirstLoad;
     for (final resource in apiResponse.resourcesData) {
       // Filter children to only include those that have tasks.
       final visibleChildren = resource.children
@@ -201,7 +214,7 @@ class GanttScheduleService {
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
 
     // 6. Calculate task stacking and conflicts
-    final (stackedTasks, maxDepthPerRow) = publicCalculateTaskStacking(fetchedTasks, apiResponse);
+    final (stackedTasks, maxDepthPerRow) = publicCalculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
 
     return ProcessedScheduleData(
       ganttTasks: stackedTasks,

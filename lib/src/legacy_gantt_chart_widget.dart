@@ -120,6 +120,11 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Provides the updated [LegacyGanttTask] and its new `start` and `end` times.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
 
+  /// A callback function invoked when a user double-taps or double-clicks on a task bar.
+  ///
+  /// Provides the [LegacyGanttTask] that was double-tapped.
+  final Function(LegacyGanttTask task)? onTaskDoubleClick;
+
   /// A callback function that is invoked when a task is deleted.
   final Function(LegacyGanttTask task)? onTaskDelete;
 
@@ -208,6 +213,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.taskBarBuilder,
     this.taskContentBuilder,
     this.onTaskUpdate,
+    this.onTaskDoubleClick,
     this.onTaskDelete,
     this.resizeTooltipDateFormat,
     this.onEmptySpaceClick,
@@ -346,6 +352,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           enableDragAndDrop: widget.enableDragAndDrop,
           enableResize: widget.enableResize,
           onTaskUpdate: widget.onTaskUpdate,
+          onTaskDoubleClick: widget.onTaskDoubleClick,
           onTaskDelete: widget.onTaskDelete,
           onEmptySpaceClick: widget.onEmptySpaceClick,
           onPressTask: widget.onPressTask,
@@ -392,6 +399,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                     onPanUpdate: vm.onPanUpdate,
                     onPanEnd: vm.onPanEnd,
                     onTapUp: vm.onTapUp,
+                    onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
                     child: Container(
                       color: effectiveTheme.backgroundColor,
                       child: Stack(

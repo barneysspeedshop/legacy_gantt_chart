@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
+import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
@@ -139,6 +141,18 @@ class _GanttViewState extends State<GanttView> {
     _showSnackbar('Cleared all dependencies for ${task.name}');
   }
 
+  void _handleSnapToTask(LegacyGanttTask task) {
+    final taskDuration = task.end.difference(task.start);
+    // Make the new window 3 times the duration of the task for context.
+    final newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
+    // Center the window on the task.
+    final newStart = task.start.subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));
+    final newEnd = newStart.add(newWindowDuration);
+
+    _viewModel.onScrubberWindowChanged(newStart, newEnd);
+    _showSnackbar('Snapped to task: ${task.name}');
+  }
+
   Future<void> _showDependencyRemover(BuildContext context, LegacyGanttTask task) async {
     final dependencies = _viewModel.getDependenciesForTask(task);
 
@@ -273,7 +287,16 @@ class _GanttViewState extends State<GanttView> {
         child: ListView(
           padding: const EdgeInsets.all(12.0),
           children: [
-            Text('Controls', style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                Expanded(child: Text('Controls', style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                  icon: const Icon(Icons.data_object),
+                  tooltip: 'Export Tasks to JSON',
+                  onPressed: () => _showJsonExportDialog(vm),
+                ),
+              ],
+            ),
             const Divider(height: 24),
             DashboardHeader(
               selectedDate: vm.startDate,
@@ -436,6 +459,77 @@ class _GanttViewState extends State<GanttView> {
         ),
       );
 
+  void _showJsonExportDialog(GanttViewModel vm) {
+    // This function now correctly builds the JSON structure you specified.
+    final apiResponse = vm.apiResponse;
+    if (apiResponse == null) {
+      // Handle case where data hasn't been loaded yet.
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: const Text('No data available to export.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // We will rebuild the JSON from the stored API response,
+    // which matches the structure you provided.
+    final exportData = {
+      'success': apiResponse.success,
+      'eventsData': apiResponse.eventsData
+          .map((e) => e.toJson()) // Assuming toJson exists on your models
+          .toList(),
+      'resourcesData': apiResponse.resourcesData.map((r) => r.toJson()).toList(),
+      'assignmentsData': apiResponse.assignmentsData.map((a) => a.toJson()).toList(),
+      'resourceTimeRangesData': apiResponse.resourceTimeRangesData.map((r) => r.toJson()).toList(),
+    };
+
+    final jsonString = const JsonEncoder.withIndent('  ').convert(
+      // Instead of converting internal GanttTask objects,
+      // we now convert the original API response data structure.
+      exportData,
+    );
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Gantt Tasks JSON Export'),
+        content: SizedBox(
+          width: 600,
+          height: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              jsonString,
+              style: const TextStyle(fontFamily: 'monospace'),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: jsonString));
+              _showSnackbar('JSON copied to clipboard');
+            },
+            child: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
   // The root of the application uses a ChangeNotifierProvider to make the
   // GanttViewModel available to the entire widget tree below it. This allows
   // any widget to listen to changes in the view model and rebuild accordingly.
@@ -465,7 +559,7 @@ class _GanttViewState extends State<GanttView> {
                   if (_isPanelVisible)
                     SizedBox(
                       width: vm.controlPanelWidth ?? 350,
-                      child: _buildControlPanel(context, vm, isDarkMode),
+                      child: _buildControlPanel(context, vm, isDarkMode), // This was _buildControlPanelOld
                     ),
                   if (_isPanelVisible)
                     GestureDetector(
@@ -507,6 +601,10 @@ class _GanttViewState extends State<GanttView> {
                                 onAddContact: () => vm.addContact(context),
                                 onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
                                 onSetParentTaskType: vm.setParentTaskType,
+                                onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
+                                onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
+                                onEditAllParentTasks: () => vm.editAllParentTasks(context),
+                                onDeleteRow: vm.deleteRow,
                                 ganttTasks: vm.ganttTasks,
                               ),
                             ),
@@ -569,6 +667,9 @@ class _GanttViewState extends State<GanttView> {
                                               onTaskUpdate: (task, start, end) {
                                                 vm.handleTaskUpdate(task, start, end);
                                                 _showSnackbar('Updated ${task.name}');
+                                              },
+                                              onTaskDoubleClick: (task) {
+                                                _handleSnapToTask(task);
                                               },
                                               onEmptySpaceClick: (rowId, time) =>
                                                   vm.handleEmptySpaceClick(context, rowId, time),
@@ -920,14 +1021,15 @@ class _CreateTaskAlertDialogState extends State<_CreateTaskAlertDialog> {
   }
 
   void _submit() {
-    if (_nameController.text.isNotEmpty) {
+    if (_nameController.text.trim().isNotEmpty) {
       final newTask = LegacyGanttTask(
           id: 'new_task_${DateTime.now().millisecondsSinceEpoch}',
           rowId: widget.rowId,
-          name: _nameController.text,
+          name: _nameController.text.trim(),
           start: _startDate,
           end: _endDate);
       widget.onCreate(newTask);
+      Navigator.pop(context); // Close the dialog on successful creation
     }
   }
 

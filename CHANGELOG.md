@@ -1,3 +1,7 @@
+## 2.3.3
+
+* **EXAMPLE FEATURE**: Updated the example appliaction to add some bug fixes and additional functionalities for better UX and stability.
+
 ## 2.3.2
 
 * **DOC**: Update README.md to add TOC and navigation
