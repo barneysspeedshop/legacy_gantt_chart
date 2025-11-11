@@ -214,7 +214,8 @@ class GanttScheduleService {
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
 
     // 6. Calculate task stacking and conflicts
-    final (stackedTasks, maxDepthPerRow) = publicCalculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
+    final (stackedTasks, maxDepthPerRow) =
+        publicCalculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
 
     return ProcessedScheduleData(
       ganttTasks: stackedTasks,

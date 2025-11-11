@@ -44,8 +44,7 @@ class GanttResponse {
         'resourcesData': resourcesData.map((e) => e.toJson()).toList(),
         'eventsData': eventsData.map((e) => e.toJson()).toList(),
         'assignmentsData': assignmentsData.map((e) => e.toJson()).toList(),
-        'resourceTimeRangesData':
-            resourceTimeRangesData.map((e) => e.toJson()).toList(),
+        'resourceTimeRangesData': resourceTimeRangesData.map((e) => e.toJson()).toList(),
       };
 }
 

@@ -175,13 +175,15 @@ class GanttGrid extends StatelessWidget {
                     itemBuilder: (BuildContext context) {
                       final bool isCurrentlySummary = ganttTasks.any((t) => t.rowId == data.id && t.isSummary);
                       return <PopupMenuEntry<String>>[
-                        if (isCurrentlySummary) const PopupMenuItem<String>(value: 'edit_task', child: Text('Edit Task')),
+                        if (isCurrentlySummary)
+                          const PopupMenuItem<String>(value: 'edit_task', child: Text('Edit Task')),
                         if (!isCurrentlySummary)
                           const PopupMenuItem<String>(value: 'make_summary', child: Text('Make Summary'))
                         else
                           const PopupMenuItem<String>(value: 'make_regular', child: Text('Make Regular')),
                         if (data.children.isNotEmpty)
-                          const PopupMenuItem<String>(value: 'edit_dependent_tasks', child: Text('Edit Dependent Tasks')),
+                          const PopupMenuItem<String>(
+                              value: 'edit_dependent_tasks', child: Text('Edit Dependent Tasks')),
                         const PopupMenuDivider(),
                         const PopupMenuItem<String>(value: 'delete_row', child: Text('Delete Row')),
                       ];
@@ -289,11 +291,11 @@ class GanttGrid extends StatelessWidget {
   }
 
   Widget _buildActionCell(IconButton iconButton) => IconButton(
-          icon: iconButton.icon,
-          tooltip: iconButton.tooltip,
-          onPressed: iconButton.onPressed,
-          iconSize: 18,
-          splashRadius: 18,
-          color: Colors.grey.shade600,
-        );
+        icon: iconButton.icon,
+        tooltip: iconButton.tooltip,
+        onPressed: iconButton.onPressed,
+        iconSize: 18,
+        splashRadius: 18,
+        color: Colors.grey.shade600,
+      );
 }
