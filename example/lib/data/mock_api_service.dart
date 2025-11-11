@@ -51,7 +51,7 @@ class MockApiService {
       mockResources.add(GanttResourceData(
         id: personId,
         name: 'Person $i',
-        taskName: 'Team Member',
+        taskName: 'Person $i Summary',
         children: jobs,
       ));
     }

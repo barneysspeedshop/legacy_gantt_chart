@@ -37,6 +37,16 @@ class GanttResponse {
                 .toList() ??
             [],
       );
+
+  Map<String, dynamic> toJson() => {
+        'success': success,
+        'error': error,
+        'resourcesData': resourcesData.map((e) => e.toJson()).toList(),
+        'eventsData': eventsData.map((e) => e.toJson()).toList(),
+        'assignmentsData': assignmentsData.map((e) => e.toJson()).toList(),
+        'resourceTimeRangesData':
+            resourceTimeRangesData.map((e) => e.toJson()).toList(),
+      };
 }
 
 class GanttResourceData {
@@ -104,6 +114,23 @@ class GanttJobData {
         'taskName': taskName,
         'completion': completion,
       };
+
+  GanttJobData copyWith({
+    String? id,
+    String? name,
+    String? status,
+    String? taskColor,
+    String? taskName,
+    double? completion,
+  }) =>
+      GanttJobData(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        status: status ?? this.status,
+        taskColor: taskColor ?? this.taskColor,
+        taskName: taskName ?? this.taskName,
+        completion: completion ?? this.completion,
+      );
 }
 
 class GanttEventData {
@@ -133,6 +160,15 @@ class GanttEventData {
             : null,
         resourceId: json['resourceId'] as String?,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'utcStartDate': utcStartDate,
+        'utcEndDate': utcEndDate,
+        'referenceData': referenceData?.toJson(),
+        'resourceId': resourceId,
+      };
 }
 
 class GanttReferenceData {
@@ -154,6 +190,13 @@ class GanttReferenceData {
         statusOptionIcon: json['statusOptionIcon'] as String?,
         taskTextColor: json['taskTextColor'] as String?, // Added fromJson
       );
+
+  Map<String, dynamic> toJson() => {
+        'taskName': taskName,
+        'taskColor': taskColor,
+        'statusOptionIcon': statusOptionIcon,
+        'taskTextColor': taskTextColor,
+      };
 }
 
 class GanttAssignmentData {
@@ -172,6 +215,12 @@ class GanttAssignmentData {
         event: json['event'] as String,
         resource: json['resource'] as String,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'event': event,
+        'resource': resource,
+      };
 }
 
 class GanttResourceTimeRangeData {
@@ -193,4 +242,11 @@ class GanttResourceTimeRangeData {
         utcStartDate: json['utcStartDate'] as String,
         utcEndDate: json['utcEndDate'] as String,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'resourceId': resourceId,
+        'utcStartDate': utcStartDate,
+        'utcEndDate': utcEndDate,
+      };
 }

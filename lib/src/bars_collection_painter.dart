@@ -225,7 +225,7 @@ class BarsCollectionPainter extends CustomPainter {
         }
       }
 
-      // 3. Draw conflict indicators on top of the bars
+      // 3. Draw conflict indicators on top of the bars but under the text
       if (!hasCustomTaskBuilder) {
         for (final task in tasksInThisRow.where((t) => t.isOverlapIndicator)) {
           final double barStartX = scale(task.start);
@@ -242,7 +242,11 @@ class BarsCollectionPainter extends CustomPainter {
             theme.barCornerRadius,
           );
 
-          _drawConflictIndicator(canvas, barRRect);
+          // We pass the task itself to check if it's a summary conflict.
+          final isSummaryConflict = data
+              .any((t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
+
+          _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
         }
       }
 
@@ -378,17 +382,14 @@ class BarsCollectionPainter extends CustomPainter {
     _drawAngledPattern(canvas, rrect, theme.summaryBarColor, 1.5);
   }
 
-  void _drawConflictIndicator(Canvas canvas, RRect rrect) {
+  void _drawConflictIndicator(Canvas canvas, RRect rrect, bool isSummaryConflict) {
     // To ensure the conflict pattern is clear and not blended with underlying bars,
-    // we first "erase" the area by drawing a solid block of the chart's background color.
-    canvas.drawRRect(rrect, Paint()..color = theme.backgroundColor);
+    // we no longer erase the background. Instead, we draw a semi-transparent overlay.
 
     // Next, draw the semi-transparent red background for the conflict area.
     final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
     canvas.drawRRect(rrect, backgroundPaint);
-
-    // Then, draw the angled lines on top of that new background.
-    _drawAngledPattern(canvas, rrect, theme.conflictBarColor, 1.0);
+    _drawAngledPattern(canvas, rrect, theme.conflictBarColor.withValues(alpha: 0.85), 1.0);
   }
 
   void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged) {

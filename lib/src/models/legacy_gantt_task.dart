@@ -1,6 +1,13 @@
 // packages/gantt_chart/lib/src/models/gantt_task.dart
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+int? _colorToHex(Color? color) {
+  if (color == null) return null;
+  // Use toARGB32() for an explicit conversion to a 32-bit integer.
+  return color.toARGB32();
+}
+
 
 /// Represents a single segment within a [LegacyGanttTask].
 @immutable
@@ -14,6 +21,12 @@ class LegacyGanttTaskSegment {
     required this.end,
     this.color,
   });
+
+  Map<String, dynamic> toJson() => {
+        'start': start.toIso8601String(),
+        'end': end.toIso8601String(),
+        'color': _colorToHex(color)?.toRadixString(16),
+      };
 
   @override
   bool operator ==(Object other) =>
@@ -70,6 +83,25 @@ class LegacyGanttTask {
     this.cellBuilder,
   });
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'rowId': rowId,
+        'start': start.toIso8601String(),
+        'end': end.toIso8601String(),
+        'name': name,
+        'color': _colorToHex(color)?.toRadixString(16),
+        'textColor': _colorToHex(textColor)?.toRadixString(16),
+        'stackIndex': stackIndex,
+        'originalId': originalId,
+        'isSummary': isSummary,
+        'isTimeRangeHighlight': isTimeRangeHighlight,
+        'isOverlapIndicator': isOverlapIndicator,
+        'segments': segments?.map((s) => s.toJson()).toList(),
+        // Note: copyWith does not support functions, so cellBuilder is not included here.
+        // cellBuilder is a function and cannot be serialized to JSON.
+        'hasCellBuilder': cellBuilder != null,
+      };
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -106,4 +138,36 @@ class LegacyGanttTask {
       isOverlapIndicator.hashCode ^
       Object.hashAll(segments ?? []) ^
       cellBuilder.hashCode;
+
+  LegacyGanttTask copyWith({
+    String? id,
+    String? rowId,
+    DateTime? start,
+    DateTime? end,
+    String? name,
+    Color? color,
+    Color? textColor,
+    int? stackIndex,
+    String? originalId,
+    bool? isSummary,
+    bool? isTimeRangeHighlight,
+    bool? isOverlapIndicator,
+    List<LegacyGanttTaskSegment>? segments,
+    Widget Function(DateTime cellDate)? cellBuilder,
+  }) => LegacyGanttTask(
+      id: id ?? this.id,
+      rowId: rowId ?? this.rowId,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      name: name ?? this.name,
+      color: color ?? this.color,
+      textColor: textColor ?? this.textColor,
+      stackIndex: stackIndex ?? this.stackIndex,
+      originalId: originalId ?? this.originalId,
+      isSummary: isSummary ?? this.isSummary,
+      isTimeRangeHighlight: isTimeRangeHighlight ?? this.isTimeRangeHighlight,
+      isOverlapIndicator: isOverlapIndicator ?? this.isOverlapIndicator,
+      segments: segments ?? this.segments,
+      cellBuilder: cellBuilder ?? this.cellBuilder,
+    );
 }

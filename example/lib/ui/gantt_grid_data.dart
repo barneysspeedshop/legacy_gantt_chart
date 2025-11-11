@@ -24,7 +24,24 @@ class GanttGridData {
         id: job.id,
         name: job.name,
         isParent: false,
-        taskName: job.taskName,
+        taskName: job.taskName ?? job.name,
         completion: job.completion,
+      );
+
+  GanttGridData copyWith({
+    String? id,
+    String? name,
+    bool? isParent,
+    String? taskName,
+    double? completion,
+    List<GanttGridData>? children,
+    bool? isExpanded,
+  }) =>
+      GanttGridData(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        isParent: isParent ?? this.isParent,
+        children: children ?? this.children,
+        isExpanded: isExpanded ?? this.isExpanded,
       );
 }
