@@ -803,9 +803,8 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> editAllParentTasks(BuildContext context) async {
     // Get all parent rows that are currently acting as summaries.
     final parentRowIds = _gridData.where((g) => g.isParent).map((g) => g.id).toSet();
-    final parentSummaryTasks = _ganttTasks
-        .where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator)
-        .toList();
+    final parentSummaryTasks =
+        _ganttTasks.where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator).toList();
 
     if (parentSummaryTasks.isEmpty) return;
 
@@ -825,8 +824,7 @@ class GanttViewModel extends ChangeNotifier {
 
     final childRowIds = parentData.children.map((c) => c.id).toSet();
     final dependentTasks = _ganttTasks
-        .where((t) =>
-            childRowIds.contains(t.rowId) && !t.isSummary && !t.isTimeRangeHighlight && !t.isOverlapIndicator)
+        .where((t) => childRowIds.contains(t.rowId) && !t.isSummary && !t.isTimeRangeHighlight && !t.isOverlapIndicator)
         .toList();
 
     if (dependentTasks.isEmpty) return;
@@ -1190,41 +1188,42 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-      title: const Text('Edit Task'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Task Name'),
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Start:'),
-              TextButton(
-                  onPressed: () => _selectDateTime(context, true),
-                  child: Text(DateFormat.yMd().add_jm().format(_startDate)))
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('End:'),
-              TextButton(
-                  onPressed: () => _selectDateTime(context, false), child: Text(DateFormat.yMd().add_jm().format(_endDate)))
-            ],
-          ),
+        title: const Text('Edit Task'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Task Name'),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Start:'),
+                TextButton(
+                    onPressed: () => _selectDateTime(context, true),
+                    child: Text(DateFormat.yMd().add_jm().format(_startDate)))
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('End:'),
+                TextButton(
+                    onPressed: () => _selectDateTime(context, false),
+                    child: Text(DateFormat.yMd().add_jm().format(_endDate)))
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: _submit, child: const Text('Save')),
         ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: _submit, child: const Text('Save')),
-      ],
-    );
+      );
 }
 
 class _EditTasksInRowDialog extends StatefulWidget {
@@ -1288,7 +1287,8 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
     if (pickedTime == null) return;
 
     setState(() {
-      final newDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+      final newDateTime =
+          DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
       final index = _tasks.indexWhere((t) => t.id == task.id);
       if (index != -1) {
         var tempTask = _tasks[index];
@@ -1310,41 +1310,43 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-      title: const Text('Edit Tasks'),
-      scrollable: true,
-      content: SizedBox(
-        width: 500, // Give it a reasonable width
-        child: DataTable(
-          columnSpacing: 16,
-          columns: const [
-            DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Start', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-            DataColumn(label: Text('End', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-          ],
-          rows: _tasks.map((task) => DataRow(
-              cells: [
-                DataCell(
-                  Text(task.name ?? 'Unnamed Task', overflow: TextOverflow.ellipsis),
-                  onTap: () => _editName(task),
-                ),
-                DataCell(
-                  Text(DateFormat.yMd().add_jm().format(task.start)),
-                  onTap: () => _editDate(task, true),
-                ),
-                DataCell(
-                  Text(DateFormat.yMd().add_jm().format(task.end)),
-                  onTap: () => _editDate(task, false),
-                ),
-              ],
-            )).toList(),
+        title: const Text('Edit Tasks'),
+        scrollable: true,
+        content: SizedBox(
+          width: 500, // Give it a reasonable width
+          child: DataTable(
+            columnSpacing: 16,
+            columns: const [
+              DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+              DataColumn(label: Text('Start', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
+              DataColumn(label: Text('End', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
+            ],
+            rows: _tasks
+                .map((task) => DataRow(
+                      cells: [
+                        DataCell(
+                          Text(task.name ?? 'Unnamed Task', overflow: TextOverflow.ellipsis),
+                          onTap: () => _editName(task),
+                        ),
+                        DataCell(
+                          Text(DateFormat.yMd().add_jm().format(task.start)),
+                          onTap: () => _editDate(task, true),
+                        ),
+                        DataCell(
+                          Text(DateFormat.yMd().add_jm().format(task.end)),
+                          onTap: () => _editDate(task, false),
+                        ),
+                      ],
+                    ))
+                .toList(),
+          ),
         ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () => Navigator.pop(context, _tasks),
-          child: const Text('Save'),
-        ),
-      ],
-    );
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, _tasks),
+            child: const Text('Save'),
+          ),
+        ],
+      );
 }

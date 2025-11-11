@@ -146,7 +146,8 @@ class _GanttViewState extends State<GanttView> {
     // Make the new window 3 times the duration of the task for context.
     final newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
     // Center the window on the task.
-    final newStart = task.start.subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));
+    final newStart = task.start
+        .subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));
     final newEnd = newStart.add(newWindowDuration);
 
     _viewModel.onScrubberWindowChanged(newStart, newEnd);
@@ -528,7 +529,6 @@ class _GanttViewState extends State<GanttView> {
       ),
     );
   }
-
 
   // The root of the application uses a ChangeNotifierProvider to make the
   // GanttViewModel available to the entire widget tree below it. This allows

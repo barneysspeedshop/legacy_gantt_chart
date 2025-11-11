@@ -8,7 +8,6 @@ int? _colorToHex(Color? color) {
   return color.toARGB32();
 }
 
-
 /// Represents a single segment within a [LegacyGanttTask].
 @immutable
 class LegacyGanttTaskSegment {
@@ -154,20 +153,21 @@ class LegacyGanttTask {
     bool? isOverlapIndicator,
     List<LegacyGanttTaskSegment>? segments,
     Widget Function(DateTime cellDate)? cellBuilder,
-  }) => LegacyGanttTask(
-      id: id ?? this.id,
-      rowId: rowId ?? this.rowId,
-      start: start ?? this.start,
-      end: end ?? this.end,
-      name: name ?? this.name,
-      color: color ?? this.color,
-      textColor: textColor ?? this.textColor,
-      stackIndex: stackIndex ?? this.stackIndex,
-      originalId: originalId ?? this.originalId,
-      isSummary: isSummary ?? this.isSummary,
-      isTimeRangeHighlight: isTimeRangeHighlight ?? this.isTimeRangeHighlight,
-      isOverlapIndicator: isOverlapIndicator ?? this.isOverlapIndicator,
-      segments: segments ?? this.segments,
-      cellBuilder: cellBuilder ?? this.cellBuilder,
-    );
+  }) =>
+      LegacyGanttTask(
+        id: id ?? this.id,
+        rowId: rowId ?? this.rowId,
+        start: start ?? this.start,
+        end: end ?? this.end,
+        name: name ?? this.name,
+        color: color ?? this.color,
+        textColor: textColor ?? this.textColor,
+        stackIndex: stackIndex ?? this.stackIndex,
+        originalId: originalId ?? this.originalId,
+        isSummary: isSummary ?? this.isSummary,
+        isTimeRangeHighlight: isTimeRangeHighlight ?? this.isTimeRangeHighlight,
+        isOverlapIndicator: isOverlapIndicator ?? this.isOverlapIndicator,
+        segments: segments ?? this.segments,
+        cellBuilder: cellBuilder ?? this.cellBuilder,
+      );
 }

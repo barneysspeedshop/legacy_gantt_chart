@@ -243,8 +243,8 @@ class BarsCollectionPainter extends CustomPainter {
           );
 
           // We pass the task itself to check if it's a summary conflict.
-          final isSummaryConflict = data
-              .any((t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
+          final isSummaryConflict = data.any(
+              (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
 
           _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
         }
