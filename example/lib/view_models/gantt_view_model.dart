@@ -1112,7 +1112,7 @@ class GanttViewModel extends ChangeNotifier {
       case TimelineAxisFormat.dayOfWeek:
         return (date) => DateFormat.E(_selectedLocale).add_jm().format(date);
       case TimelineAxisFormat.custom:
-      return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
+        return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
     }
   }
 }
@@ -1391,16 +1391,16 @@ class _EditNameDialogState extends State<_EditNameDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-      key: const Key('editNameDialog'),
-      title: const Text('Edit Task Name'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        onSubmitted: (_) => _save(),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: _save, child: const Text('Save')),
-      ],
-    );
+        key: const Key('editNameDialog'),
+        title: const Text('Edit Task Name'),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          onSubmitted: (_) => _save(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: _save, child: const Text('Save')),
+        ],
+      );
 }

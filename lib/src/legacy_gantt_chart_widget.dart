@@ -663,8 +663,7 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
             else
               Align(
                 alignment: Alignment.centerLeft,
-                child: 
-                Padding(
+                child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Text(
                     task.name ?? '',

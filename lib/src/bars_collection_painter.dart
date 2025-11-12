@@ -226,8 +226,7 @@ class BarsCollectionPainter extends CustomPainter {
                   theme.barCornerRadius,
                 );
                 final progressPaint = Paint()
-                  ..color = (task.color ?? theme.barColorSecondary)
-                      .withValues(alpha: isBeingDragged ? 0.5 : 1.0);
+                  ..color = (task.color ?? theme.barColorSecondary).withValues(alpha: isBeingDragged ? 0.5 : 1.0);
                 canvas.drawRRect(progressRRect, progressPaint);
               }
             }

@@ -721,8 +721,7 @@ class _GanttViewState extends State<GanttView> {
                                                                 const SizedBox(width: 4),
                                                                 Expanded(
                                                                   child: Text(
-                                                                    task.name ??   
-                                                                    '',
+                                                                    task.name ?? '',
                                                                     style: textStyle,
                                                                     overflow: TextOverflow.ellipsis,
                                                                     softWrap: false,
