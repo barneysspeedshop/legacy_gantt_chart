@@ -152,5 +152,36 @@ void main() {
 
       viewModel.onPanEnd(DragEndDetails());
     });
+
+    test('onPanUpdate with resizeStart and minor vertical drift still resizes', () {
+      final task1StartX = viewModel.totalScale(tasks[0].start);
+      final task1CenterY = viewModel.timeAxisHeight + viewModel.rowHeight / 2;
+
+      // Start pan on the start handle
+      viewModel.onPanStart(DragStartDetails(
+        globalPosition: Offset(task1StartX + 2, task1CenterY),
+        localPosition: Offset(task1StartX + 2, task1CenterY),
+      ));
+
+      // Pan horizontally with a small vertical drift
+      viewModel.onPanUpdate(DragUpdateDetails(
+        globalPosition: Offset(task1StartX + 12, task1CenterY + 5),
+        delta: const Offset(10, 5), // dx > dy
+      ));
+
+      // With the fix, this should be treated as a horizontal pan
+      expect(viewModel.draggedTask, isNotNull, reason: 'Dragged task should not be null');
+      expect(viewModel.ghostTaskStart, isNotNull);
+      expect(viewModel.ghostTaskEnd, tasks[0].end, reason: 'End of task should not change on resizeStart');
+
+      final totalDomainDurationMs =
+          viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
+      final durationMs = (10 / 1000) * totalDomainDurationMs;
+      final durationDelta = Duration(milliseconds: durationMs.round());
+
+      expect(viewModel.ghostTaskStart, tasks[0].start.add(durationDelta));
+
+      viewModel.onPanEnd(DragEndDetails());
+    });
   });
 }

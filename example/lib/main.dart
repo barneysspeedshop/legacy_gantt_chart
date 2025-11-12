@@ -468,6 +468,7 @@ class _GanttViewState extends State<GanttView> {
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
+          key: const Key('noDataExportDialog'),
           title: const Text('Error'),
           content: const Text('No data available to export.'),
           actions: [
@@ -502,6 +503,7 @@ class _GanttViewState extends State<GanttView> {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
+        key: const Key('jsonExportDialog'),
         title: const Text('Gantt Tasks JSON Export'),
         content: SizedBox(
           width: 600,
@@ -719,7 +721,8 @@ class _GanttViewState extends State<GanttView> {
                                                                 const SizedBox(width: 4),
                                                                 Expanded(
                                                                   child: Text(
-                                                                    task.name ?? '',
+                                                                    task.name ??   
+                                                                    '',
                                                                     style: textStyle,
                                                                     overflow: TextOverflow.ellipsis,
                                                                     softWrap: false,
@@ -931,6 +934,7 @@ class _DependencyManagerDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        key: const Key('dependencyManagerDialog'),
         title: Text(title),
         content: SizedBox(
           width: double.maxFinite,
@@ -1067,6 +1071,7 @@ class _CreateTaskAlertDialogState extends State<_CreateTaskAlertDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        key: const Key('createTaskDialog'),
         title: Text('Create Task for ${widget.resourceName}'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(

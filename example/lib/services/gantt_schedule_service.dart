@@ -65,6 +65,10 @@ class GanttScheduleService {
 
     // 1. Create a map of all events for quick lookup
     final eventMap = {for (var event in apiResponse.eventsData) event.id: event};
+    final jobMap = {
+      for (var resource in apiResponse.resourcesData)
+        for (var job in resource.children) job.id: job
+    };
 
     // 2. Identify top-level person resource IDs
     final parentResourceIds = apiResponse.resourcesData.map((r) => r.id).toSet();
@@ -80,6 +84,7 @@ class GanttScheduleService {
       if (event != null && event.utcStartDate != null && event.utcEndDate != null && !isParentAssignment) {
         final colorHex = event.referenceData?.taskColor;
         final textColorHex = event.referenceData?.taskTextColor;
+        final job = jobMap[assignment.resource];
 
         fetchedTasks.add(LegacyGanttTask(
           id: assignment.id,
@@ -90,11 +95,11 @@ class GanttScheduleService {
           color: _parseColorHex(colorHex != null ? '#$colorHex' : null, Colors.blue),
           textColor: _parseColorHex(textColorHex != null ? '#$textColorHex' : null, Colors.white),
           originalId: event.id,
-          isSummary: false, // These are always child tasks
+          isSummary: false,
+          completion: job?.completion ?? 0.0,
         ));
       }
     }
-
     // Create summary tasks for each parent resource based on the span of its children's tasks.
     for (final resource in apiResponse.resourcesData) {
       final childRowIds = resource.children.map((child) => child.id).toSet();

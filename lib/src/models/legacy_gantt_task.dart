@@ -59,6 +59,7 @@ class LegacyGanttTask {
   final bool isSummary;
   final bool isTimeRangeHighlight;
   final bool isOverlapIndicator;
+  final double completion;
   final List<LegacyGanttTaskSegment>? segments;
 
   /// A builder to create a custom widget for each day cell this task spans.
@@ -78,6 +79,7 @@ class LegacyGanttTask {
     this.isSummary = false,
     this.isTimeRangeHighlight = false,
     this.isOverlapIndicator = false,
+    this.completion = 0.0,
     this.segments,
     this.cellBuilder,
   });
@@ -95,6 +97,7 @@ class LegacyGanttTask {
         'isSummary': isSummary,
         'isTimeRangeHighlight': isTimeRangeHighlight,
         'isOverlapIndicator': isOverlapIndicator,
+        'completion': completion,
         'segments': segments?.map((s) => s.toJson()).toList(),
         // Note: copyWith does not support functions, so cellBuilder is not included here.
         // cellBuilder is a function and cannot be serialized to JSON.
@@ -118,6 +121,7 @@ class LegacyGanttTask {
           isSummary == other.isSummary &&
           isTimeRangeHighlight == other.isTimeRangeHighlight &&
           isOverlapIndicator == other.isOverlapIndicator &&
+          completion == other.completion &&
           listEquals(segments, other.segments) &&
           cellBuilder == other.cellBuilder;
 
@@ -135,6 +139,7 @@ class LegacyGanttTask {
       isSummary.hashCode ^
       isTimeRangeHighlight.hashCode ^
       isOverlapIndicator.hashCode ^
+      completion.hashCode ^
       Object.hashAll(segments ?? []) ^
       cellBuilder.hashCode;
 
@@ -151,6 +156,7 @@ class LegacyGanttTask {
     bool? isSummary,
     bool? isTimeRangeHighlight,
     bool? isOverlapIndicator,
+    double? completion,
     List<LegacyGanttTaskSegment>? segments,
     Widget Function(DateTime cellDate)? cellBuilder,
   }) =>
@@ -167,6 +173,7 @@ class LegacyGanttTask {
         isSummary: isSummary ?? this.isSummary,
         isTimeRangeHighlight: isTimeRangeHighlight ?? this.isTimeRangeHighlight,
         isOverlapIndicator: isOverlapIndicator ?? this.isOverlapIndicator,
+        completion: completion ?? this.completion,
         segments: segments ?? this.segments,
         cellBuilder: cellBuilder ?? this.cellBuilder,
       );
