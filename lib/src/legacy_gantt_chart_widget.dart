@@ -652,7 +652,7 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
       onExit: (_) => setState(() => _isHovered = false),
       child: Container(
         decoration: BoxDecoration(
-          color: task.color ?? theme.barColorPrimary,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(4.0),
         ),
         child: Stack(
@@ -714,19 +714,28 @@ class _OverlapPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final barHeight = size.height * theme.barHeightRatio;
     final barVerticalCenterOffset = (size.height - barHeight) / 2;
-    final rect = Rect.fromLTWH(0, barVerticalCenterOffset, size.width, barHeight);
-    final rrect = RRect.fromRectAndRadius(rect, theme.barCornerRadius);
+    final fullRect = Rect.fromLTWH(0, barVerticalCenterOffset, size.width, barHeight);
+
+    // Deflate the indicator to only show on the bottom 30% of the bar
+    final indicatorHeight = fullRect.height * 0.4;
+    final indicatorRect = Rect.fromLTWH(
+      fullRect.left,
+      fullRect.bottom - indicatorHeight,
+      fullRect.width,
+      indicatorHeight,
+    );
+    final indicatorRRect = RRect.fromRectAndRadius(indicatorRect, theme.barCornerRadius);
 
     // To ensure the conflict pattern is clear and not blended with underlying bars,
     // we first "erase" the area by drawing a solid block of the chart's background color.
-    canvas.drawRRect(rrect, Paint()..color = theme.backgroundColor);
+    canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
 
     // Next, draw the semi-transparent red background for the conflict area.
     final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
-    canvas.drawRRect(rrect, backgroundPaint);
+    canvas.drawRRect(indicatorRRect, backgroundPaint);
 
     // Then, draw the angled lines on top of that new background.
-    _drawAngledPattern(canvas, rrect, theme.conflictBarColor, 1.0);
+    _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
   }
 
   void _drawAngledPattern(Canvas canvas, RRect rrect, Color color, double strokeWidth) {

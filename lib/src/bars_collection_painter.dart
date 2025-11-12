@@ -217,6 +217,20 @@ class BarsCollectionPainter extends CustomPainter {
               ..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.3 : 1.0);
             canvas.drawRRect(barRRect, barPaint);
 
+            // Draw completion progress
+            if (task.completion > 0.0) {
+              final double progressWidth = barRRect.width * task.completion.clamp(0.0, 1.0);
+              if (progressWidth > 0) {
+                final RRect progressRRect = RRect.fromRectAndRadius(
+                  Rect.fromLTWH(barRRect.left, barRRect.top, progressWidth, barRRect.height),
+                  theme.barCornerRadius,
+                );
+                final progressPaint = Paint()
+                  ..color = (task.color ?? theme.barColorSecondary).withValues(alpha: isBeingDragged ? 0.5 : 1.0);
+                canvas.drawRRect(progressRRect, progressPaint);
+              }
+            }
+
             // Draw summary pattern if needed
             if (task.isSummary) {
               _drawSummaryPattern(canvas, barRRect);
@@ -275,6 +289,20 @@ class BarsCollectionPainter extends CustomPainter {
 
           // --- Draw Text ---
           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
+            // A task is in conflict if there is an overlap indicator that shares the same row,
+            // stack index, and has an overlapping time range.
+            final bool isInConflict = data.any((indicator) =>
+                indicator.isOverlapIndicator &&
+                indicator.rowId == task.rowId &&
+                indicator.stackIndex == task.stackIndex &&
+                // Check for time overlap
+                indicator.start.isBefore(task.end) &&
+                indicator.end.isAfter(task.start));
+
+            if (isInConflict) {
+              continue; // Skip drawing text for conflicted tasks
+            }
+
             final double overallWidth = max(0, taskEndX - taskStartX);
             final textSpan = TextSpan(text: task.name, style: theme.taskTextStyle);
             final textPainter = TextPainter(
@@ -386,10 +414,11 @@ class BarsCollectionPainter extends CustomPainter {
     // To ensure the conflict pattern is clear and not blended with underlying bars,
     // we no longer erase the background. Instead, we draw a semi-transparent overlay.
 
+    // Deflate the indicator to only show on the bottom 30% of the bar
+
     // Next, draw the semi-transparent red background for the conflict area.
-    final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
-    canvas.drawRRect(rrect, backgroundPaint);
-    _drawAngledPattern(canvas, rrect, theme.conflictBarColor.withValues(alpha: 0.85), 1.0);
+    // canvas.drawRRect(indicatorRRect, backgroundPaint);
+    // _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor.withValues(alpha: 0.85), 1.0);
   }
 
   void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged) {

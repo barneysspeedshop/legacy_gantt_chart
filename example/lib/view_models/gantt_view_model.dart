@@ -596,6 +596,7 @@ class GanttViewModel extends ChangeNotifier {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
+        key: const Key('textInputDialog'),
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -877,24 +878,19 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Shows the dialog to edit a specific task's start and end times.
   Future<void> _editTask(BuildContext context, LegacyGanttTask task) async {
-    final updatedTaskData = await showDialog<({String name, DateTime start, DateTime end})>(
+    final updatedTaskData = await showDialog<({String name, DateTime start, DateTime end, double completion})>(
       context: context,
       builder: (context) => _EditTaskAlertDialog(task: task),
     );
 
     if (updatedTaskData != null) {
-      final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
-      final index = newTasks.indexWhere((t) => t.id == task.id);
-      if (index != -1) {
-        newTasks[index] = newTasks[index].copyWith(
-          name: updatedTaskData.name,
-          start: updatedTaskData.start,
-          end: updatedTaskData.end,
-        );
-        final (recalculatedTasks, newMaxDepth) =
-            _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-        _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
-      }
+      final updatedTask = task.copyWith(
+        name: updatedTaskData.name,
+        start: updatedTaskData.start,
+        end: updatedTaskData.end,
+        completion: updatedTaskData.completion,
+      );
+      await _updateMultipleTasks([updatedTask]);
     }
   }
 
@@ -912,6 +908,7 @@ class GanttViewModel extends ChangeNotifier {
           name: updatedTask.name,
           start: updatedTask.start,
           end: updatedTask.end,
+          completion: updatedTask.completion,
         );
 
         // Update the underlying GanttJobData in the API response to persist changes.
@@ -921,7 +918,11 @@ class GanttViewModel extends ChangeNotifier {
           final jobIndex = parentResource.children.indexWhere((j) => j.id == originalTask.rowId);
           if (jobIndex != -1) {
             final oldJob = parentResource.children[jobIndex];
-            parentResource.children[jobIndex] = oldJob.copyWith(name: updatedTask.name, taskName: updatedTask.name);
+            parentResource.children[jobIndex] = oldJob.copyWith(
+              name: updatedTask.name,
+              taskName: updatedTask.name,
+              completion: updatedTask.completion,
+            );
           }
         }
       }
@@ -1129,6 +1130,7 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
   late final TextEditingController _nameController;
   late DateTime _startDate;
   late DateTime _endDate;
+  late double _completion;
 
   @override
   void initState() {
@@ -1136,6 +1138,7 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
     _nameController = TextEditingController(text: widget.task.name);
     _startDate = widget.task.start;
     _endDate = widget.task.end;
+    _completion = widget.task.completion;
   }
 
   @override
@@ -1146,7 +1149,7 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
 
   void _submit() {
     if (_nameController.text.isNotEmpty) {
-      Navigator.pop(context, (name: _nameController.text, start: _startDate, end: _endDate));
+      Navigator.pop(context, (name: _nameController.text, start: _startDate, end: _endDate, completion: _completion));
     }
   }
 
@@ -1188,6 +1191,7 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        key: const Key('editTaskDialog'),
         title: const Text('Edit Task'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1215,6 +1219,21 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
                 TextButton(
                     onPressed: () => _selectDateTime(context, false),
                     child: Text(DateFormat.yMd().add_jm().format(_endDate)))
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Completion:'),
+                Expanded(
+                  child: Slider(
+                    value: _completion,
+                    onChanged: (value) => setState(() => _completion = value),
+                    label: '${(_completion * 100).round()}%',
+                    divisions: 100,
+                  ),
+                ),
+                Text('${(_completion * 100).round()}%'),
               ],
             ),
           ],
@@ -1246,21 +1265,9 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
   }
 
   Future<void> _editName(LegacyGanttTask task) async {
-    final controller = TextEditingController(text: task.name);
     final newName = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Task Name'),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty) Navigator.pop(context, controller.text);
-              },
-              child: const Text('Save')),
-        ],
-      ),
+      builder: (context) => _EditNameDialog(initialName: task.name),
     );
 
     if (newName != null && newName.isNotEmpty) {
@@ -1310,6 +1317,7 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        key: const Key('editTasksInRowDialog'),
         title: const Text('Edit Tasks'),
         scrollable: true,
         content: SizedBox(
@@ -1347,6 +1355,52 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
             onPressed: () => Navigator.pop(context, _tasks),
             child: const Text('Save'),
           ),
+        ],
+      );
+}
+
+class _EditNameDialog extends StatefulWidget {
+  final String? initialName;
+
+  const _EditNameDialog({this.initialName});
+
+  @override
+  State<_EditNameDialog> createState() => _EditNameDialogState();
+}
+
+class _EditNameDialogState extends State<_EditNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (_controller.text.trim().isNotEmpty) {
+      Navigator.pop(context, _controller.text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        key: const Key('editNameDialog'),
+        title: const Text('Edit Task Name'),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          onSubmitted: (_) => _save(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: _save, child: const Text('Save')),
         ],
       );
 }

@@ -1,3 +1,7 @@
+## 2.3.4
+
+* **EXAMPLE FEATURE**: Updated the example application for better UX and bug fixes.
+
 ## 2.3.3
 
 * **EXAMPLE FEATURE**: Updated the example appliaction to add some bug fixes and additional functionalities for better UX and stability.
