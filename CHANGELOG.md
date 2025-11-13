@@ -1,3 +1,7 @@
+## 2.3.5
+
+* **DOC**: Improve in-code documentation for the example, and overall documentation for the project
+
 ## 2.3.4
 
 * **EXAMPLE FEATURE**: Updated the example application for better UX and bug fixes.

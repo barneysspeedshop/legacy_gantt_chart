@@ -1,70 +1,101 @@
-# Internal Utilities
+# Gemini Code Generation Documentation
 
-This document outlines some of the core internal utility functions and logic used throughout the Gantt chart package. These functions are not part of the public API but are crucial for rendering and interaction.
+This document provides a detailed overview of the core components within the `lib/src/` directory, which form the foundation of the Gantt chart functionality.
 
-## Painting Utilities (`bars_collection_painter.dart`)
+## Core Components
 
-The `BarsCollectionPainter` uses several helper methods to draw complex patterns on the canvas efficiently.
+### `legacy_gantt_chart_widget.dart`
 
-### `_drawAngledPattern`
+This is the main entry point for rendering the Gantt chart. It's a `StatefulWidget` that orchestrates the entire UI, bringing together data, state management, and rendering.
 
-This is a generic helper function responsible for drawing repeating diagonal lines within a given rounded rectangle (`RRect`). It's the foundation for both summary and conflict bar styles.
+-   **Data Handling**: It is designed to be flexible in how it receives data:
+    1.  **Static Data**: A simple `List<LegacyGanttTask>` for displaying a fixed set of tasks.
+    2.  **Asynchronous Loading**: A `Future<List<LegacyGanttTask>>` to display a loading indicator while tasks are fetched, and then render them once available. It uses a `FutureBuilder` for this.
+    3.  **Dynamic Control**: A `LegacyGanttController` for advanced use cases where data needs to be fetched dynamically as the user scrolls or when the visible date range changes. It uses an `AnimatedBuilder` to listen to the controller and rebuild when data changes.
 
--   **Purpose:** To create a striped pattern.
--   **Usage:** It is called by `_drawSummaryPattern` and `_drawOverlapPattern`.
--   **How it works:**
-    1.  It takes a `Canvas`, the target `RRect`, a `Color`, and a `strokeWidth`.
-    2.  It saves the canvas state and clips the drawing area to the provided `RRect` to ensure the pattern does not spill outside the bar's boundaries.
-    3.  It iterates from outside the left edge to beyond the right edge of the rectangle, drawing diagonal lines at a constant spacing (`lineSpacing`).
-    4.  Finally, it restores the canvas state.
+-   **UI Composition**:
+    -   It uses a `ChangeNotifierProvider` to create and provide the `LegacyGanttViewModel` to its descendants.
+    -   A `Consumer<LegacyGanttViewModel>` listens for state changes from the view model and rebuilds the chart accordingly.
+    -   The UI is built using a `Stack` that layers several components:
+        -   `CustomPaint` with `AxisPainter` for the background grid.
+        -   `CustomPaint` with `BarsCollectionPainter` for drawing the task bars and dependencies.
+        -   A series of `Positioned` widgets for custom task bar builders or other interactive elements.
+        -   A `CustomPaint` for the timeline header, also using `AxisPainter`.
 
-### `_drawSummaryPattern`
+-   **Key Customization Callbacks**:
+    -   `taskBarBuilder`: Allows for replacing the default task bar with a completely custom widget.
+    -   `taskContentBuilder`: Allows for injecting custom content *inside* the default task bar.
+    -   `timelineAxisHeaderBuilder`: Allows for replacing the entire timeline header with a custom widget.
+    -   `onTaskUpdate`: A crucial callback that is invoked when a task is moved or resized, providing the updated task information.
 
-Draws the visual indicator for a summary task.
+-   **Internal Widgets**:
+    -   `_DefaultTaskBar`: The default widget used to represent a task if no custom builder is provided.
+    -   `_OverlapIndicatorBar`: A widget that uses a `CustomPainter` (`_OverlapPainter`) to draw a special pattern indicating that too many tasks are overlapping in the same space.
 
--   **Purpose:** To visually distinguish summary bars from regular task bars.
--   **How it works:** It calls `_drawAngledPattern` with the `summaryBarColor` from the theme.
+### `legacy_gantt_view_model.dart`
 
-### `_drawOverlapPattern`
+This class is a `ChangeNotifier` and serves as the "brain" of the Gantt chart. It encapsulates all the state and business logic required for the chart to function.
 
-Draws the visual indicator for a task conflict or overlap.
+-   **State Management**: It holds the chart's state, including:
+    -   The calculated scales for converting between `DateTime` and pixel coordinates.
+    -   The current vertical scroll offset (`translateY`).
+    -   The state of any ongoing user interaction (e.g., `draggedTask`, `dragMode`).
+    -   The current mouse cursor style.
 
--   **Purpose:** To highlight areas where tasks are overlapping in a way that is not allowed (i.e., exceeding the `rowMaxStackDepth`).
--   **How it works:**
-    1.  It first draws a solid rectangle with the chart's `backgroundColor` to "erase" any content underneath it.
-    2.  It then draws a semi-transparent background using the `conflictBarColor`.
-    3.  Finally, it calls `_drawAngledPattern` with the `conflictBarColor` to draw the striped lines on top, creating a distinct warning pattern.
+-   **Interaction Logic**: It contains all the gesture handling logic:
+    -   `onPanStart`, `onPanUpdate`, `onPanEnd`: These methods work together to handle dragging. They determine if the user is performing a vertical scroll or a horizontal drag to move/resize a task.
+    -   `onTapUp`, `onDoubleTap`: Handle tap and double-tap events on tasks.
+    -   `onHover`: Manages hover effects, updates the mouse cursor, and shows/hides tooltips.
 
-## Coordinate & Date Conversion Utilities
+-   **Drag and Resize Operations**:
+    -   It defines a `DragMode` enum (`none`, `move`, `resizeStart`, `resizeEnd`) to track the current drag operation.
+    -   During a drag, it calculates a "ghost" task (`ghostTaskStart`, `ghostTaskEnd`) to show a preview of the task's new position.
+    -   It manages a resize/drag tooltip, updating its text and position as the user drags.
 
-### `dateToX` (`legacy_gantt_timeline_scrubber.dart`)
+-   **Coordinate System**:
+    -   `_calculateDomains`: This method calculates the `_totalScale` function, which is essential for mapping dates to the horizontal axis.
+    -   `_getTaskPartAtPosition`: A hit-testing method that determines which task (and which part of it: body, start handle, or end handle) is at a given screen position.
 
-A simple but critical function within the `_ScrubberPainter` that converts a `DateTime` object into a horizontal (X-axis) pixel coordinate.
+### `legacy_gantt_controller.dart`
 
--   **Purpose:** To position the timeline scrubber's window and task highlights correctly.
--   **How it works:** It calculates the percentage of time that has passed from the `totalStartDate` to the given `date` and multiplies that by the total available width of the scrubber widget.
+This controller provides an API for programmatically managing the Gantt chart from outside the widget. It's essential for building more complex applications where other UI elements need to interact with the chart.
 
-### `vm.totalScale` (`legacy_gantt_view_model.dart` via `legacy_gantt_chart_widget.dart`)
+-   **External Control**:
+    -   `setVisibleRange`: Allows you to programmatically set the visible start and end dates of the chart.
+    -   `next()` and `prev()`: Convenience methods for paging the timeline forward or backward.
+    -   `setTasks`, `setHolidays`, `setDependencies`: Methods to manually update the data displayed on the chart.
 
-While not a standalone function, the `totalScale` function object within the `LegacyGanttViewModel` is the primary utility for date-to-pixel conversion in the main chart view.
+-   **Dynamic Data Fetching**:
+    -   The controller can be constructed with `tasksAsync` and `holidaysAsync` callback functions.
+    -   When `setVisibleRange` is called (or `next`/`prev`), the controller invokes these callbacks with the new date range.
+    -   It manages the loading state (`isLoading`, `isHolidayLoading`) and notifies the `LegacyGanttChartWidget` to rebuild and display a loading indicator.
 
--   **Purpose:** To convert any `DateTime` into an X-coordinate for positioning grid lines, bars, and other elements on the main Gantt chart canvas.
--   **How it works:** The view model creates a linear scale that maps a domain (the total time range from `totalGridMin` to `totalGridMax`) to a range (the pixel width of the chart). The `totalScale(date)` function then returns the corresponding pixel value.
+### `axis_painter.dart`
 
-## Widget Building Utilities (`legacy_gantt_chart_widget.dart`)
+A `CustomPainter` dedicated to drawing the time axis and the background grid lines.
 
-The main widget uses helper methods to build lists of `Positioned` widgets when custom builders are provided.
+-   **Dynamic Ticks**: Its core logic is to determine the appropriate interval for tick marks (e.g., every day, every 2 hours, every 15 minutes) based on the duration of the visible time range (`visibleDuration`). This ensures the timeline is always readable, no matter the zoom level.
+-   **Label Formatting**: It uses the `intl` package to format the labels for the tick marks appropriately for the chosen interval.
+-   **`shouldRepaint`**: The repaint logic is optimized to only trigger a repaint when necessary, such as when the theme, scale, or visible domain changes.
 
-### `_buildCustomTaskWidgets`
+### `bars_collection_painter.dart`
 
--   **Purpose:** To render custom widgets for each task when a `taskBarBuilder` or `taskContentBuilder` is provided.
--   **How it works:** It iterates through all visible tasks, calculates their position (`left`, `top`) and size (`width`, `height`) using the view model's `totalScale` and row layout information, and creates a `Positioned` widget for each one, using the provided builder function to create the child.
+A highly optimized `CustomPainter` responsible for drawing all the visual elements within the main chart area, including tasks, dependencies, and highlights.
 
-### `_buildCustomCellWidgets`
+-   **Efficient Rendering**: It is designed to draw a large number of items in a single paint cycle for optimal performance. It iterates through the visible rows and tasks, drawing them directly onto the canvas.
+-   **Painting Order**: It follows a specific painting order to ensure correct layering:
+    1.  Dependency backgrounds (for "contained" dependencies).
+    2.  Empty space highlights (for creating new tasks).
+    3.  Time range highlight bars (e.g., holidays).
+    4.  Regular task bars (and their segments, progress, and summary patterns).
+    5.  Conflict indicators.
+    6.  Dependency lines between tasks.
+    7.  The "ghost" bar for the task currently being dragged.
+-   **Customization Hooks**: It checks `hasCustomTaskBuilder` and `hasCustomTaskContentBuilder` to know whether it should skip drawing the default bars or their content, deferring to the widget layer.
+-   **Helper Methods**: It contains numerous private helper methods (`_drawSummaryPattern`, `_drawConflictIndicator`, `_drawFinishToStartDependency`, etc.) that encapsulate the drawing logic for specific elements.
 
--   **Purpose:** To render custom widgets for each day within a task's date range when a `cellBuilder` is provided on a `LegacyGanttTask`.
--   **How it works:**
-    1.  It iterates through tasks that have a `cellBuilder`.
-    2.  For each task, it then iterates through each day from the task's start to its end.
-    3.  For each day, it calculates the precise start and end coordinates for that day's segment within the task bar.
-    4.  It creates a `Positioned` widget for that daily segment, using the `cellBuilder` to generate the content. This allows for day-by-day customization within a single task bar.
+## Subdirectories
+
+-   **`models/`**: Contains all the data model classes used by the Gantt chart, such as `LegacyGanttTask`, `LegacyGanttRow`, `LegacyGanttDependency`, and `LegacyGanttTheme`. These classes define the structure of the data that the chart displays.
+-   **`utils/`**: Contains utility functions and helper classes.
+-   **`widgets/`**: Contains smaller, reusable Flutter widgets that are part of the Gantt chart's UI, but are not custom painters.
