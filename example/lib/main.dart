@@ -21,6 +21,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Legacy Gantt Chart Example',
+        // The localizations delegates and supported locales are required for the
+        // `intl` package, which is used for formatting dates and times.
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -38,6 +40,7 @@ class MyApp extends StatelessWidget {
             brightness: Brightness.light,
           ),
         ),
+        // The Gantt chart supports dark mode out of the box.
         darkTheme: ThemeData.from(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
         ),
@@ -46,6 +49,7 @@ class MyApp extends StatelessWidget {
       );
 }
 
+// The main view for the Gantt chart example application.
 class GanttView extends StatefulWidget {
   const GanttView({super.key});
 
@@ -53,6 +57,7 @@ class GanttView extends StatefulWidget {
   State<GanttView> createState() => _GanttViewState();
 }
 
+// An enum to manage the different timeline label formats demonstrated in the example.
 enum TimelineAxisFormat {
   dayOfMonth,
   dayAndMonth,
@@ -79,6 +84,12 @@ class _GanttViewState extends State<GanttView> {
     super.dispose();
   }
 
+  /// Builds a [LegacyGanttTheme] based on the current application theme and the
+  /// selected theme preset from the control panel.
+  ///
+  /// This demonstrates how to create custom themes for the Gantt chart. You can
+  /// start with `LegacyGanttTheme.fromTheme(Theme.of(context))` to get a baseline
+  /// theme that matches your app's color scheme and then use `copyWith` to override specific colors or styles.
   LegacyGanttTheme _buildGanttTheme() {
     final baseTheme = LegacyGanttTheme.fromTheme(Theme.of(context));
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -126,6 +137,8 @@ class _GanttViewState extends State<GanttView> {
     }
   }
 
+  // --- Context Menu and Dialog Handlers ---
+
   void _handleCopyTask(LegacyGanttTask task) {
     _viewModel.handleCopyTask(task);
     _showSnackbar('Copied task: ${task.name}');
@@ -141,6 +154,8 @@ class _GanttViewState extends State<GanttView> {
     _showSnackbar('Cleared all dependencies for ${task.name}');
   }
 
+  /// A handler that demonstrates how to programmatically change the visible
+  /// window of the Gantt chart to focus on a specific task.
   void _handleSnapToTask(LegacyGanttTask task) {
     final taskDuration = task.end.difference(task.start);
     // Make the new window 3 times the duration of the task for context.
@@ -154,6 +169,7 @@ class _GanttViewState extends State<GanttView> {
     _showSnackbar('Snapped to task: ${task.name}');
   }
 
+  /// Shows a dialog that lists all dependencies for a given task and allows the user to remove one.
   Future<void> _showDependencyRemover(BuildContext context, LegacyGanttTask task) async {
     final dependencies = _viewModel.getDependenciesForTask(task);
 
@@ -177,12 +193,19 @@ class _GanttViewState extends State<GanttView> {
         SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
 
+  /// Shows a context menu at the given position for a specific task.
+  /// This example uses the `legacy_context_menu` package.
   void _showTaskContextMenu(BuildContext context, LegacyGanttTask task, Offset tapPosition) => showContextMenu(
         context: context,
         menuItems: _buildTaskContextMenuItems(context, task),
         tapPosition: tapPosition,
       );
 
+  /// Builds the list of [ContextMenuItem]s for a task.
+  ///
+  /// This demonstrates how to build a dynamic context menu that allows for
+  // creating and removing dependencies by interacting with the view model.
+  /// The submenus for adding predecessors/successors are populated with tasks that are valid dependency targets.
   List<ContextMenuItem> _buildTaskContextMenuItems(BuildContext context, LegacyGanttTask task) {
     final dependencies = _viewModel.getDependenciesForTask(task);
     final availableTasks = _viewModel.getValidDependencyTasks(task);
@@ -248,6 +271,13 @@ class _GanttViewState extends State<GanttView> {
     ];
   }
 
+  // --- Gantt Chart Customization Builders ---
+
+  /// Returns a builder function for the timeline axis labels based on the
+  /// format selected in the control panel.
+  ///
+  /// This demonstrates the `timelineAxisLabelBuilder` property, which gives you
+  /// full control over how labels on the timeline are formatted.
   String Function(DateTime, Duration)? _getTimelineAxisLabelBuilder() {
     if (_selectedAxisFormat == TimelineAxisFormat.custom) return null;
 
@@ -265,6 +295,14 @@ class _GanttViewState extends State<GanttView> {
     }
   }
 
+  /// A builder function for a completely custom timeline header.
+  ///
+  /// This is passed to the `timelineAxisHeaderBuilder` property. It receives
+  /// everything it needs to draw a custom header, including the scale function,
+  /// visible and total date domains, and the current theme.
+  ///
+  /// In this example, it uses a `CustomPaint` with a `_CustomHeaderPainter` to
+  /// draw a two-tiered header with months on top and days on the bottom.
   Widget _buildCustomTimelineHeader(BuildContext context, double Function(DateTime) scale, List<DateTime> visibleDomain,
           List<DateTime> totalDomain, LegacyGanttTheme theme, double totalContentWidth) =>
       CustomPaint(
@@ -278,11 +316,17 @@ class _GanttViewState extends State<GanttView> {
         ),
       );
 
+  /// Returns a date formatting function for the resize tooltip.
+  ///
+  /// This demonstrates the `resizeTooltipDateFormat` property, allowing you to
+  /// control the format of the date/time displayed in the tooltip that appears
+  /// when a user is resizing a task.
   String Function(DateTime) _getResizeTooltipDateFormat() =>
       // Always return a full date and time format, honoring the selected locale.
       (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
 
-  Widget _buildControlPanel(BuildContext context, GanttViewModel vm, bool isDarkMode) => Container(
+  /// Builds the control panel on the left side of the screen.
+  Widget _buildControlPanel(BuildContext context, GanttViewModel vm) => Container(
         width: vm.controlPanelWidth ?? 350,
         color: Theme.of(context).cardColor,
         child: ListView(
@@ -351,6 +395,8 @@ class _GanttViewState extends State<GanttView> {
             ),
             const Divider(height: 24),
             Text('Features', style: Theme.of(context).textTheme.titleMedium),
+            // These switches demonstrate how to toggle the interactive features
+            // of the Gantt chart by changing the boolean properties on the widget.
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -404,6 +450,7 @@ class _GanttViewState extends State<GanttView> {
             ),
             const Divider(height: 24),
             Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
+            // This dropdown demonstrates how to control the width of the resize handles on tasks.
             Row(
               children: [
                 const Expanded(child: Text('Resize Handle Width:')),
@@ -418,6 +465,8 @@ class _GanttViewState extends State<GanttView> {
             ),
             const Divider(height: 24),
             Text('Timeline Label Format', style: Theme.of(context).textTheme.titleMedium),
+            // This segmented button controls which label format is used for the timeline,
+            // demonstrating the `timelineAxisLabelBuilder` and `timelineAxisHeaderBuilder` properties.
             const SizedBox(height: 8),
             SegmentedButton<TimelineAxisFormat>(
               multiSelectionEnabled: false,
@@ -437,6 +486,8 @@ class _GanttViewState extends State<GanttView> {
             ),
             const Divider(height: 24),
             Text('Locale', style: Theme.of(context).textTheme.titleMedium),
+            // This demonstrates how changing the locale affects date formatting
+            // throughout the chart, powered by the `intl` package.
             const SizedBox(height: 8),
             SegmentedButton<String>(
               multiSelectionEnabled: false,
@@ -460,8 +511,10 @@ class _GanttViewState extends State<GanttView> {
         ),
       );
 
+  /// Shows a dialog with the current Gantt data exported as a JSON string.
+  /// This demonstrates how you might extract the data from the chart for saving or sharing.
   void _showJsonExportDialog(GanttViewModel vm) {
-    // This function now correctly builds the JSON structure you specified.
+    // This function builds the JSON structure from the original API response data.
     final apiResponse = vm.apiResponse;
     if (apiResponse == null) {
       // Handle case where data hasn't been loaded yet.
@@ -561,7 +614,7 @@ class _GanttViewState extends State<GanttView> {
                   if (_isPanelVisible)
                     SizedBox(
                       width: vm.controlPanelWidth ?? 350,
-                      child: _buildControlPanel(context, vm, isDarkMode), // This was _buildControlPanelOld
+                      child: _buildControlPanel(context, vm),
                     ),
                   if (_isPanelVisible)
                     GestureDetector(
@@ -590,6 +643,9 @@ class _GanttViewState extends State<GanttView> {
                         return Row(
                           children: [
                             // Gantt Grid (Left Side)
+                            // This is a custom widget for this example app that shows a data grid.
+                            // It is synchronized with the Gantt chart via a shared ScrollController.
+                            // This is a common pattern for building a complete Gantt chart UI.
                             SizedBox(
                               width: vm.gridWidth ?? constraints.maxWidth * 0.4,
                               child: GanttGrid(
@@ -646,21 +702,34 @@ class _GanttViewState extends State<GanttView> {
                                             width: ganttWidth,
                                             height: chartConstraints.maxHeight, // Constraints from LayoutBuilder
                                             child: LegacyGanttChartWidget(
+                                              // --- Custom Builders ---
                                               timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
                                               timelineAxisHeaderBuilder:
                                                   _selectedAxisFormat == TimelineAxisFormat.custom
                                                       ? _buildCustomTimelineHeader
                                                       : null,
-                                              scrollController: vm.scrollController, // Link to grid scroll controller
+
+                                              // --- Data and Layout ---
                                               data: vm.ganttTasks,
                                               dependencies: vm.dependencies,
                                               visibleRows: vm.visibleGanttRows,
                                               rowHeight: 27.0,
                                               rowMaxStackDepth: vm.rowMaxStackDepth,
+                                              // The axis height is adjusted based on whether we are using the
+                                              // default single-line header or the custom two-line header.
                                               axisHeight:
                                                   _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+
+                                              // --- Scroll Controllers and Syncing ---
+                                              // This is the key to synchronizing the vertical scroll between the
+                                              // left-side grid and the right-side chart.
+                                              scrollController: vm.scrollController,
+
+                                              // --- Date Range ---
+                                              // These define the currently visible time window.
                                               gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
                                               gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
+                                              // These define the total scrollable time range.
                                               totalGridMin:
                                                   vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
                                               totalGridMax: vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
@@ -673,16 +742,24 @@ class _GanttViewState extends State<GanttView> {
                                               onTaskDoubleClick: (task) {
                                                 _handleSnapToTask(task);
                                               },
+                                              // This callback is triggered when a user clicks on an empty space,
+                                              // allowing for the creation of new tasks.
                                               onEmptySpaceClick: (rowId, time) =>
                                                   vm.handleEmptySpaceClick(context, rowId, time),
+                                              onPressTask: (task) => _showSnackbar('Tapped on task: ${task.name}'),
+                                              onTaskHover: (task, globalPosition) =>
+                                                  vm.onTaskHover(task, context, globalPosition),
+
+                                              // --- Theming and Styling ---
+                                              theme: ganttTheme,
                                               resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
                                               resizeTooltipBackgroundColor: Colors.purple,
                                               resizeHandleWidth: vm.resizeHandleWidth,
                                               resizeTooltipFontColor: Colors.white,
-                                              onTaskHover: (task, globalPosition) =>
-                                                  vm.onTaskHover(task, context, globalPosition),
-                                              onPressTask: (task) => _showSnackbar('Tapped on task: ${task.name}'),
-                                              theme: ganttTheme,
+
+                                              // --- Custom Task Content ---
+                                              // This builder injects custom content *inside* the default task bar.
+                                              // It's used here to add an icon and a context menu button.
                                               taskContentBuilder: (task) {
                                                 if (task.isTimeRangeHighlight) {
                                                   return const SizedBox.shrink(); // Hide content for highlights
@@ -767,6 +844,10 @@ class _GanttViewState extends State<GanttView> {
                                     ),
                                   ),
                                   // --- Timeline Scrubber ---
+                                  // This widget from the `legacy_timeline_scrubber` package provides a
+                                  // mini-map of the entire timeline, allowing for quick navigation.
+                                  // It's a separate package but designed to work well with the Gantt chart.
+                                  // Note how the task data is mapped to the scrubber's own task model.
                                   if (vm.totalStartDate != null &&
                                       vm.totalEndDate != null &&
                                       vm.visibleStartDate != null &&

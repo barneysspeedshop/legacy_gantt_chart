@@ -9,6 +9,7 @@ import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
 
+/// An enum to manage the different theme presets demonstrated in the example.
 enum ThemePreset {
   standard,
   forest,
@@ -16,51 +17,93 @@ enum ThemePreset {
 }
 
 class GanttViewModel extends ChangeNotifier {
-  // State variables
+  // --- Core Data State ---
+  /// The main list of tasks displayed on the Gantt chart, including regular tasks,
+  /// summary tasks, highlights, and conflict indicators.
   List<LegacyGanttTask> _ganttTasks = [];
+
+  /// The list of dependencies between tasks.
   List<LegacyGanttTaskDependency> _dependencies = [];
+
+  /// The hierarchical data structure for the grid on the left side of the chart.
   List<GanttGridData> _gridData = [];
+
+  /// A map that stores the maximum number of overlapping tasks for each row,
+  /// used to calculate the row's total height.
+  Map<String, int> _rowMaxStackDepth = {};
+
+  /// The original API response from the service. This is kept to allow for
+  /// reprocessing data (e.g., when a task is edited) and for exporting the original data structure.
+  GanttResponse? _apiResponse;
+
+  /// A map for quick lookups of original event data by task ID, used for tooltips.
+  Map<String, GanttEventData> _eventMap = {};
+
+  // --- UI and Feature Control State ---
+  /// The currently selected theme preset.
   ThemePreset _selectedTheme = ThemePreset.standard;
+
+  /// Flags to enable or disable interactive features of the Gantt chart.
   bool _dragAndDropEnabled = true;
   bool _resizeEnabled = true;
   bool _createTasksEnabled = true;
   bool _dependencyCreationEnabled = true;
+  bool _showConflicts = true;
+
+  /// The width of the resize handles on the edges of task bars.
   double _resizeHandleWidth = 10.0;
+
+  /// The currently selected locale for date and time formatting.
+  String _selectedLocale = 'en_US';
+
+  /// The format for labels on the timeline axis.
+  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth;
+
+  /// A function to format the date in the resize tooltip. This is updated by the view.
+  String Function(DateTime)? _resizeTooltipDateFormat;
+
+  // --- Data Generation Parameters ---
+  /// The start date for fetching schedule data.
   DateTime _startDate = DateTime.now();
+
+  /// Default start and end times used when creating new tasks.
   final TimeOfDay _defaultStartTime = const TimeOfDay(hour: 9, minute: 0);
   final TimeOfDay _defaultEndTime = const TimeOfDay(hour: 17, minute: 0);
+
+  /// The number of days to fetch data for.
   int _range = 14; // Default range for data fetching
+
+  /// The number of "persons" (parent rows) to generate in the sample data.
   int _personCount = 10;
+
+  /// The number of "jobs" (child rows) to generate in the sample data.
   int _jobCount = 16;
-  String _selectedLocale = 'en_US'; // Default locale
-  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth; // Default format;
-  bool _showConflicts = true;
-  String Function(DateTime)? _resizeTooltipDateFormat; // Internal storage for resize tooltip format
 
-  String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
-
-  // Date range state for the Gantt chart view and scrubber
+  // --- Date Range and Scrolling State ---
+  /// The start and end dates of the entire dataset.
   DateTime? _totalStartDate;
   DateTime? _totalEndDate;
+
+  /// The start and end dates of the currently visible window in the Gantt chart.
   DateTime? _visibleStartDate;
   DateTime? _visibleEndDate;
 
-  // Padding for the Gantt chart timeline to provide some space at the edges.
+  /// Padding added to the total date range to provide scrollable space at the edges of the timeline.
   final Duration _ganttStartPadding = const Duration(days: 7);
   final Duration _ganttEndPadding = const Duration(days: 7);
 
-// Stores the original max stack depth for each row
-  Map<String, int> _rowMaxStackDepth = {}; // Stores max stack depth for each row
+  /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
+  /// and to manage the horizontal scroll of the chart.
   final ScrollController _scrollController = ScrollController();
   final ScrollController _ganttHorizontalScrollController = ScrollController();
+
+  /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
   bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
 
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
-  Map<String, GanttEventData> _eventMap = {};
 
   final GanttScheduleService _scheduleService = GanttScheduleService();
-  GanttResponse? _apiResponse;
   GanttResponse? get apiResponse => _apiResponse;
 
   double? _gridWidth;
@@ -68,6 +111,7 @@ class GanttViewModel extends ChangeNotifier {
 
   // Getters for the UI
   List<LegacyGanttTask> get ganttTasks => _ganttTasks;
+  String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
   List<LegacyGanttTaskDependency> get dependencies => _dependencies;
   List<GanttGridData> get gridData => _gridData;
   ThemePreset get selectedTheme => _selectedTheme;
@@ -87,8 +131,13 @@ class GanttViewModel extends ChangeNotifier {
   DateTime? get totalEndDate => _totalEndDate;
   DateTime? get visibleStartDate => _visibleStartDate;
   DateTime? get visibleEndDate => _visibleEndDate;
+
+  /// The effective total date range, including padding. This is passed to the Gantt chart widget
+  /// to define the full scrollable width of the timeline.
   DateTime? get effectiveTotalStartDate => _totalStartDate?.subtract(_ganttStartPadding);
   DateTime? get effectiveTotalEndDate => _totalEndDate?.add(_ganttEndPadding);
+
+  /// A map of row IDs to their maximum task stack depth, used by the Gantt chart widget.
   Map<String, int> get rowMaxStackDepth => _rowMaxStackDepth;
   ScrollController get scrollController => _scrollController;
   ScrollController get ganttHorizontalScrollController => _ganttHorizontalScrollController;
@@ -97,6 +146,9 @@ class GanttViewModel extends ChangeNotifier {
 
   List<GanttGridData> get visibleGridData => _gridData;
 
+  /// Calculates the list of `LegacyGanttRow`s that should be visible based on the
+  /// expanded/collapsed state of the parent items in the `gridData`.
+  /// This is passed to the `LegacyGanttChartWidget` to determine which rows to render.
   List<LegacyGanttRow> get visibleGanttRows {
     final List<LegacyGanttRow> rows = [];
     for (final item in visibleGridData) {
@@ -108,6 +160,7 @@ class GanttViewModel extends ChangeNotifier {
     return rows;
   }
 
+  /// Constructor initializes the locale and sets up a listener for horizontal scrolling.
   GanttViewModel({String? initialLocale}) {
     if (initialLocale != null) {
       _selectedLocale = initialLocale;
@@ -125,6 +178,7 @@ class GanttViewModel extends ChangeNotifier {
     super.dispose();
   }
 
+  // --- Setters for UI State ---
   void setGridWidth(double? value) {
     _gridWidth = value;
     notifyListeners();
@@ -163,8 +217,8 @@ class GanttViewModel extends ChangeNotifier {
 
   void setShowConflicts(bool value) {
     _showConflicts = value;
-    // Recalculate tasks with the new conflict visibility setting.
-    // This is more robust than just changing the stack depth.
+    // Re-run the task stacking calculation with the new conflict visibility setting.
+    // This ensures that conflict indicators are added or removed correctly.
     final (recalculatedTasks, newMaxDepth) =
         _scheduleService.publicCalculateTaskStacking(_ganttTasks, _apiResponse!, showConflicts: _showConflicts);
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
@@ -209,6 +263,9 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Fetches new schedule data from the `GanttScheduleService` and processes it
+  /// into the data structures required by the UI (`_ganttTasks`, `_gridData`, etc.).
+  /// This method is called on initial load and whenever data generation parameters change.
   Future<void> fetchScheduleData() async {
     _ganttTasks = [];
     _dependencies = [];
@@ -301,6 +358,8 @@ class GanttViewModel extends ChangeNotifier {
 
       notifyListeners();
 
+      // After the UI has been built with the new data, scroll the Gantt chart
+      // to the initial visible window.
       WidgetsBinding.instance.addPostFrameCallback((_) => _setInitialScroll());
     } catch (e) {
       debugPrint('Error fetching gantt schedule data: $e');
@@ -350,6 +409,11 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Callback from the `LegacyGanttTimelineScrubber`. This is triggered when the user
+  /// drags the window on the scrubber.
+  ///
+  /// It updates the `_visibleStartDate` and `_visibleEndDate`, which causes the
+  /// main Gantt chart to rebuild. It then programmatically scrolls the chart to the new position.
   void onScrubberWindowChanged(DateTime newStart, DateTime newEnd) {
     // Set a flag to prevent the scroll listener from firing and causing a loop.
     _isScrubberUpdating = true;
@@ -384,6 +448,11 @@ class GanttViewModel extends ChangeNotifier {
     });
   }
 
+  /// Listener for the `_ganttHorizontalScrollController`. This is triggered when the
+  /// user scrolls the main Gantt chart horizontally.
+  ///
+  /// It calculates the new visible date window based on the scroll offset and updates
+  /// the state, which in turn updates the position of the window on the timeline scrubber.
   void _onGanttScroll() {
     // If the scroll is happening because of the scrubber, do nothing.
     if (_isScrubberUpdating || effectiveTotalStartDate == null || effectiveTotalEndDate == null) return;
@@ -406,7 +475,8 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  // Sets initial scroll position after data loads and layout is built.
+  /// Sets the initial horizontal scroll position of the Gantt chart after data
+  /// has been loaded and the layout has been built for the first time.
   void _setInitialScroll() {
     if (!_ganttHorizontalScrollController.hasClients ||
         effectiveTotalStartDate == null ||
@@ -432,6 +502,8 @@ class GanttViewModel extends ChangeNotifier {
     _tooltipOverlay = null;
   }
 
+  /// Displays a custom tooltip when the user hovers over a task.
+  /// It uses an `OverlayEntry` to position the tooltip near the cursor.
   void showTooltip(BuildContext context, LegacyGanttTask task, Offset globalPosition) {
     _removeTooltip(); // Remove previous tooltip first
 
@@ -523,6 +595,7 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// A callback from the Gantt chart widget when the user's cursor moves over a task.
   void onTaskHover(LegacyGanttTask? task, BuildContext context, Offset globalPosition) {
     if (_hoveredTaskId == task?.id) return;
     _hoveredTaskId = task?.id;
@@ -534,13 +607,15 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// A helper method to update the task list and stack depth map, then notify listeners.
   void _updateTasksAndStacking(List<LegacyGanttTask> tasks, Map<String, int> maxDepth) {
     _ganttTasks = tasks;
     _rowMaxStackDepth = maxDepth;
-// Keep a copy of the original
     notifyListeners();
   }
 
+  /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
+  /// It updates the task in the local list and then recalculates the stacking for all tasks.
   void handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) {
     final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
     final index = newTasks.indexWhere((t) => t.id == task.id);
@@ -552,6 +627,8 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// A callback from the Gantt chart widget when the user clicks on an empty
+  /// space in a row. This method shows a dialog to create a new task.
   void handleEmptySpaceClick(BuildContext context, String rowId, DateTime time) {
     if (!_createTasksEnabled) return;
 
@@ -586,6 +663,7 @@ class GanttViewModel extends ChangeNotifier {
     );
   }
 
+  /// A generic helper to show a dialog with a single text input field.
   Future<String?> _showTextInputDialog({
     required BuildContext context,
     required String title,
@@ -614,6 +692,7 @@ class GanttViewModel extends ChangeNotifier {
     );
   }
 
+  /// Handles the "Add Contact" action from the grid UI.
   Future<void> addContact(BuildContext context) async {
     final newContactName = await _showTextInputDialog(
       context: context,
@@ -636,6 +715,7 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Handles the "Add Line Item" action from the grid UI.
   Future<void> addLineItem(BuildContext context, String parentId) async {
     final parentGridItem = _gridData.firstWhere((g) => g.id == parentId);
     final newLineItemName = await _showTextInputDialog(
@@ -660,6 +740,10 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Toggles whether a parent row is rendered as a summary task.
+  ///
+  /// If `isSummary` is true, it either finds and marks an existing task as a summary
+  /// or creates a new summary task that spans the duration of its children.
   void setParentTaskType(String parentId, bool isSummary) {
     if (_apiResponse == null) return;
 
@@ -738,6 +822,7 @@ class GanttViewModel extends ChangeNotifier {
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
   }
 
+  /// Adds a new task to the list and recalculates stacking.
   void _addNewTask(LegacyGanttTask newTask) {
     final newTasks = [..._ganttTasks, newTask];
     if (_apiResponse != null) {
@@ -747,6 +832,9 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Calculates the total width of the Gantt chart's content area based on the
+  /// total duration of all data and the duration of the currently visible window.
+  /// This determines the scrollable width of the chart.
   double calculateGanttWidth(double screenWidth) {
     if (effectiveTotalStartDate == null ||
         effectiveTotalEndDate == null ||
@@ -763,12 +851,14 @@ class GanttViewModel extends ChangeNotifier {
     return screenWidth * zoomFactor;
   }
 
+  /// Toggles the expanded/collapsed state of a parent row in the grid.
   void toggleExpansion(String id) {
     final item = _gridData.firstWhere((element) => element.id == id);
     item.isExpanded = !item.isExpanded;
     notifyListeners();
   }
 
+  /// Handles the "Copy Task" action from the context menu.
   void handleCopyTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
 
@@ -786,6 +876,7 @@ class GanttViewModel extends ChangeNotifier {
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
   }
 
+  /// Handles the "Delete Task" action from the context menu.
   void handleDeleteTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
 
@@ -801,6 +892,7 @@ class GanttViewModel extends ChangeNotifier {
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
   }
 
+  /// Shows a dialog to edit all parent summary tasks at once.
   Future<void> editAllParentTasks(BuildContext context) async {
     // Get all parent rows that are currently acting as summaries.
     final parentRowIds = _gridData.where((g) => g.isParent).map((g) => g.id).toSet();
@@ -819,6 +911,7 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Shows a dialog to edit all child tasks belonging to a specific parent.
   Future<void> editDependentTasks(BuildContext context, String parentId) async {
     final parentData = _gridData.firstWhereOrNull((p) => p.id == parentId);
     if (parentData == null || parentData.children.isEmpty) return;
@@ -840,6 +933,7 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Shows a dialog to edit a single parent (summary) task.
   Future<void> editParentTask(BuildContext context, String rowId) async {
     final parentData = _gridData.firstWhereOrNull((p) => p.id == rowId);
     if (parentData != null && parentData.isParent) {
@@ -854,6 +948,7 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Shows a dialog to edit a child task. If multiple tasks exist in the row, it lets the user choose which one to edit.
   Future<void> editChildTask(BuildContext context, String rowId) async {
     final tasksInRow = _ganttTasks
         .where((t) => t.rowId == rowId && !t.isTimeRangeHighlight && !t.isSummary && !t.isOverlapIndicator)
@@ -932,6 +1027,7 @@ class GanttViewModel extends ChangeNotifier {
     await _reprocessDataFromApiResponse();
   }
 
+  /// Deletes a row from the grid and all associated tasks from the Gantt chart.
   void deleteRow(String rowId) {
     if (_apiResponse == null) return;
 
@@ -969,6 +1065,7 @@ class GanttViewModel extends ChangeNotifier {
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
   }
 
+  /// A helper to find the parent ID for any given row ID (child or parent).
   String? _getParentId(String rowId) {
     for (final parent in _gridData) {
       if (parent.id == rowId) {
@@ -1037,6 +1134,9 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Returns a list of tasks that are valid targets for a dependency relationship
+  /// with the `sourceTask`. In this example, it restricts targets to tasks
+  /// under the same parent resource.
   /// Returns a list of tasks that can be selected as a predecessor or successor.
   List<LegacyGanttTask> getValidDependencyTasks(LegacyGanttTask sourceTask) {
     final sourceParentId = _getParentId(sourceTask.rowId);
@@ -1101,6 +1201,7 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Returns a date formatting function for the tooltip based on the selected timeline axis format.
   String Function(DateTime) _getTooltipDateFormat() {
     switch (_selectedAxisFormat) {
       case TimelineAxisFormat.dayOfMonth:
@@ -1117,6 +1218,7 @@ class GanttViewModel extends ChangeNotifier {
   }
 }
 
+/// A dialog for editing the properties of a single task.
 class _EditTaskAlertDialog extends StatefulWidget {
   final LegacyGanttTask task;
 
@@ -1245,6 +1347,7 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
       );
 }
 
+/// A dialog that displays a list of tasks in a `DataTable` and allows editing their names and dates.
 class _EditTasksInRowDialog extends StatefulWidget {
   final List<LegacyGanttTask> tasks;
 
@@ -1359,6 +1462,7 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
       );
 }
 
+/// A small dialog specifically for editing a task's name.
 class _EditNameDialog extends StatefulWidget {
   final String? initialName;
 
