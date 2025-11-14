@@ -1,3 +1,10 @@
+## 2.4.0
+
+* **FEATURE**: Added `noDataWidgetBuilder` to `LegacyGanttChartWidget` to allow developers to provide a custom widget to display when there are no tasks.
+* **FIX**: Resolved an issue where the chart would show an infinite loading indicator when the dataset was empty. The chart now correctly displays the "No data to display" message or the custom widget provided via `noDataWidgetBuilder`.
+* **EXAMPLE**: Added `0` to the person and jobs pickers in the example app to demonstrate the "no data" case.
+* **EXAMPLE**: Introduced a loading state to the example app's view model to correctly handle the UI difference between "loading" and "empty".
+
 ## 2.3.5
 
 * **DOC**: Improve in-code documentation for the example, and overall documentation for the project

@@ -358,7 +358,7 @@ class _GanttViewState extends State<GanttView> {
                   onChanged: (value) {
                     if (value != null) vm.setPersonCount(value);
                   },
-                  items: List.generate(100, (i) => i + 1)
+                  items: List.generate(101, (i) => i)
                       .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
                       .toList(),
                 ),
@@ -372,7 +372,7 @@ class _GanttViewState extends State<GanttView> {
                   onChanged: (value) {
                     if (value != null) vm.setJobCount(value);
                   },
-                  items: List.generate(100, (i) => i + 1)
+                  items: List.generate(101, (i) => i)
                       .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
                       .toList(),
                 ),
@@ -688,8 +688,8 @@ class _GanttViewState extends State<GanttView> {
                                   Expanded(
                                     child: LayoutBuilder(
                                       builder: (context, chartConstraints) {
-                                        // If data is still loading or not set, show a progress indicator
-                                        if (vm.ganttTasks.isEmpty && vm.gridData.isEmpty) {
+                                        // If data is still loading, show a progress indicator
+                                        if (vm.isLoading) {
                                           return const Center(child: CircularProgressIndicator());
                                         }
 
