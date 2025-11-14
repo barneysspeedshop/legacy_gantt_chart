@@ -188,6 +188,11 @@ class LegacyGanttChartWidget extends StatefulWidget {
     double totalContentWidth,
   )? timelineAxisHeaderBuilder;
 
+  /// A builder function to create a custom widget to display when there is no data.
+  ///
+  /// If not provided, a default message will be shown.
+  final Widget Function(BuildContext context)? noDataWidgetBuilder;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -222,6 +227,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.resizeHandleWidth = 10.0,
     this.timelineAxisLabelBuilder,
     this.timelineAxisHeaderBuilder,
+    this.noDataWidgetBuilder,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -258,9 +264,13 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           }
 
           if (allItems.isEmpty && !controller.isOverallLoading) {
-            return Center(
-              child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-            );
+            if (widget.noDataWidgetBuilder != null) {
+              return widget.noDataWidgetBuilder!(context);
+            } else {
+              return Center(
+                child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
+              );
+            }
           }
 
           return Stack(
@@ -302,9 +312,13 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final allItems = [...tasks, ...holidays];
 
           if (allItems.isEmpty) {
-            return Center(
-              child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-            );
+            if (widget.noDataWidgetBuilder != null) {
+              return widget.noDataWidgetBuilder!(context);
+            } else {
+              return Center(
+                child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
+              );
+            }
           }
           return _buildChart(context, allItems, widget.dependencies ?? [], effectiveTheme);
         },
@@ -314,9 +328,13 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final holidays = widget.holidays ?? [];
       final allItems = [...tasks, ...holidays];
       if (allItems.isEmpty) {
-        return Center(
-          child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-        );
+        if (widget.noDataWidgetBuilder != null) {
+          return widget.noDataWidgetBuilder!(context);
+        } else {
+          return Center(
+            child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
+          );
+        }
       }
       return _buildChart(context, allItems, widget.dependencies ?? [], effectiveTheme);
     }
