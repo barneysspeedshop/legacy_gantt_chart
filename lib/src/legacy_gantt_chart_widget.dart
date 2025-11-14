@@ -199,6 +199,18 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Defaults to `false`, which shows the [noDataWidgetBuilder] or a default "No data to display" message.
   final bool showEmptyRows;
 
+  /// An optional fixed height for the Gantt chart widget.
+  ///
+  /// If provided, the widget will render with this explicit height. This is
+  /// particularly useful when placing the Gantt chart inside a `SingleChildScrollView`
+  /// to make it vertically scrollable. The user is responsible for calculating
+  /// the appropriate height based on the number of rows and their content.
+  ///
+  /// If `null`, the widget will attempt to size itself based on the available
+  /// constraints, either expanding to fill a parent (like `Expanded`) or
+  /// calculating its intrinsic height if given unconstrained vertical space.
+  final double? height;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -235,6 +247,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.timelineAxisHeaderBuilder,
     this.noDataWidgetBuilder,
     this.showEmptyRows = false,
+    this.height,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -402,18 +415,44 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
                 vm.updateLayout(constraints.maxWidth, constraints.maxHeight);
 
-                final double totalContentWidth = vm.totalDomain.isEmpty ? 0 : vm.totalScale(vm.totalDomain.last);
+                final double totalContentWidth =
+                    vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
 
-                final allRowIds = tasks.map((task) => task.rowId).toSet();
-                if (widget.visibleRows.length > allRowIds.length) {
-                  for (var row in widget.visibleRows) {
-                    allRowIds.add(row.id);
-                  }
+                // This is the intrinsically calculated height of the content, excluding the timeline axis.
+
+                final double totalContentHeight =
+                    (widget.showEmptyRows ? widget.visibleRows.map((r) => r.id) : tasks.map((t) => t.rowId))
+                        .toSet()
+                        .fold<double>(
+                          0.0,
+                          (prev, rowId) => prev + widget.rowHeight * (widget.rowMaxStackDepth[rowId] ?? 1),
+                        );
+
+                final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
+
+                // Determine the final height of the chart widget.
+
+                final double chartHeight;
+
+                if (widget.height != null) {
+                  // 1. If an explicit height is provided, always use it.
+
+                  chartHeight = widget.height!;
+                } else if (useIntrinsicHeight) {
+                  // 2. If in an unconstrained environment (like a SingleChildScrollView),
+
+                  //    calculate the intrinsic height.
+
+                  chartHeight = vm.timeAxisHeight + totalContentHeight;
+                } else {
+                  // 3. Otherwise, expand to fill the available constrained space.
+
+                  chartHeight = constraints.maxHeight;
                 }
-                final double totalContentHeight = allRowIds.fold<double>(
-                  0.0,
-                  (prev, rowId) => prev + widget.rowHeight * (widget.rowMaxStackDepth[rowId] ?? 1),
-                );
+
+                // The height of the actual bar area (excluding the timeline axis).
+
+                final double contentHeight = chartHeight - vm.timeAxisHeight;
 
                 return MouseRegion(
                   cursor: vm.cursor,
@@ -427,6 +466,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                     onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
                     child: Container(
                       color: effectiveTheme.backgroundColor,
+                      height: chartHeight,
                       child: Stack(
                         children: [
                           Positioned.fill(
@@ -435,7 +475,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                 x: 0,
                                 y: vm.timeAxisHeight,
                                 width: totalContentWidth,
-                                height: constraints.maxHeight,
+                                height: contentHeight,
                                 scale: vm.totalScale,
                                 domain: vm.totalDomain,
                                 visibleDomain: vm.visibleExtent,
@@ -448,27 +488,42 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                             top: vm.timeAxisHeight,
                             left: 0,
                             width: constraints.maxWidth,
-                            height: constraints.maxHeight - vm.timeAxisHeight,
+                            height: contentHeight,
                             child: ClipRect(
                               child: Stack(
                                 children: [
                                   CustomPaint(
                                     painter: BarsCollectionPainter(
                                       dependencies: vm.dependencies,
+
                                       data: tasks,
+
                                       domain: vm.totalDomain,
+
                                       visibleRows: widget.visibleRows,
+
                                       rowMaxStackDepth: widget.rowMaxStackDepth,
+
                                       scale: vm.totalScale,
+
                                       rowHeight: widget.rowHeight,
+
                                       draggedTaskId: vm.draggedTask?.id,
+
                                       ghostTaskStart: vm.ghostTaskStart,
+
                                       ghostTaskEnd: vm.ghostTaskEnd,
+
                                       theme: effectiveTheme,
+
                                       hoveredRowId: vm.hoveredRowId,
+
                                       hoveredDate: vm.hoveredDate,
+
                                       hasCustomTaskBuilder: widget.taskBarBuilder != null,
+
                                       hasCustomTaskContentBuilder: false, // Let the widget layer handle this
+
                                       translateY: vm.translateY,
                                     ),
                                     size: Size(totalContentWidth, totalContentHeight),

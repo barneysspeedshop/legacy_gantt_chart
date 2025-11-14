@@ -54,6 +54,9 @@ class GanttViewModel extends ChangeNotifier {
   /// The width of the resize handles on the edges of task bars.
   double _resizeHandleWidth = 10.0;
 
+  /// The height of a single task lane within a row.
+  final double rowHeight = 27.0;
+
   /// The currently selected locale for date and time formatting.
   String _selectedLocale = 'en_US';
 

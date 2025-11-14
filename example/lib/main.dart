@@ -705,12 +705,21 @@ class _GanttViewState extends State<GanttView> {
 
                                         final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
 
+                                        // Calculate the total height required for the Gantt chart content.
+                                        // This is essential when the chart is in a vertically scrolling view.
+                                        final double axisHeight =
+                                            _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
+                                        final double ganttContentHeight = vm.visibleGanttRows.fold<double>(
+                                          0.0,
+                                          (prev, row) => prev + (vm.rowMaxStackDepth[row.id] ?? 1) * vm.rowHeight,
+                                        ); // Use vm.rowHeight
+
                                         return SingleChildScrollView(
                                           scrollDirection: Axis.horizontal,
                                           controller: vm.ganttHorizontalScrollController,
                                           child: SizedBox(
                                             width: ganttWidth,
-                                            height: chartConstraints.maxHeight, // Constraints from LayoutBuilder
+                                            height: axisHeight + ganttContentHeight,
                                             child: LegacyGanttChartWidget(
                                               // --- Custom Builders ---
                                               timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
@@ -722,13 +731,12 @@ class _GanttViewState extends State<GanttView> {
                                               // --- Data and Layout ---
                                               data: vm.ganttTasks,
                                               dependencies: vm.dependencies,
-                                              visibleRows: vm.visibleGanttRows,
+                                              visibleRows: vm.visibleGanttRows, // This should be correct
                                               rowHeight: 27.0,
                                               rowMaxStackDepth: vm.rowMaxStackDepth,
                                               // The axis height is adjusted based on whether we are using the
                                               // default single-line header or the custom two-line header.
-                                              axisHeight:
-                                                  _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                              axisHeight: axisHeight,
 
                                               // --- Scroll Controllers and Syncing ---
                                               // This is the key to synchronizing the vertical scroll between the
@@ -744,6 +752,7 @@ class _GanttViewState extends State<GanttView> {
                                                   vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
                                               totalGridMax: vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
                                               enableDragAndDrop: vm.dragAndDropEnabled,
+                                              showEmptyRows: vm.showEmptyParentRows,
                                               enableResize: vm.resizeEnabled,
                                               onTaskUpdate: (task, start, end) {
                                                 vm.handleTaskUpdate(task, start, end);
