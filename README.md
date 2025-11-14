@@ -340,6 +340,30 @@ LegacyGanttChartWidget(
 )
 ```
 
+### Customizing the "No Data" View
+
+You can provide a custom widget to be displayed when `data` is empty using the `noDataWidgetBuilder`.
+
+```dart
+LegacyGanttChartWidget(
+  data: [], // Empty data
+  visibleRows: [],
+  rowMaxStackDepth: {},
+  noDataWidgetBuilder: (context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.inbox_outlined, size: 80, color: Colors.grey),
+          SizedBox(height: 16),
+          Text('No tasks scheduled yet.', style: Theme.of(context).textTheme.titleMedium),
+        ],
+      ),
+    );
+  },
+)
+```
+
 ### Custom Timeline Labels
 
 You can provide a `timelineAxisLabelBuilder` to customize the labels on the timeline. This is useful for displaying months, quarters, or other custom formats.

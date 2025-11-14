@@ -100,6 +100,9 @@ class GanttViewModel extends ChangeNotifier {
   /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
   bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
 
+  /// A flag to indicate when data is being fetched.
+  bool _isLoading = true;
+
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
 
@@ -131,6 +134,7 @@ class GanttViewModel extends ChangeNotifier {
   DateTime? get totalEndDate => _totalEndDate;
   DateTime? get visibleStartDate => _visibleStartDate;
   DateTime? get visibleEndDate => _visibleEndDate;
+  bool get isLoading => _isLoading;
 
   /// The effective total date range, including padding. This is passed to the Gantt chart widget
   /// to define the full scrollable width of the timeline.
@@ -268,6 +272,7 @@ class GanttViewModel extends ChangeNotifier {
   /// This method is called on initial load and whenever data generation parameters change.
   Future<void> fetchScheduleData() async {
     _ganttTasks = [];
+    _isLoading = true;
     _dependencies = [];
     _gridData = [];
     _rowMaxStackDepth = {};
@@ -353,6 +358,8 @@ class GanttViewModel extends ChangeNotifier {
         _totalEndDate = _startDate.add(Duration(days: _range));
       }
 
+      _isLoading = false;
+
       _visibleStartDate = effectiveTotalStartDate;
       _visibleEndDate = effectiveTotalEndDate;
 
@@ -362,6 +369,8 @@ class GanttViewModel extends ChangeNotifier {
       // to the initial visible window.
       WidgetsBinding.instance.addPostFrameCallback((_) => _setInitialScroll());
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       debugPrint('Error fetching gantt schedule data: $e');
       // Consider showing an error message to the user
     }
