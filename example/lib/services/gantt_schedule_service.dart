@@ -58,6 +58,7 @@ class GanttScheduleService {
     required int range,
     bool showConflicts = true,
     bool isFirstLoad = true,
+    bool showEmptyParentRows = false,
   }) async {
     if (!apiResponse.success) {
       throw Exception(apiResponse.error ?? 'Failed to load schedule data');
@@ -150,9 +151,9 @@ class GanttScheduleService {
           .map((job) => GanttGridData.fromJob(job))
           .toList();
 
-      // A parent row is visible if it has a direct summary task OR if it has any visible children.
       final bool hasDirectTask = activeRowIds.contains(resource.id);
-      if (hasDirectTask || visibleChildren.isNotEmpty) {
+      // A parent row is visible if it has a direct summary task, visible children, or if we're explicitly showing empty parents.
+      if (showEmptyParentRows || hasDirectTask || visibleChildren.isNotEmpty) {
         // Calculate the parent's completion percentage based on its visible children.
         double totalWeightedDurationMs = 0;
         double totalDurationMs = 0;

@@ -193,6 +193,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// If not provided, a default message will be shown.
   final Widget Function(BuildContext context)? noDataWidgetBuilder;
 
+  /// If set to `true`, the chart will display the empty rows provided via
+  /// [visibleRows] even when there are no tasks.
+  ///
+  /// Defaults to `false`, which shows the [noDataWidgetBuilder] or a default "No data to display" message.
+  final bool showEmptyRows;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -228,6 +234,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.timelineAxisLabelBuilder,
     this.timelineAxisHeaderBuilder,
     this.noDataWidgetBuilder,
+    this.showEmptyRows = false,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -263,7 +270,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (allItems.isEmpty && !controller.isOverallLoading) {
+          if (allItems.isEmpty && !controller.isOverallLoading && !widget.showEmptyRows) {
             if (widget.noDataWidgetBuilder != null) {
               return widget.noDataWidgetBuilder!(context);
             } else {
@@ -311,7 +318,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final holidays = (snapshot.data?[1] as List<LegacyGanttTask>?) ?? [];
           final allItems = [...tasks, ...holidays];
 
-          if (allItems.isEmpty) {
+          if (allItems.isEmpty && !widget.showEmptyRows) {
             if (widget.noDataWidgetBuilder != null) {
               return widget.noDataWidgetBuilder!(context);
             } else {
@@ -327,7 +334,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final tasks = widget.data ?? [];
       final holidays = widget.holidays ?? [];
       final allItems = [...tasks, ...holidays];
-      if (allItems.isEmpty) {
+      if (allItems.isEmpty && !widget.showEmptyRows) {
         if (widget.noDataWidgetBuilder != null) {
           return widget.noDataWidgetBuilder!(context);
         } else {

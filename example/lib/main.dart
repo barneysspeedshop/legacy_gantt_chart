@@ -448,6 +448,16 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Show Empty Parents'),
+                Switch(
+                  value: vm.showEmptyParentRows,
+                  onChanged: (value) => vm.setShowEmptyParentRows(value),
+                ),
+              ],
+            ),
             const Divider(height: 24),
             Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
             // This dropdown demonstrates how to control the width of the resize handles on tasks.
