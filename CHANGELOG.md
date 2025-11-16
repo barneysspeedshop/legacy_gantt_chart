@@ -1,3 +1,7 @@
+## 2.6.0
+
+* **FEATURE**: Added `loadingIndicatorPosition` and `loadingIndicatorType` to customize the loading indicator. 
+
 ## 2.5.0
 
 * **FEATURE**: Added the ability to populate blank rows (rows with no assignments/jobs/events populated)

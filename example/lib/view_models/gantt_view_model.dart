@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
+import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 import '../main.dart';
 
 import '../data/models.dart';
@@ -65,6 +66,12 @@ class GanttViewModel extends ChangeNotifier {
 
   /// A function to format the date in the resize tooltip. This is updated by the view.
   String Function(DateTime)? _resizeTooltipDateFormat;
+
+  /// The type of progress indicator to show during loading.
+  GanttLoadingIndicatorType _loadingIndicatorType = GanttLoadingIndicatorType.circular;
+
+  /// The position of the linear progress indicator.
+  GanttLoadingIndicatorPosition _loadingIndicatorPosition = GanttLoadingIndicatorPosition.top;
 
   // --- Data Generation Parameters ---
   /// The start date for fetching schedule data.
@@ -130,6 +137,8 @@ class GanttViewModel extends ChangeNotifier {
   bool get showEmptyParentRows => _showEmptyParentRows;
   double get resizeHandleWidth => _resizeHandleWidth;
   DateTime get startDate => _startDate;
+  GanttLoadingIndicatorType get loadingIndicatorType => _loadingIndicatorType;
+  GanttLoadingIndicatorPosition get loadingIndicatorPosition => _loadingIndicatorPosition;
   TimeOfDay get defaultStartTime => _defaultStartTime;
   TimeOfDay get defaultEndTime => _defaultEndTime;
   int get range => _range;
@@ -256,6 +265,18 @@ class GanttViewModel extends ChangeNotifier {
     if (_jobCount == value) return;
     _jobCount = value;
     fetchScheduleData();
+    notifyListeners();
+  }
+
+  void setLoadingIndicatorType(GanttLoadingIndicatorType value) {
+    if (_loadingIndicatorType == value) return;
+    _loadingIndicatorType = value;
+    notifyListeners();
+  }
+
+  void setLoadingIndicatorPosition(GanttLoadingIndicatorPosition value) {
+    if (_loadingIndicatorPosition == value) return;
+    _loadingIndicatorPosition = value;
     notifyListeners();
   }
 
@@ -434,15 +455,27 @@ class GanttViewModel extends ChangeNotifier {
   ///
   /// It updates the `_visibleStartDate` and `_visibleEndDate`, which causes the
   /// main Gantt chart to rebuild. It then programmatically scrolls the chart to the new position.
-  void onScrubberWindowChanged(DateTime newStart, DateTime newEnd) {
+  void onScrubberWindowChanged(DateTime newStart, DateTime newEnd, [scrubber.ScrubberHandle? handle]) {
     // Set a flag to prevent the scroll listener from firing and causing a loop.
     _isScrubberUpdating = true;
 
     // Update the state with the new visible window from the scrubber.
     // This will trigger a rebuild, which updates the Gantt chart's gridMin/gridMax
     // and recalculates its total width.
-    _visibleStartDate = newStart;
-    _visibleEndDate = newEnd;
+    if (handle == scrubber.ScrubberHandle.left) {
+      // Left handle adjusts the start date
+      // When resizing from the left, only the start date changes.
+      _visibleStartDate = newStart;
+    } else if (handle == scrubber.ScrubberHandle.right) {
+      // Right handle adjusts the end date
+      // When resizing from the right, only the end date changes.
+      _visibleEndDate = newEnd;
+    } else {
+      // If the whole window is dragged (or handle is null/body), update both.
+      _visibleStartDate = newStart;
+      _visibleEndDate = newEnd;
+    }
+
     notifyListeners();
 
     // After the UI has rebuilt with the new dimensions, programmatically
@@ -457,7 +490,19 @@ class GanttViewModel extends ChangeNotifier {
         final position = _ganttHorizontalScrollController.position;
         final totalGanttWidth = position.maxScrollExtent + position.viewportDimension;
         if (totalGanttWidth > 0) {
-          final startOffsetMs = newStart.difference(effectiveTotalStartDate!).inMilliseconds;
+          // Determine which date to use as the anchor for scrolling.
+          // If resizing from the right, we anchor to the existing start date.
+          // Otherwise, we anchor to the new start date from the scrubber.
+          final DateTime anchorDate;
+          if (handle == scrubber.ScrubberHandle.right) {
+            // Keep the left side of the viewport fixed.
+            anchorDate = _visibleStartDate!;
+          } else {
+            // Move the viewport based on the new start date.
+            anchorDate = newStart;
+          }
+
+          final startOffsetMs = anchorDate.difference(effectiveTotalStartDate!).inMilliseconds;
           final newScrollOffset = (startOffsetMs / totalDataDuration) * totalGanttWidth;
 
           _ganttHorizontalScrollController.jumpTo(newScrollOffset.clamp(0.0, position.maxScrollExtent));

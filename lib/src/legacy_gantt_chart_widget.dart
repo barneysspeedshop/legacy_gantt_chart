@@ -11,6 +11,24 @@ import 'legacy_gantt_controller.dart';
 import 'legacy_gantt_view_model.dart';
 import 'bars_collection_painter.dart';
 
+/// Defines the type of progress indicator to display during loading.
+enum GanttLoadingIndicatorType {
+  /// A circular progress indicator in the center of the chart.
+  circular,
+
+  /// A linear progress indicator at the top or bottom of the chart.
+  linear,
+}
+
+/// Defines the position for the linear progress indicator.
+enum GanttLoadingIndicatorPosition {
+  /// Positions the linear indicator at the top of the chart area.
+  top,
+
+  /// Positions the linear indicator at the bottom of the chart area.
+  bottom,
+}
+
 /// The main widget for displaying a Gantt chart.
 ///
 /// This widget is responsible for rendering the timeline, task bars, and dependencies.
@@ -211,6 +229,18 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// calculating its intrinsic height if given unconstrained vertical space.
   final double? height;
 
+  /// The type of progress indicator to display when loading data with a [controller].
+  ///
+  /// Defaults to [GanttLoadingIndicatorType.circular].
+  final GanttLoadingIndicatorType loadingIndicatorType;
+
+  /// The position of the [GanttLoadingIndicatorType.linear] progress indicator.
+  ///
+  /// This is only applicable if [loadingIndicatorType] is set to
+  /// [GanttLoadingIndicatorType.linear].
+  /// Defaults to [GanttLoadingIndicatorPosition.top].
+  final GanttLoadingIndicatorPosition loadingIndicatorPosition;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -248,6 +278,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.noDataWidgetBuilder,
     this.showEmptyRows = false,
     this.height,
+    this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
+    this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -280,7 +312,11 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final allItems = [...tasks, ...holidays];
 
           if (controller.isOverallLoading && allItems.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
+            if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
+              return const Center(child: CircularProgressIndicator());
+            } else {
+              return const LinearProgressIndicator();
+            }
           }
 
           if (allItems.isEmpty && !controller.isOverallLoading && !widget.showEmptyRows) {
@@ -303,10 +339,20 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 gridMin: controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
                 gridMax: controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
               ),
-              if (controller.isLoading)
-                Container(
-                  color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
-                  child: const Center(child: CircularProgressIndicator()),
+              if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.linear)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.top ? 0 : null,
+                  bottom: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.bottom ? 0 : null,
+                  child: const LinearProgressIndicator(),
+                ),
+              if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
+                Positioned.fill(
+                  child: Container(
+                    color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
+                    child: const Center(child: CircularProgressIndicator()),
+                  ),
                 ),
             ],
           );
@@ -495,35 +541,20 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                   CustomPaint(
                                     painter: BarsCollectionPainter(
                                       dependencies: vm.dependencies,
-
                                       data: tasks,
-
                                       domain: vm.totalDomain,
-
                                       visibleRows: widget.visibleRows,
-
                                       rowMaxStackDepth: widget.rowMaxStackDepth,
-
                                       scale: vm.totalScale,
-
                                       rowHeight: widget.rowHeight,
-
                                       draggedTaskId: vm.draggedTask?.id,
-
                                       ghostTaskStart: vm.ghostTaskStart,
-
                                       ghostTaskEnd: vm.ghostTaskEnd,
-
                                       theme: effectiveTheme,
-
                                       hoveredRowId: vm.hoveredRowId,
-
                                       hoveredDate: vm.hoveredDate,
-
                                       hasCustomTaskBuilder: widget.taskBarBuilder != null,
-
-                                      hasCustomTaskContentBuilder: false, // Let the widget layer handle this
-
+                                      hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
                                       translateY: vm.translateY,
                                     ),
                                     size: Size(totalContentWidth, totalContentHeight),
@@ -738,20 +769,9 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (widget.content != null)
-              widget.content!
-            else
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Text(
-                    task.name ?? '',
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.taskTextStyle,
-                  ),
-                ),
-              ),
+            // If custom content is provided via the builder, it's the only thing we render inside.
+            // Otherwise, we would fall back to default text, but the painter handles that.
+            if (widget.content != null) widget.content!,
             if (_isHovered && vm.onTaskDelete != null)
               Positioned(
                 right: 0,

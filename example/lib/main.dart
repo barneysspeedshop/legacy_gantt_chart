@@ -474,6 +474,34 @@ class _GanttViewState extends State<GanttView> {
               ],
             ),
             const Divider(height: 24),
+            Text('Loading Indicator', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SegmentedButton<GanttLoadingIndicatorType>(
+              segments: const [
+                ButtonSegment(value: GanttLoadingIndicatorType.circular, label: Text('Circular')),
+                ButtonSegment(value: GanttLoadingIndicatorType.linear, label: Text('Linear')),
+              ],
+              selected: {vm.loadingIndicatorType},
+              onSelectionChanged: (newSelection) => vm.setLoadingIndicatorType(newSelection.first),
+            ),
+            if (vm.loadingIndicatorType == GanttLoadingIndicatorType.linear) ...[
+              const SizedBox(height: 8),
+              SegmentedButton<GanttLoadingIndicatorPosition>(
+                segments: const [
+                  ButtonSegment(
+                    value: GanttLoadingIndicatorPosition.top,
+                    label: Text('Top'),
+                  ),
+                  ButtonSegment(
+                    value: GanttLoadingIndicatorPosition.bottom,
+                    label: Text('Bottom'),
+                  ),
+                ],
+                selected: {vm.loadingIndicatorPosition},
+                onSelectionChanged: (newSelection) => vm.setLoadingIndicatorPosition(newSelection.first),
+              ),
+            ],
+            const Divider(height: 24),
             Text('Timeline Label Format', style: Theme.of(context).textTheme.titleMedium),
             // This segmented button controls which label format is used for the timeline,
             // demonstrating the `timelineAxisLabelBuilder` and `timelineAxisHeaderBuilder` properties.
@@ -658,22 +686,30 @@ class _GanttViewState extends State<GanttView> {
                             // This is a common pattern for building a complete Gantt chart UI.
                             SizedBox(
                               width: vm.gridWidth ?? constraints.maxWidth * 0.4,
-                              child: GanttGrid(
-                                headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                gridData: vm.visibleGridData,
-                                visibleGanttRows: vm.visibleGanttRows,
-                                rowMaxStackDepth: vm.rowMaxStackDepth,
-                                scrollController: vm.scrollController,
-                                onToggleExpansion: vm.toggleExpansion,
-                                isDarkMode: isDarkMode,
-                                onAddContact: () => vm.addContact(context),
-                                onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
-                                onSetParentTaskType: vm.setParentTaskType,
-                                onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
-                                onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
-                                onEditAllParentTasks: () => vm.editAllParentTasks(context),
-                                onDeleteRow: vm.deleteRow,
-                                ganttTasks: vm.ganttTasks,
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: GanttGrid(
+                                      headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                      gridData: vm.visibleGridData,
+                                      visibleGanttRows: vm.visibleGanttRows,
+                                      rowMaxStackDepth: vm.rowMaxStackDepth,
+                                      scrollController: vm.scrollController,
+                                      onToggleExpansion: vm.toggleExpansion,
+                                      isDarkMode: isDarkMode,
+                                      onAddContact: () => vm.addContact(context),
+                                      onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
+                                      onSetParentTaskType: vm.setParentTaskType,
+                                      onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
+                                      onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
+                                      onEditAllParentTasks: () => vm.editAllParentTasks(context),
+                                      onDeleteRow: vm.deleteRow,
+                                      ganttTasks: vm.ganttTasks,
+                                    ),
+                                  ),
+                                  // This SizedBox balances the height of the timeline scrubber on the right.
+                                  const SizedBox(height: 40),
+                                ],
                               ),
                             ),
                             // Draggable Divider
@@ -721,6 +757,8 @@ class _GanttViewState extends State<GanttView> {
                                             width: ganttWidth,
                                             height: axisHeight + ganttContentHeight,
                                             child: LegacyGanttChartWidget(
+                                              loadingIndicatorType: vm.loadingIndicatorType,
+                                              loadingIndicatorPosition: vm.loadingIndicatorPosition,
                                               // --- Custom Builders ---
                                               timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
                                               timelineAxisHeaderBuilder:
