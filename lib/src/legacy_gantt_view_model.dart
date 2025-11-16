@@ -248,11 +248,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
         DateTime.fromMillisecondsSinceEpoch(gridMin!.toInt()),
         DateTime.fromMillisecondsSinceEpoch(gridMax!.toInt()),
       ];
+    } else if (data.isEmpty) {
+      // If there's no data and no explicit gridMin/gridMax, create a default range.
+      final now = DateTime.now();
+      _visibleExtent = [now.subtract(const Duration(days: 30)), now.add(const Duration(days: 30))];
     } else {
-      if (data.isEmpty) {
-        final now = DateTime.now();
-        _visibleExtent = [now.subtract(const Duration(days: 30)), now.add(const Duration(days: 30))];
-      } else {
+      // If there is data, calculate the range from the data.
+      // This branch is now only taken if gridMin/gridMax are null but data is not empty.
+      if (data.isNotEmpty) {
         final dateTimes = data.expand((task) => [task.start, task.end]).map((d) => d.millisecondsSinceEpoch).toList();
         _visibleExtent = [
           DateTime.fromMillisecondsSinceEpoch(dateTimes.reduce(min)),

@@ -1,3 +1,7 @@
+## 2.5.0
+
+* **FEATURE**: Added the ability to populate blank rows (rows with no assignments/jobs/events populated)
+
 ## 2.4.0
 
 * **FEATURE**: Added `noDataWidgetBuilder` to `LegacyGanttChartWidget` to allow developers to provide a custom widget to display when there are no tasks.

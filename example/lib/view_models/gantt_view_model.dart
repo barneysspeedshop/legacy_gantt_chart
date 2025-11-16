@@ -49,9 +49,13 @@ class GanttViewModel extends ChangeNotifier {
   bool _createTasksEnabled = true;
   bool _dependencyCreationEnabled = true;
   bool _showConflicts = true;
+  bool _showEmptyParentRows = false;
 
   /// The width of the resize handles on the edges of task bars.
   double _resizeHandleWidth = 10.0;
+
+  /// The height of a single task lane within a row.
+  final double rowHeight = 27.0;
 
   /// The currently selected locale for date and time formatting.
   String _selectedLocale = 'en_US';
@@ -123,6 +127,7 @@ class GanttViewModel extends ChangeNotifier {
   bool get createTasksEnabled => _createTasksEnabled;
   bool get dependencyCreationEnabled => _dependencyCreationEnabled;
   bool get showConflicts => _showConflicts;
+  bool get showEmptyParentRows => _showEmptyParentRows;
   double get resizeHandleWidth => _resizeHandleWidth;
   DateTime get startDate => _startDate;
   TimeOfDay get defaultStartTime => _defaultStartTime;
@@ -226,6 +231,12 @@ class GanttViewModel extends ChangeNotifier {
     final (recalculatedTasks, newMaxDepth) =
         _scheduleService.publicCalculateTaskStacking(_ganttTasks, _apiResponse!, showConflicts: _showConflicts);
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
+  }
+
+  Future<void> setShowEmptyParentRows(bool value) async {
+    if (_showEmptyParentRows == value) return;
+    _showEmptyParentRows = value;
+    await _reprocessDataFromApiResponse();
   }
 
   void setResizeHandleWidth(double value) {
@@ -1107,6 +1118,7 @@ class GanttViewModel extends ChangeNotifier {
       startDate: _startDate,
       range: _range,
       showConflicts: _showConflicts,
+      showEmptyParentRows: _showEmptyParentRows,
     );
 
     // Restore the expansion states.
