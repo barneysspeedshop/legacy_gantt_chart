@@ -51,6 +51,7 @@ class GanttViewModel extends ChangeNotifier {
   bool _dependencyCreationEnabled = true;
   bool _showConflicts = true;
   bool _showEmptyParentRows = false;
+  bool _showDependencies = true;
 
   /// The width of the resize handles on the edges of task bars.
   double _resizeHandleWidth = 10.0;
@@ -126,7 +127,7 @@ class GanttViewModel extends ChangeNotifier {
   // Getters for the UI
   List<LegacyGanttTask> get ganttTasks => _ganttTasks;
   String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
-  List<LegacyGanttTaskDependency> get dependencies => _dependencies;
+  List<LegacyGanttTaskDependency> get dependencies => _showDependencies ? _dependencies : [];
   List<GanttGridData> get gridData => _gridData;
   ThemePreset get selectedTheme => _selectedTheme;
   bool get dragAndDropEnabled => _dragAndDropEnabled;
@@ -135,6 +136,7 @@ class GanttViewModel extends ChangeNotifier {
   bool get dependencyCreationEnabled => _dependencyCreationEnabled;
   bool get showConflicts => _showConflicts;
   bool get showEmptyParentRows => _showEmptyParentRows;
+  bool get showDependencies => _showDependencies;
   double get resizeHandleWidth => _resizeHandleWidth;
   DateTime get startDate => _startDate;
   GanttLoadingIndicatorType get loadingIndicatorType => _loadingIndicatorType;
@@ -230,6 +232,12 @@ class GanttViewModel extends ChangeNotifier {
 
   void setDependencyCreationEnabled(bool value) {
     _dependencyCreationEnabled = value;
+    notifyListeners();
+  }
+
+  void setShowDependencies(bool value) {
+    if (_showDependencies == value) return;
+    _showDependencies = value;
     notifyListeners();
   }
 
@@ -346,22 +354,26 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // 2. Find two tasks in the same row for a 'finishToStart' dependency
-      final tasksByRow = <String, List<LegacyGanttTask>>{};
-      for (final task in ganttTasks) {
-        if (!task.isSummary && !task.isTimeRangeHighlight) {
-          tasksByRow.putIfAbsent(task.rowId, () => []).add(task);
-        }
-      }
+      // 2. Find two tasks to link with a 'finishToStart' dependency for demonstration.
+      final validTasksForDependency = ganttTasks
+          .where((task) => !task.isSummary && !task.isTimeRangeHighlight && !task.isOverlapIndicator)
+          .toList();
 
-      for (final tasksInRow in tasksByRow.values) {
-        if (tasksInRow.length > 1) {
-          tasksInRow.sort((a, b) => a.start.compareTo(b.start));
-          newDependencies.add(
-            LegacyGanttTaskDependency(predecessorTaskId: tasksInRow[0].id, successorTaskId: tasksInRow[1].id),
-          );
-          break; // Just add one for demonstration
-        }
+      if (validTasksForDependency.length > 1) {
+        // Sort by start time, then by ID for a stable sort.
+        validTasksForDependency.sort((a, b) {
+          final startCompare = a.start.compareTo(b.start);
+          if (startCompare != 0) return startCompare;
+          return a.id.compareTo(b.id);
+        });
+
+        // Create a dependency between the first two tasks in the sorted list.
+        newDependencies.add(
+          LegacyGanttTaskDependency(
+            predecessorTaskId: validTasksForDependency[0].id,
+            successorTaskId: validTasksForDependency[1].id,
+          ),
+        );
       }
 
       _ganttTasks = processedData.ganttTasks;
@@ -769,7 +781,12 @@ class GanttViewModel extends ChangeNotifier {
       final newResourceId = 'person_${DateTime.now().millisecondsSinceEpoch}';
 
       // Create new data objects
-      final newResource = GanttResourceData(id: newResourceId, name: newContactName, children: []);
+      final newResource = GanttResourceData(
+        id: newResourceId,
+        name: newContactName,
+        taskName: 'Summary for $newContactName', // Ensure taskName is set
+        children: [],
+      );
       final newGridItem =
           GanttGridData(id: newResourceId, name: newContactName, isParent: true, isExpanded: true, children: []);
 

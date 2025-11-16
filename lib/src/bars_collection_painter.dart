@@ -524,16 +524,24 @@ class BarsCollectionPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final path = Path();
-    path.moveTo(startX, startY);
+    path.moveTo(startX, startY); // Exit predecessor from the right
 
-    // Add a small horizontal segment before turning
-    final controlXOffset = (endX - startX).abs() > 20 ? 10.0 : (endX - startX).abs() / 2;
-    final controlX1 = startX + controlXOffset;
-    final controlX2 = endX - controlXOffset;
+    const offset = 10.0;
+    final midX = startX + offset;
 
-    // Simple S-curve for vertical connections
-    path.cubicTo(controlX1, startY, controlX2, endY, endX, endY);
-
+    if (endX > midX) {
+      // Successor is to the right, simple elbow connector
+      path.lineTo(midX, startY);
+      path.lineTo(midX, endY);
+    } else {
+      // Successor is to the left or overlapping, needs to go around
+      final midY = startY < endY ? successorRect.top - offset : successorRect.bottom + offset;
+      path.lineTo(midX, startY);
+      path.lineTo(midX, midY);
+      path.lineTo(endX - offset, midY);
+      path.lineTo(endX - offset, endY);
+    }
+    path.lineTo(endX, endY); // Enter successor from the left
     canvas.drawPath(path, paint);
 
     // Draw arrowhead
@@ -564,11 +572,20 @@ class BarsCollectionPainter extends CustomPainter {
     final path = Path();
     path.moveTo(startX, startY);
 
-    final controlXOffset = (endX - startX).abs() > 20 ? 10.0 : (endX - startX).abs() / 2;
-    final controlX1 = startX - controlXOffset;
-    final controlX2 = endX - controlXOffset;
+    const offset = 10.0;
+    final midX1 = startX - offset;
+    final midX2 = endX - offset;
 
-    path.cubicTo(controlX1, startY, controlX2, endY, endX, endY);
+    if (startY == endY) {
+      // Same row, simple U-shape
+      path.lineTo(min(midX1, midX2), startY);
+      path.lineTo(min(midX1, midX2), endY);
+    } else {
+      path.lineTo(midX1, startY);
+      path.lineTo(midX1, endY);
+    }
+    path.lineTo(endX, endY);
+
     canvas.drawPath(path, paint);
 
     // Draw arrowhead (points right, towards successor task body)
@@ -599,11 +616,20 @@ class BarsCollectionPainter extends CustomPainter {
     final path = Path();
     path.moveTo(startX, startY);
 
-    final controlXOffset = (endX - startX).abs() > 20 ? 10.0 : (endX - startX).abs() / 2;
-    final controlX1 = startX + controlXOffset;
-    final controlX2 = endX + controlXOffset;
+    const offset = 10.0;
+    final midX1 = startX + offset;
+    final midX2 = endX + offset;
 
-    path.cubicTo(controlX1, startY, controlX2, endY, endX, endY);
+    if (startY == endY) {
+      // Same row, simple U-shape
+      path.lineTo(max(midX1, midX2), startY);
+      path.lineTo(max(midX1, midX2), endY);
+    } else {
+      path.lineTo(midX1, startY);
+      path.lineTo(midX1, endY);
+    }
+    path.lineTo(endX, endY);
+
     canvas.drawPath(path, paint);
 
     // Draw arrowhead (points left, towards successor task body)
@@ -631,8 +657,24 @@ class BarsCollectionPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
-    // This can be a simple line as it's less common and less likely to need complex routing.
-    canvas.drawLine(Offset(startX, startY), Offset(endX, endY), paint);
+    final path = Path();
+    path.moveTo(startX, startY);
+
+    const offset = 10.0;
+    final midX = startX - offset;
+
+    if (endX < midX) {
+      path.lineTo(midX, startY);
+      path.lineTo(midX, endY);
+    } else {
+      final midY = startY < endY ? successorRect.top - offset : successorRect.bottom + offset;
+      path.lineTo(midX, startY);
+      path.lineTo(midX, midY);
+      path.lineTo(endX + offset, midY);
+      path.lineTo(endX + offset, endY);
+    }
+    path.lineTo(endX, endY);
+    canvas.drawPath(path, paint);
 
     // Draw arrowhead (points left, towards successor task body)
     final arrowPath = Path();

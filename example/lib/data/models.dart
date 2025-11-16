@@ -64,7 +64,7 @@ class GanttResourceData {
   static GanttResourceData fromJson(Map<String, dynamic> json) => GanttResourceData(
         id: json['id'] as String,
         name: json['name'] as String,
-        taskName: json['task'] as String?,
+        taskName: json['taskName'] as String?,
         children: (json['children'] as List<dynamic>?)
                 ?.map((e) => GanttJobData.fromJson(e as Map<String, dynamic>))
                 .toList() ??

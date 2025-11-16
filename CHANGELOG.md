@@ -1,3 +1,8 @@
+## 2.6.1
+
+* **FIX**: Fix for an issue that caused dependency lines to follow the shortest path, leading to unexpected visual appearance.
+* **EXAMPLE FIX**: Fix for an issue that caused the example to show name on gantt bars instead of taskName. 
+
 ## 2.6.0
 
 * **FEATURE**: Added `loadingIndicatorPosition` and `loadingIndicatorType` to customize the loading indicator. 

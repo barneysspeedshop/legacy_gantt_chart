@@ -451,6 +451,16 @@ class _GanttViewState extends State<GanttView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('Show Dependencies'),
+                Switch(
+                  value: vm.showDependencies,
+                  onChanged: vm.setShowDependencies,
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 const Text('Show Empty Parents'),
                 Switch(
                   value: vm.showEmptyParentRows,
