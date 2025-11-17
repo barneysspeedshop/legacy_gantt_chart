@@ -1,3 +1,7 @@
+## 2.7.0
+
+* **FEATURE**: Added support for custom linear progress indicator height
+
 ## 2.6.1
 
 * **FIX**: Fix for an issue that caused dependency lines to follow the shortest path, leading to unexpected visual appearance.
