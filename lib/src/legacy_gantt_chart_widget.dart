@@ -241,6 +241,10 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Defaults to [GanttLoadingIndicatorPosition.top].
   final GanttLoadingIndicatorPosition loadingIndicatorPosition;
 
+  /// The height of the loading indicator when using [GanttLoadingIndicatorType.linear].
+  /// Defaults to `4.0`.
+  final double loadingIndicatorHeight;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -280,6 +284,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.height,
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
+    this.loadingIndicatorHeight = 4.0,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -311,11 +316,11 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final dependencies = controller.dependencies;
           final allItems = [...tasks, ...holidays];
 
-          if (controller.isOverallLoading && allItems.isEmpty) {
+          if (controller.isOverallLoading && allItems.isEmpty && !widget.showEmptyRows) {
             if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
               return const Center(child: CircularProgressIndicator());
             } else {
-              return const LinearProgressIndicator();
+              return SizedBox(height: widget.loadingIndicatorHeight, child: const LinearProgressIndicator());
             }
           }
 
@@ -345,7 +350,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                   right: 0,
                   top: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.top ? 0 : null,
                   bottom: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.bottom ? 0 : null,
-                  child: const LinearProgressIndicator(),
+                  child: SizedBox(height: widget.loadingIndicatorHeight, child: const LinearProgressIndicator()),
                 ),
               if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
                 Positioned.fill(
