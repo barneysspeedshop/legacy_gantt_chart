@@ -415,18 +415,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
       ChangeNotifierProvider(
-        key: ValueKey(
-          Object.hash(
-            tasks.length,
-            // The hashCode of individual list elements (tasks/dependencies/rows) is unstable
-            // if they contain closures (like cellBuilder) or are recreated on parent rebuilds.
-            // Rely only on lengths and the stable hash of the immutable map.
-            dependencies.length,
-            widget.visibleRows.length,
-            widget.rowMaxStackDepth,
-            widget.axisHeight,
-          ),
-        ),
+        key: ValueKey(Object.hashAll(tasks)),
         create: (_) => LegacyGanttViewModel(
           data: tasks,
           dependencies: dependencies,

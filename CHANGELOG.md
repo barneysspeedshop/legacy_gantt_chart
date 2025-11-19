@@ -1,3 +1,8 @@
+## 2.8.0
+
+* **FEATURE**: Hpdate hashing characteristics for more stable task drag/drop/resize
+* **EXAMPLE FEATURE**: Added a minimal example as `main2.dart` for more barebones usage
+
 ## 2.7.0
 
 * **FEATURE**: Added support for custom linear progress indicator height
