@@ -1,6 +1,10 @@
+## 2.8.1
+
+* **FIX**: Fix a typo in the changelog
+
 ## 2.8.0
 
-* **FEATURE**: Hpdate hashing characteristics for more stable task drag/drop/resize
+* **FEATURE**: Update hashing characteristics for more stable task drag/drop/resize
 * **EXAMPLE FEATURE**: Added a minimal example as `main2.dart` for more barebones usage
 
 ## 2.7.0
