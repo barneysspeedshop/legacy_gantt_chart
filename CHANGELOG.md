@@ -1,3 +1,7 @@
+## 2.8.2
+
+* **DOC**: Added `doc/` dir including more information on usage and customization
+
 ## 2.8.1
 
 * **FIX**: Fix a typo in the changelog
