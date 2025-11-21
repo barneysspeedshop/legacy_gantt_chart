@@ -68,9 +68,15 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// The height of the timeline axis header at the top of the chart.
   final double? axisHeight;
 
-  /// A map from a row ID to the maximum number of tasks that can be stacked vertically
-  /// in that row. If the number of overlapping tasks exceeds this value, a
-  /// conflict indicator will be shown.
+  /// Defines the height of each row based on task overlaps.
+  ///
+  /// This map keys a [LegacyGanttRow.id] to an integer representing the maximum
+  /// number of concurrent tasks to display vertically in that row.
+  ///
+  /// * **Calculation:** The total height for a given row is calculated as
+  ///   `rowHeight * rowMaxStackDepth[rowId]`.
+  /// * **Conflicts:** If more tasks overlap than this value allows, the chart
+  ///   will render a conflict indicator (a red, patterned bar) if `showConflicts` is enabled.
   final Map<String, int> rowMaxStackDepth;
 
   /// The height of a single task bar lane within a row. The total height of a
@@ -82,12 +88,18 @@ class LegacyGanttChartWidget extends StatefulWidget {
   final LegacyGanttTheme? theme;
 
   /// The start of the visible date range, expressed as milliseconds since the Unix epoch.
-  /// This is ignored if a [controller] is provided.
-  final double? gridMin; // Unix timestamp or milliseconds since epoch
+  ///
+  /// This determines the leftmost edge of the chart's viewport.
+  /// * If a [controller] is provided, this property is ignored as the controller manages the viewport.
+  /// * If [gridMin] is null and no controller is used, the chart defaults to the earliest start date found in [data].
+  final double? gridMin;
 
   /// The end of the visible date range, expressed as milliseconds since the Unix epoch.
-  /// This is ignored if a [controller] is provided.
-  final double? gridMax; // Unix timestamp or milliseconds since epoch
+  ///
+  /// This determines the rightmost edge of the chart's viewport.
+  /// * If a [controller] is provided, this property is ignored as the controller manages the viewport.
+  /// * If [gridMax] is null and no controller is used, the chart defaults to the latest end date found in [data].
+  final double? gridMax;
 
   /// The absolute start of the entire possible date range for the chart.
   /// This is used by the timeline axis to determine its overall width.

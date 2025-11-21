@@ -90,6 +90,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
     -   **Summary Bars (Angled Pattern):** A summary bar depicts a resource's overall time allocation (e.g., a developer's work week). The angled pattern signifies it's a container for other tasks. Child rows underneath show the specific tasks that consume this allocated time, making it easy to see how the resource's time is being used and whether they have availability.
     -   **Conflict Indicators (Red Angled Pattern):** This pattern is used to raise awareness of contemporaneous activity that exceeds capacity. It typically appears when more tasks are scheduled in a row than the `rowMaxStackDepth` allows, highlighting over-allocation or scheduling issues.
     -   **Vertical Markers (Background Highlights):** Simple colored rectangles used to denote special time ranges like weekends, holidays, or periods of unavailability for a specific resource.
+    -   **Automatic Conflict Detection:** The example application includes a `LegacyGanttConflictDetector` utility that automatically processes your task data. It identifies tasks within the same logical group (e.g., assigned to the same person) that overlap in time. When a conflict is found, the detector generates new, temporary `LegacyGanttTask` objects with the `isOverlapIndicator` flag set to `true`. These "extra" tasks are what get rendered as the red, angled conflict pattern on your chart. This is an opt-in feature; you have full control over whether and how to run conflict detection on your data before passing it to the widget.
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
 -   **Programmatic Validation:** Use callbacks like `onTaskUpdate` to validate user actions before committing them.
 
@@ -267,30 +268,70 @@ class _DynamicGanttChartPageState extends State<DynamicGanttChartPage> {
 
 ### Timeline Navigation with `LegacyGanttTimelineScrubber`
 
-Combine the `LegacyGanttController` with the `LegacyGanttTimelineScrubber` to provide users with a powerful way to navigate the chart's timeline.
+The `legacy_timeline_scrubber` package is a separate, standalone package that is re-exported by `legacy_gantt_chart` for convenience. It provides a "mini-map" of the entire project timeline, allowing for quick and intuitive navigation.
+
+To achieve two-way synchronization, you need to manage a shared state for the visible date range. When the user scrolls the chart, the scrubber's window should update. When the user drags the scrubber's window, the chart should scroll to that date range.
+
+Here is a simplified example using `StatefulWidget` to manage the state. In a real application, you would likely use a more robust state management solution like Provider or BLoC, as demonstrated in the example app with `GanttViewModel`.
 
 ```dart
-Column(
-  children: [
-    Expanded(
-      child: LegacyGanttChartWidget(
-        controller: _controller,
-        // ... other properties
-      ),
-    ),
-    // The Scrubber
-    LegacyGanttTimelineScrubber(
-      totalStartDate: DateTime(2023, 1, 1),
-      totalEndDate: DateTime(2024, 12, 31),
-      visibleStartDate: _controller.visibleStartDate,
-      visibleEndDate: _controller.visibleEndDate,
-      tasks: _controller.tasks, // Show tasks in the scrubber overview
-      onWindowChanged: (newStart, newEnd) {
-        _controller.setVisibleRange(newStart, newEnd);
-      },
-    ),
-  ],
-)
+class SyncedGanttChart extends StatefulWidget {
+  @override
+  _SyncedGanttChartState createState() => _SyncedGanttChartState();
+}
+
+class _SyncedGanttChartState extends State<SyncedGanttChart> {
+  // 1. Define state for the visible window
+  DateTime _visibleStart = DateTime.now().subtract(const Duration(days: 15));
+  DateTime _visibleEnd = DateTime.now().add(const Duration(days: 15));
+
+  // Define the total range of your project
+  final DateTime _totalStart = DateTime.now().subtract(const Duration(days: 365));
+  final DateTime _totalEnd = DateTime.now().add(const Duration(days: 365));
+
+  // Your task data
+  final List<LegacyGanttTask> _tasks = []; // Populate with your tasks
+  final List<LegacyGanttRow> _rows = []; // Populate with your rows
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: LegacyGanttChartWidget(
+            data: _tasks,
+            visibleRows: _rows,
+            rowMaxStackDepth: const {},
+            // 2. The chart's visible window is driven by the state
+            gridMin: _visibleStart.millisecondsSinceEpoch.toDouble(),
+            gridMax: _visibleEnd.millisecondsSinceEpoch.toDouble(),
+            // The total range defines the scrollable area
+            totalGridMin: _totalStart.millisecondsSinceEpoch.toDouble(),
+            totalGridMax: _totalEnd.millisecondsSinceEpoch.toDouble(),
+            // Note: For the chart to update the scrubber on scroll, you would
+            // need to use a controller or listen to scroll notifications to
+            // calculate the new visible range and update the state.
+          ),
+        ),
+        LegacyGanttTimelineScrubber(
+          totalStartDate: _totalStart,
+          totalEndDate: _totalEnd,
+          // 3. The scrubber's window is also driven by the state
+          visibleStartDate: _visibleStart,
+          visibleEndDate: _visibleEnd,
+          tasks: _tasks,
+          // 4. When the scrubber changes, update the state
+          onWindowChanged: (newStart, newEnd) {
+            setState(() {
+              _visibleStart = newStart;
+              _visibleEnd = newEnd;
+            });
+          },
+        ),
+      ],
+    );
+  }
+}
 ```
 
 ### Interactive Tasks (Drag & Drop, Resize)
