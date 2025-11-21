@@ -1,3 +1,7 @@
+## 2.8.3
+
+* **EXAMPLE FIX**: Render example in safe areas
+
 ## 2.8.2
 
 * **DOC**: Added `doc/` dir including more information on usage and customization

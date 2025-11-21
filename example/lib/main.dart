@@ -648,319 +648,321 @@ class _GanttViewState extends State<GanttView> {
               onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
             ),
           ),
-          body: Consumer<GanttViewModel>(
-            builder: (context, vm, child) {
-              final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-              final ganttTheme = _buildGanttTheme();
-              // Update the format after the current frame is built to avoid calling notifyListeners during build.
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
-              });
+          body: SafeArea(
+            child: Consumer<GanttViewModel>(
+              builder: (context, vm, child) {
+                final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+                final ganttTheme = _buildGanttTheme();
+                // Update the format after the current frame is built to avoid calling notifyListeners during build.
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
+                });
 
-              return Row(
-                children: [
-                  if (_isPanelVisible)
-                    SizedBox(
-                      width: vm.controlPanelWidth ?? 350,
-                      child: _buildControlPanel(context, vm),
-                    ),
-                  if (_isPanelVisible)
-                    GestureDetector(
-                      onHorizontalDragUpdate: (details) {
-                        final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
-                        vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
-                      },
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.resizeLeftRight,
-                        child: VerticalDivider(
-                          width: 8,
-                          thickness: 8,
-                          color: Theme.of(context).dividerColor,
+                return Row(
+                  children: [
+                    if (_isPanelVisible)
+                      SizedBox(
+                        width: vm.controlPanelWidth ?? 350,
+                        child: _buildControlPanel(context, vm),
+                      ),
+                    if (_isPanelVisible)
+                      GestureDetector(
+                        onHorizontalDragUpdate: (details) {
+                          final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
+                          vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
+                        },
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeLeftRight,
+                          child: VerticalDivider(
+                            width: 8,
+                            thickness: 8,
+                            color: Theme.of(context).dividerColor,
+                          ),
                         ),
                       ),
-                    ),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (vm.gridWidth == null) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            vm.setGridWidth(constraints.maxWidth * 0.4);
-                          });
-                        }
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (vm.gridWidth == null) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              vm.setGridWidth(constraints.maxWidth * 0.4);
+                            });
+                          }
 
-                        return Row(
-                          children: [
-                            // Gantt Grid (Left Side)
-                            // This is a custom widget for this example app that shows a data grid.
-                            // It is synchronized with the Gantt chart via a shared ScrollController.
-                            // This is a common pattern for building a complete Gantt chart UI.
-                            SizedBox(
-                              width: vm.gridWidth ?? constraints.maxWidth * 0.4,
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: GanttGrid(
-                                      headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                      gridData: vm.visibleGridData,
-                                      visibleGanttRows: vm.visibleGanttRows,
-                                      rowMaxStackDepth: vm.rowMaxStackDepth,
-                                      scrollController: vm.scrollController,
-                                      onToggleExpansion: vm.toggleExpansion,
-                                      isDarkMode: isDarkMode,
-                                      onAddContact: () => vm.addContact(context),
-                                      onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
-                                      onSetParentTaskType: vm.setParentTaskType,
-                                      onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
-                                      onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
-                                      onEditAllParentTasks: () => vm.editAllParentTasks(context),
-                                      onDeleteRow: vm.deleteRow,
-                                      ganttTasks: vm.ganttTasks,
-                                    ),
-                                  ),
-                                  // This SizedBox balances the height of the timeline scrubber on the right.
-                                  const SizedBox(height: 40),
-                                ],
-                              ),
-                            ),
-                            // Draggable Divider
-                            GestureDetector(
-                              onHorizontalDragUpdate: (details) {
-                                final newWidth = (vm.gridWidth ?? 0) + details.delta.dx;
-                                vm.setGridWidth(newWidth.clamp(150.0, constraints.maxWidth - 150.0));
-                              },
-                              child: MouseRegion(
-                                cursor: SystemMouseCursors.resizeLeftRight,
-                                child: VerticalDivider(
-                                  width: 8,
-                                  thickness: 8,
-                                  color: Theme.of(context).dividerColor,
-                                ),
-                              ),
-                            ),
-                            // Gantt Chart (Right Side)
-                            Expanded(
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: LayoutBuilder(
-                                      builder: (context, chartConstraints) {
-                                        // If data is still loading, show a progress indicator
-                                        if (vm.isLoading) {
-                                          return const Center(child: CircularProgressIndicator());
-                                        }
-
-                                        final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
-
-                                        // Calculate the total height required for the Gantt chart content.
-                                        // This is essential when the chart is in a vertically scrolling view.
-                                        final double axisHeight =
-                                            _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
-                                        final double ganttContentHeight = vm.visibleGanttRows.fold<double>(
-                                          0.0,
-                                          (prev, row) => prev + (vm.rowMaxStackDepth[row.id] ?? 1) * vm.rowHeight,
-                                        ); // Use vm.rowHeight
-
-                                        return SingleChildScrollView(
-                                          scrollDirection: Axis.horizontal,
-                                          controller: vm.ganttHorizontalScrollController,
-                                          child: SizedBox(
-                                            width: ganttWidth,
-                                            height: axisHeight + ganttContentHeight,
-                                            child: LegacyGanttChartWidget(
-                                              loadingIndicatorType: vm.loadingIndicatorType,
-                                              loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                              // --- Custom Builders ---
-                                              timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
-                                              timelineAxisHeaderBuilder:
-                                                  _selectedAxisFormat == TimelineAxisFormat.custom
-                                                      ? _buildCustomTimelineHeader
-                                                      : null,
-
-                                              // --- Data and Layout ---
-                                              data: vm.ganttTasks,
-                                              dependencies: vm.dependencies,
-                                              visibleRows: vm.visibleGanttRows, // This should be correct
-                                              rowHeight: 27.0,
-                                              rowMaxStackDepth: vm.rowMaxStackDepth,
-                                              // The axis height is adjusted based on whether we are using the
-                                              // default single-line header or the custom two-line header.
-                                              axisHeight: axisHeight,
-
-                                              // --- Scroll Controllers and Syncing ---
-                                              // This is the key to synchronizing the vertical scroll between the
-                                              // left-side grid and the right-side chart.
-                                              scrollController: vm.scrollController,
-
-                                              // --- Date Range ---
-                                              // These define the currently visible time window.
-                                              gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
-                                              gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
-                                              // These define the total scrollable time range.
-                                              totalGridMin:
-                                                  vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
-                                              totalGridMax: vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
-                                              enableDragAndDrop: vm.dragAndDropEnabled,
-                                              showEmptyRows: vm.showEmptyParentRows,
-                                              enableResize: vm.resizeEnabled,
-                                              onTaskUpdate: (task, start, end) {
-                                                vm.handleTaskUpdate(task, start, end);
-                                                _showSnackbar('Updated ${task.name}');
-                                              },
-                                              onTaskDoubleClick: (task) {
-                                                _handleSnapToTask(task);
-                                              },
-                                              // This callback is triggered when a user clicks on an empty space,
-                                              // allowing for the creation of new tasks.
-                                              onEmptySpaceClick: (rowId, time) =>
-                                                  vm.handleEmptySpaceClick(context, rowId, time),
-                                              onPressTask: (task) => _showSnackbar('Tapped on task: ${task.name}'),
-                                              onTaskHover: (task, globalPosition) =>
-                                                  vm.onTaskHover(task, context, globalPosition),
-
-                                              // --- Theming and Styling ---
-                                              theme: ganttTheme,
-                                              resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
-                                              resizeTooltipBackgroundColor: Colors.purple,
-                                              resizeHandleWidth: vm.resizeHandleWidth,
-                                              resizeTooltipFontColor: Colors.white,
-
-                                              // --- Custom Task Content ---
-                                              // This builder injects custom content *inside* the default task bar.
-                                              // It's used here to add an icon and a context menu button.
-                                              taskContentBuilder: (task) {
-                                                if (task.isTimeRangeHighlight) {
-                                                  return const SizedBox.shrink(); // Hide content for highlights
-                                                }
-                                                final barColor = task.color ?? ganttTheme.barColorPrimary;
-                                                final textColor =
-                                                    ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
-                                                        ? Colors.white
-                                                        : Colors.black;
-                                                final textStyle = ganttTheme.taskTextStyle.copyWith(color: textColor);
-                                                return GestureDetector(
-                                                  onSecondaryTapUp: (details) {
-                                                    _showTaskContextMenu(context, task, details.globalPosition);
-                                                  },
-                                                  child: LayoutBuilder(builder: (context, constraints) {
-                                                    // Define minimum widths for content visibility.
-                                                    final bool canShowButton = constraints.maxWidth >= 32;
-                                                    final bool canShowText = constraints.maxWidth > 66;
-
-                                                    return Stack(
-                                                      children: [
-                                                        // Task content (icon and name)
-                                                        if (canShowText)
-                                                          Padding(
-                                                            // Pad to the right to avoid overlapping the options button.
-                                                            padding: const EdgeInsets.only(left: 4.0, right: 32.0),
-                                                            child: Row(
-                                                              children: [
-                                                                Icon(
-                                                                  task.isSummary
-                                                                      ? Icons.summarize_outlined
-                                                                      : Icons.task_alt,
-                                                                  color: textColor,
-                                                                  size: 16,
-                                                                ),
-                                                                const SizedBox(width: 4),
-                                                                Expanded(
-                                                                  child: Text(
-                                                                    task.name ?? '',
-                                                                    style: textStyle,
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                    softWrap: false,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-
-                                                        // Options menu button
-                                                        if (canShowButton)
-                                                          Positioned(
-                                                            right:
-                                                                8, // Inset from the right edge to leave space for resize handle
-                                                            top: 0,
-                                                            bottom: 0,
-                                                            child: Builder(
-                                                              builder: (context) => IconButton(
-                                                                padding: EdgeInsets.zero,
-                                                                icon: Icon(Icons.more_vert, color: textColor, size: 18),
-                                                                tooltip: 'Task Options',
-                                                                onPressed: () {
-                                                                  final RenderBox button =
-                                                                      context.findRenderObject() as RenderBox;
-                                                                  final Offset offset =
-                                                                      button.localToGlobal(Offset.zero);
-                                                                  final tapPosition =
-                                                                      offset.translate(button.size.width, 0);
-                                                                  _showTaskContextMenu(context, task, tapPosition);
-                                                                },
-                                                              ),
-                                                            ),
-                                                          ),
-                                                      ],
-                                                    );
-                                                  }),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  // --- Timeline Scrubber ---
-                                  // This widget from the `legacy_timeline_scrubber` package provides a
-                                  // mini-map of the entire timeline, allowing for quick navigation.
-                                  // It's a separate package but designed to work well with the Gantt chart.
-                                  // Note how the task data is mapped to the scrubber's own task model.
-                                  if (vm.totalStartDate != null &&
-                                      vm.totalEndDate != null &&
-                                      vm.visibleStartDate != null &&
-                                      vm.visibleEndDate != null)
-                                    Container(
-                                      height: 40,
-                                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                      color: Theme.of(context).cardColor,
-                                      child: scrubber.LegacyGanttTimelineScrubber(
-                                        totalStartDate: vm.totalStartDate!,
-                                        totalEndDate: vm.totalEndDate!,
-                                        visibleStartDate: vm.visibleStartDate!,
-                                        visibleEndDate: vm.visibleEndDate!,
-                                        onWindowChanged: vm.onScrubberWindowChanged,
-                                        visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
+                          return Row(
+                            children: [
+                              // Gantt Grid (Left Side)
+                              // This is a custom widget for this example app that shows a data grid.
+                              // It is synchronized with the Gantt chart via a shared ScrollController.
+                              // This is a common pattern for building a complete Gantt chart UI.
+                              SizedBox(
+                                width: vm.gridWidth ?? constraints.maxWidth * 0.4,
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: GanttGrid(
+                                        headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                        gridData: vm.visibleGridData,
+                                        visibleGanttRows: vm.visibleGanttRows,
                                         rowMaxStackDepth: vm.rowMaxStackDepth,
-                                        rowHeight: 27.0,
-                                        tasks: vm.ganttTasks
-                                            .map((t) => scrubber.LegacyGanttTask(
-                                                  id: t.id,
-                                                  rowId: t.rowId,
-                                                  stackIndex: t.stackIndex,
-                                                  start: t.start,
-                                                  end: t.end,
-                                                  name: t.name,
-                                                  color: t.color,
-                                                  isOverlapIndicator: t.isOverlapIndicator,
-                                                  isTimeRangeHighlight: t.isTimeRangeHighlight,
-                                                  isSummary: t.isSummary,
-                                                ))
-                                            .toList(),
-                                        startPadding: const Duration(days: 7),
-                                        endPadding: const Duration(days: 7),
+                                        scrollController: vm.scrollController,
+                                        onToggleExpansion: vm.toggleExpansion,
+                                        isDarkMode: isDarkMode,
+                                        onAddContact: () => vm.addContact(context),
+                                        onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
+                                        onSetParentTaskType: vm.setParentTaskType,
+                                        onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
+                                        onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
+                                        onEditAllParentTasks: () => vm.editAllParentTasks(context),
+                                        onDeleteRow: vm.deleteRow,
+                                        ganttTasks: vm.ganttTasks,
                                       ),
                                     ),
-                                ],
+                                    // This SizedBox balances the height of the timeline scrubber on the right.
+                                    const SizedBox(height: 40),
+                                  ],
+                                ),
                               ),
-                            )
-                          ],
-                        );
-                      },
+                              // Draggable Divider
+                              GestureDetector(
+                                onHorizontalDragUpdate: (details) {
+                                  final newWidth = (vm.gridWidth ?? 0) + details.delta.dx;
+                                  vm.setGridWidth(newWidth.clamp(150.0, constraints.maxWidth - 150.0));
+                                },
+                                child: MouseRegion(
+                                  cursor: SystemMouseCursors.resizeLeftRight,
+                                  child: VerticalDivider(
+                                    width: 8,
+                                    thickness: 8,
+                                    color: Theme.of(context).dividerColor,
+                                  ),
+                                ),
+                              ),
+                              // Gantt Chart (Right Side)
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: LayoutBuilder(
+                                        builder: (context, chartConstraints) {
+                                          // If data is still loading, show a progress indicator
+                                          if (vm.isLoading) {
+                                            return const Center(child: CircularProgressIndicator());
+                                          }
+
+                                          final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
+
+                                          // Calculate the total height required for the Gantt chart content.
+                                          // This is essential when the chart is in a vertically scrolling view.
+                                          final double axisHeight =
+                                              _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
+                                          final double ganttContentHeight = vm.visibleGanttRows.fold<double>(
+                                            0.0,
+                                            (prev, row) => prev + (vm.rowMaxStackDepth[row.id] ?? 1) * vm.rowHeight,
+                                          ); // Use vm.rowHeight
+
+                                          return SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            controller: vm.ganttHorizontalScrollController,
+                                            child: SizedBox(
+                                              width: ganttWidth,
+                                              height: axisHeight + ganttContentHeight,
+                                              child: LegacyGanttChartWidget(
+                                                loadingIndicatorType: vm.loadingIndicatorType,
+                                                loadingIndicatorPosition: vm.loadingIndicatorPosition,
+                                                // --- Custom Builders ---
+                                                timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
+                                                timelineAxisHeaderBuilder:
+                                                    _selectedAxisFormat == TimelineAxisFormat.custom
+                                                        ? _buildCustomTimelineHeader
+                                                        : null,
+
+                                                // --- Data and Layout ---
+                                                data: vm.ganttTasks,
+                                                dependencies: vm.dependencies,
+                                                visibleRows: vm.visibleGanttRows, // This should be correct
+                                                rowHeight: 27.0,
+                                                rowMaxStackDepth: vm.rowMaxStackDepth,
+                                                // The axis height is adjusted based on whether we are using the
+                                                // default single-line header or the custom two-line header.
+                                                axisHeight: axisHeight,
+
+                                                // --- Scroll Controllers and Syncing ---
+                                                // This is the key to synchronizing the vertical scroll between the
+                                                // left-side grid and the right-side chart.
+                                                scrollController: vm.scrollController,
+
+                                                // --- Date Range ---
+                                                // These define the currently visible time window.
+                                                gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
+                                                gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
+                                                // These define the total scrollable time range.
+                                                totalGridMin:
+                                                    vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
+                                                totalGridMax: vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
+                                                enableDragAndDrop: vm.dragAndDropEnabled,
+                                                showEmptyRows: vm.showEmptyParentRows,
+                                                enableResize: vm.resizeEnabled,
+                                                onTaskUpdate: (task, start, end) {
+                                                  vm.handleTaskUpdate(task, start, end);
+                                                  _showSnackbar('Updated ${task.name}');
+                                                },
+                                                onTaskDoubleClick: (task) {
+                                                  _handleSnapToTask(task);
+                                                },
+                                                // This callback is triggered when a user clicks on an empty space,
+                                                // allowing for the creation of new tasks.
+                                                onEmptySpaceClick: (rowId, time) =>
+                                                    vm.handleEmptySpaceClick(context, rowId, time),
+                                                onPressTask: (task) => _showSnackbar('Tapped on task: ${task.name}'),
+                                                onTaskHover: (task, globalPosition) =>
+                                                    vm.onTaskHover(task, context, globalPosition),
+
+                                                // --- Theming and Styling ---
+                                                theme: ganttTheme,
+                                                resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
+                                                resizeTooltipBackgroundColor: Colors.purple,
+                                                resizeHandleWidth: vm.resizeHandleWidth,
+                                                resizeTooltipFontColor: Colors.white,
+
+                                                // --- Custom Task Content ---
+                                                // This builder injects custom content *inside* the default task bar.
+                                                // It's used here to add an icon and a context menu button.
+                                                taskContentBuilder: (task) {
+                                                  if (task.isTimeRangeHighlight) {
+                                                    return const SizedBox.shrink(); // Hide content for highlights
+                                                  }
+                                                  final barColor = task.color ?? ganttTheme.barColorPrimary;
+                                                  final textColor =
+                                                      ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
+                                                          ? Colors.white
+                                                          : Colors.black;
+                                                  final textStyle = ganttTheme.taskTextStyle.copyWith(color: textColor);
+                                                  return GestureDetector(
+                                                    onSecondaryTapUp: (details) {
+                                                      _showTaskContextMenu(context, task, details.globalPosition);
+                                                    },
+                                                    child: LayoutBuilder(builder: (context, constraints) {
+                                                      // Define minimum widths for content visibility.
+                                                      final bool canShowButton = constraints.maxWidth >= 32;
+                                                      final bool canShowText = constraints.maxWidth > 66;
+
+                                                      return Stack(
+                                                        children: [
+                                                          // Task content (icon and name)
+                                                          if (canShowText)
+                                                            Padding(
+                                                              // Pad to the right to avoid overlapping the options button.
+                                                              padding: const EdgeInsets.only(left: 4.0, right: 32.0),
+                                                              child: Row(
+                                                                children: [
+                                                                  Icon(
+                                                                    task.isSummary
+                                                                        ? Icons.summarize_outlined
+                                                                        : Icons.task_alt,
+                                                                    color: textColor,
+                                                                    size: 16,
+                                                                  ),
+                                                                  const SizedBox(width: 4),
+                                                                  Expanded(
+                                                                    child: Text(
+                                                                      task.name ?? '',
+                                                                      style: textStyle,
+                                                                      overflow: TextOverflow.ellipsis,
+                                                                      softWrap: false,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+
+                                                          // Options menu button
+                                                          if (canShowButton)
+                                                            Positioned(
+                                                              right:
+                                                                  8, // Inset from the right edge to leave space for resize handle
+                                                              top: 0,
+                                                              bottom: 0,
+                                                              child: Builder(
+                                                                builder: (context) => IconButton(
+                                                                  padding: EdgeInsets.zero,
+                                                                  icon: Icon(Icons.more_vert, color: textColor, size: 18),
+                                                                  tooltip: 'Task Options',
+                                                                  onPressed: () {
+                                                                    final RenderBox button =
+                                                                        context.findRenderObject() as RenderBox;
+                                                                    final Offset offset =
+                                                                        button.localToGlobal(Offset.zero);
+                                                                    final tapPosition =
+                                                                        offset.translate(button.size.width, 0);
+                                                                    _showTaskContextMenu(context, task, tapPosition);
+                                                                  },
+                                                                ),
+                                                              ),
+                                                            ),
+                                                        ],
+                                                      );
+                                                    }),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    // --- Timeline Scrubber ---
+                                    // This widget from the `legacy_timeline_scrubber` package provides a
+                                    // mini-map of the entire timeline, allowing for quick navigation.
+                                    // It's a separate package but designed to work well with the Gantt chart.
+                                    // Note how the task data is mapped to the scrubber's own task model.
+                                    if (vm.totalStartDate != null &&
+                                        vm.totalEndDate != null &&
+                                        vm.visibleStartDate != null &&
+                                        vm.visibleEndDate != null)
+                                      Container(
+                                        height: 40,
+                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                        color: Theme.of(context).cardColor,
+                                        child: scrubber.LegacyGanttTimelineScrubber(
+                                          totalStartDate: vm.totalStartDate!,
+                                          totalEndDate: vm.totalEndDate!,
+                                          visibleStartDate: vm.visibleStartDate!,
+                                          visibleEndDate: vm.visibleEndDate!,
+                                          onWindowChanged: vm.onScrubberWindowChanged,
+                                          visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
+                                          rowMaxStackDepth: vm.rowMaxStackDepth,
+                                          rowHeight: 27.0,
+                                          tasks: vm.ganttTasks
+                                              .map((t) => scrubber.LegacyGanttTask(
+                                                    id: t.id,
+                                                    rowId: t.rowId,
+                                                    stackIndex: t.stackIndex,
+                                                    start: t.start,
+                                                    end: t.end,
+                                                    name: t.name,
+                                                    color: t.color,
+                                                    isOverlapIndicator: t.isOverlapIndicator,
+                                                    isTimeRangeHighlight: t.isTimeRangeHighlight,
+                                                    isSummary: t.isSummary,
+                                                  ))
+                                              .toList(),
+                                          startPadding: const Duration(days: 7),
+                                          endPadding: const Duration(days: 7),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              )
+                            ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
           ),
         ),
       );
