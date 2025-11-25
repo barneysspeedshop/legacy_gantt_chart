@@ -799,7 +799,8 @@ class _GanttViewState extends State<GanttView> {
                                                 // These define the total scrollable time range.
                                                 totalGridMin:
                                                     vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
-                                                totalGridMax: vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
+                                                totalGridMax:
+                                                    vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
                                                 enableDragAndDrop: vm.dragAndDropEnabled,
                                                 showEmptyRows: vm.showEmptyParentRows,
                                                 enableResize: vm.resizeEnabled,
@@ -886,7 +887,8 @@ class _GanttViewState extends State<GanttView> {
                                                               child: Builder(
                                                                 builder: (context) => IconButton(
                                                                   padding: EdgeInsets.zero,
-                                                                  icon: Icon(Icons.more_vert, color: textColor, size: 18),
+                                                                  icon:
+                                                                      Icon(Icons.more_vert, color: textColor, size: 18),
                                                                   tooltip: 'Task Options',
                                                                   onPressed: () {
                                                                     final RenderBox button =
