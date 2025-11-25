@@ -937,7 +937,22 @@ class GanttViewModel extends ChangeNotifier {
   void toggleExpansion(String id) {
     final item = _gridData.firstWhere((element) => element.id == id);
     item.isExpanded = !item.isExpanded;
-    notifyListeners();
+
+    if (_apiResponse != null) {
+      // After toggling, get the new set of visible row IDs.
+      final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
+      // Recalculate task stacking, but only run conflict detection on visible tasks.
+      final (recalculatedTasks, newMaxDepth) = _scheduleService.publicCalculateTaskStacking(
+        _ganttTasks,
+        _apiResponse!,
+        showConflicts: _showConflicts,
+        visibleRowIds: visibleRowIds,
+      );
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
+    } else {
+      // If there's no data, just notify to update the expansion arrow.
+      notifyListeners();
+    }
   }
 
   /// Handles the "Copy Task" action from the context menu.

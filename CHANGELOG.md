@@ -1,3 +1,8 @@
+## 2.8.4
+
+* **CHORE**: Update `provider` dependency
+* **EXAMPLE FIX**: Fix for an issue that caused expand/collapse to be one frame behind
+
 ## 2.8.3
 
 * **EXAMPLE FIX**: Render example in safe areas

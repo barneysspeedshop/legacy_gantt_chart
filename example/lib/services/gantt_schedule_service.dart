@@ -274,7 +274,7 @@ class GanttScheduleService {
 
   (List<LegacyGanttTask>, Map<String, int>) publicCalculateTaskStacking(
       List<LegacyGanttTask> tasks, GanttResponse apiResponse,
-      {bool showConflicts = true}) {
+      {bool showConflicts = true, Set<String>? visibleRowIds}) {
     final Map<String, List<LegacyGanttTask>> eventTasksByRow = {};
     final List<LegacyGanttTask> nonStackableTasks = [];
     final List<LegacyGanttTask> actualEventTasks = [];
@@ -327,8 +327,13 @@ class GanttScheduleService {
     List<LegacyGanttTask> conflictIndicators = [];
     if (showConflicts) {
       final conflictDetector = LegacyGanttConflictDetector();
+      // If visibleRowIds is provided, filter the tasks before running conflict detection.
+      // This prevents generating conflicts for tasks in collapsed rows.
+      final tasksForConflictDetection = visibleRowIds != null
+          ? stackedTasks.where((t) => visibleRowIds.contains(t.rowId)).toList()
+          : stackedTasks;
       conflictIndicators = conflictDetector.run<String>(
-        tasks: stackedTasks,
+        tasks: tasksForConflictDetection,
         taskGrouper: (task) {
           final resourceId = task.rowId;
           return lineItemToContactMap[resourceId] ?? (parentResourceIds.contains(resourceId) ? resourceId : null);
