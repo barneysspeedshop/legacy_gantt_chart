@@ -257,6 +257,19 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Defaults to `4.0`.
   final double loadingIndicatorHeight;
 
+  /// The days of the week to be highlighted as weekends.
+  ///
+  /// This list should contain integers representing the days of the week,
+  /// where Monday is 1 and Sunday is 7.
+  /// Defaults to [DateTime.saturday] and [DateTime.sunday].
+  final List<int> weekendDays;
+
+  /// The color used to highlight weekends in the chart background.
+  ///
+  /// If not provided, it defaults to a semi-transparent shade of the
+  /// theme's `onSurface` color.
+  final Color? weekendColor;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -297,6 +310,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
     this.loadingIndicatorHeight = 4.0,
+    this.weekendDays = const [DateTime.saturday, DateTime.sunday],
+    this.weekendColor,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -316,7 +331,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final LegacyGanttTheme effectiveTheme = widget.theme ?? LegacyGanttTheme.fromTheme(theme);
+    final LegacyGanttTheme effectiveTheme =
+        (widget.theme ?? LegacyGanttTheme.fromTheme(theme)).copyWith(weekendColor: widget.weekendColor);
 
     if (widget.controller != null) {
       return AnimatedBuilder(
@@ -367,7 +383,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
               if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
                 Positioned.fill(
                   child: Container(
-                    color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
+                    color: effectiveTheme.backgroundColor.withValues(alpha:0.5),
                     child: const Center(child: CircularProgressIndicator()),
                   ),
                 ),
@@ -533,6 +549,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                 visibleDomain: vm.visibleExtent,
                                 theme:
                                     effectiveTheme.copyWith(axisTextStyle: const TextStyle(color: Colors.transparent)),
+                                weekendColor: effectiveTheme.weekendColor,
+                                weekendDays: widget.weekendDays,
                               ),
                             ),
                           ),
@@ -600,6 +618,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                           visibleDomain: vm.visibleExtent,
                                           theme: effectiveTheme,
                                           timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                          weekendColor: effectiveTheme.weekendColor,
+                                          weekendDays: widget.weekendDays,
                                         ),
                                       ),
                               ),

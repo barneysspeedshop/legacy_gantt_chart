@@ -1,3 +1,7 @@
+## 2.9.0
+
+* **FEATURE**: Add `weekendColor` property to allow customizing the weekend highlight color.
+
 ## 2.8.4
 
 * **CHORE**: Update `provider` dependency

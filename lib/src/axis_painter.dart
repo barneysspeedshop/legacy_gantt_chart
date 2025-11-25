@@ -44,6 +44,12 @@ class AxisPainter extends CustomPainter {
   /// An optional builder function to customize the labels on the timeline axis.
   final String Function(DateTime, Duration)? timelineAxisLabelBuilder;
 
+  /// The color to use for highlighting weekend days.
+  final Color? weekendColor;
+
+  /// A list of integers representing the days of the week to be highlighted as weekends.
+  final List<int>? weekendDays;
+
   AxisPainter({
     required this.x,
     required this.y,
@@ -54,6 +60,8 @@ class AxisPainter extends CustomPainter {
     required this.visibleDomain,
     required this.theme,
     this.timelineAxisLabelBuilder,
+    this.weekendColor,
+    this.weekendDays,
   });
 
   @override
@@ -63,6 +71,22 @@ class AxisPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     if (domain.isEmpty || visibleDomain.isEmpty) return;
+
+    // Draw weekend highlights
+    if (weekendColor != null && weekendDays != null && weekendDays!.isNotEmpty) {
+      final weekendPaint = Paint()..color = weekendColor!;
+      DateTime currentDay = DateTime(visibleDomain.first.year, visibleDomain.first.month, visibleDomain.first.day);
+      while (currentDay.isBefore(visibleDomain.last)) {
+        if (weekendDays!.contains(currentDay.weekday)) {
+          final startX = scale(currentDay);
+          final endX = scale(currentDay.add(const Duration(days: 1)));
+          if (endX > startX) {
+            canvas.drawRect(Rect.fromLTWH(startX, y, endX - startX, height), weekendPaint);
+          }
+        }
+        currentDay = currentDay.add(const Duration(days: 1));
+      }
+    }
 
     final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
 

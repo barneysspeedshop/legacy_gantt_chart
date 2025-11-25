@@ -35,6 +35,7 @@ class LegacyGanttTheme {
   final Color emptySpaceAddIconColor;
   final double barHeightRatio;
   final Radius barCornerRadius;
+  final Color weekendColor;
   final bool showRowBorders;
   final Color? rowBorderColor;
 
@@ -43,19 +44,20 @@ class LegacyGanttTheme {
     required this.barColorSecondary,
     required this.textColor,
     required this.backgroundColor,
-    this.gridColor = const Color(0x33888888), // Colors.grey.withValues(alpha: 0.2)
-    this.summaryBarColor = const Color(0x33000000), // Colors.black.withValues(alpha: 0.2)
-    this.conflictBarColor = const Color(0x80F44336), // Colors.red.withValues(alpha: 0.5)
-    this.ghostBarColor = const Color(0xB32196F3), // Colors.blue.withValues(alpha: 0.7)
+    this.gridColor = const Color.fromRGBO(136, 136, 136, 0.2), // Colors.grey.withAlpha(0.2)
+    this.summaryBarColor = const Color.fromRGBO(0, 0, 0, 0.2), // Colors.black.withAlpha(0.2)
+    this.conflictBarColor = const Color.fromRGBO(244, 67, 54, 0.5), // Colors.red.withAlpha(0.5)
+    this.ghostBarColor = const Color.fromRGBO(33, 150, 243, 0.7), // Colors.blue.withAlpha(0.7)
     TextStyle? axisTextStyle,
     this.taskTextStyle = const TextStyle(fontSize: 12, color: Colors.white),
     this.showRowBorders = false,
     this.rowBorderColor,
-    this.dependencyLineColor = const Color(0xFF616161), // Colors.grey[700]
-    this.timeRangeHighlightColor = const Color(0x0D000000), // Colors.black.withValues(alpha: 0.05)
-    this.containedDependencyBackgroundColor = const Color(0x1A000000), // Colors.black.withValues(alpha: 0.1)
-    this.emptySpaceHighlightColor = const Color(0x0F2196F3), // Colors.blue.withValues(alpha: 0.06)
-    this.emptySpaceAddIconColor = const Color(0xFF2196F3), // Colors.blue
+    this.dependencyLineColor = const Color.fromRGBO(97, 97, 97, 1), // Colors.grey[700]
+    this.timeRangeHighlightColor = const Color.fromRGBO(0, 0, 0, 0.05), // Colors.black.withAlpha(0.05)
+    this.containedDependencyBackgroundColor = const Color.fromRGBO(0, 0, 0, 0.1), // Colors.black.withAlpha(0.1)
+    this.emptySpaceHighlightColor = const Color.fromRGBO(33, 150, 243, 0.06), // Colors.blue.withAlpha(0.06)
+    this.emptySpaceAddIconColor = const Color.fromRGBO(33, 150, 243, 1), // Colors.blue
+    this.weekendColor = const Color.fromRGBO(0, 0, 0, 0.04), // Colors.black.withAlpha(0.04)
     this.barHeightRatio = 0.7,
     this.barCornerRadius = const Radius.circular(4.0),
   }) : axisTextStyle = axisTextStyle ?? TextStyle(fontSize: 12, color: textColor);
@@ -80,6 +82,7 @@ class LegacyGanttTheme {
     Radius? barCornerRadius,
     bool? showRowBorders,
     Color? rowBorderColor,
+    Color? weekendColor,
   }) =>
       LegacyGanttTheme(
         barColorPrimary: barColorPrimary ?? this.barColorPrimary,
@@ -102,6 +105,7 @@ class LegacyGanttTheme {
         barCornerRadius: barCornerRadius ?? this.barCornerRadius,
         showRowBorders: showRowBorders ?? this.showRowBorders,
         rowBorderColor: rowBorderColor ?? this.rowBorderColor,
+        weekendColor: weekendColor ?? this.weekendColor,
       );
 
   /// Creates a default theme based on the application's [ThemeData].
@@ -110,16 +114,17 @@ class LegacyGanttTheme {
         barColorSecondary: theme.colorScheme.secondary,
         textColor: theme.colorScheme.onSurface,
         backgroundColor: theme.colorScheme.surface,
-        gridColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-        summaryBarColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-        conflictBarColor: Colors.red.withValues(alpha: 0.5),
-        ghostBarColor: theme.colorScheme.primary.withValues(alpha: 0.7),
-        rowBorderColor: theme.colorScheme.onSurface.withValues(alpha: 0.2),
-        dependencyLineColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
-        timeRangeHighlightColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
-        containedDependencyBackgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-        emptySpaceHighlightColor: theme.colorScheme.primary.withValues(alpha: 0.06),
+        gridColor: theme.colorScheme.onSurface.withValues(alpha:0.2),
+        summaryBarColor: theme.colorScheme.onSurface.withValues(alpha:0.2),
+        conflictBarColor: Colors.red.withValues(alpha:0.5),
+        ghostBarColor: theme.colorScheme.primary.withValues(alpha:0.7),
+        rowBorderColor: theme.colorScheme.onSurface.withValues(alpha:0.2),
+        dependencyLineColor: theme.colorScheme.onSurface.withValues(alpha:0.8),
+        timeRangeHighlightColor: theme.colorScheme.onSurface.withValues(alpha:0.05),
+        containedDependencyBackgroundColor: theme.colorScheme.primary.withValues(alpha:0.1),
+        emptySpaceHighlightColor: theme.colorScheme.primary.withValues(alpha:0.06),
         emptySpaceAddIconColor: theme.colorScheme.primary,
+        weekendColor: theme.colorScheme.onSurface.withValues(alpha:0.04),
         axisTextStyle: theme.textTheme.bodySmall ?? TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
         taskTextStyle: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onPrimary) ??
             const TextStyle(fontSize: 12, color: Colors.white),

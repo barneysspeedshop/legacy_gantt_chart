@@ -821,6 +821,7 @@ class _GanttViewState extends State<GanttView> {
 
                                                 // --- Theming and Styling ---
                                                 theme: ganttTheme,
+                                                weekendColor: Colors.grey.withValues(alpha:0.1),
                                                 resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
                                                 resizeTooltipBackgroundColor: Colors.purple,
                                                 resizeHandleWidth: vm.resizeHandleWidth,
