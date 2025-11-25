@@ -383,7 +383,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
               if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
                 Positioned.fill(
                   child: Container(
-                    color: effectiveTheme.backgroundColor.withValues(alpha:0.5),
+                    color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
                     child: const Center(child: CircularProgressIndicator()),
                   ),
                 ),
