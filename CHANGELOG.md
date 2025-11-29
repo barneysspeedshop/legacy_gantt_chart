@@ -1,3 +1,7 @@
+## 2.10.1
+
+* **TEST**: Test excluding the GIF from the package for size optimization, will it break pub.dev?
+
 ## 2.10.0
 
 * **FEATURE**: Added comprehensive keyboard navigation and accessibility support.

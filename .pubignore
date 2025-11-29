@@ -15,3 +15,4 @@ example/devtools_options.yaml
 # Example app tests
 example/test/
 example/build/
+assets/usage.gif
