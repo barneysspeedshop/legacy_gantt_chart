@@ -1,3 +1,7 @@
+## 2.9.3
+
+* **EXAMPLE FIX**: Fix the auto-scaling axis timeline formatting in the example application (day/hour/minute, etc).
+
 ## 2.9.2
 
 * **PERFORMANCE**: Optimized hit-testing in `LegacyGanttViewModel` by replacing the linear row scan with an O(log N) binary search, improving UI performance reliability during user interactions, particularly with large datasets.

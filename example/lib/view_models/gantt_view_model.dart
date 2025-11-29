@@ -1302,6 +1302,8 @@ class GanttViewModel extends ChangeNotifier {
   /// Returns a date formatting function for the tooltip based on the selected timeline axis format.
   String Function(DateTime) _getTooltipDateFormat() {
     switch (_selectedAxisFormat) {
+      case TimelineAxisFormat.auto:
+        return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
       case TimelineAxisFormat.dayOfMonth:
         return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
       case TimelineAxisFormat.dayAndMonth:

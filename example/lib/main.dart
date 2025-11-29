@@ -59,6 +59,7 @@ class GanttView extends StatefulWidget {
 
 // An enum to manage the different timeline label formats demonstrated in the example.
 enum TimelineAxisFormat {
+  auto,
   dayOfMonth,
   dayAndMonth,
   monthAndYear,
@@ -69,7 +70,7 @@ enum TimelineAxisFormat {
 class _GanttViewState extends State<GanttView> {
   late final GanttViewModel _viewModel;
   bool _isPanelVisible = true;
-  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth;
+  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
 
   @override
@@ -279,9 +280,11 @@ class _GanttViewState extends State<GanttView> {
   /// This demonstrates the `timelineAxisLabelBuilder` property, which gives you
   /// full control over how labels on the timeline are formatted.
   String Function(DateTime, Duration)? _getTimelineAxisLabelBuilder() {
-    if (_selectedAxisFormat == TimelineAxisFormat.custom) return null;
+    if (_selectedAxisFormat == TimelineAxisFormat.custom || _selectedAxisFormat == TimelineAxisFormat.auto) return null;
 
     switch (_selectedAxisFormat) {
+      case TimelineAxisFormat.auto:
+        return null; // The default behavior of the chart is auto-graduation.
       case TimelineAxisFormat.dayOfMonth:
         return (date, interval) => DateFormat('d', _selectedLocale).format(date);
       case TimelineAxisFormat.dayAndMonth:
@@ -523,6 +526,7 @@ class _GanttViewState extends State<GanttView> {
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
               ),
               segments: const [
+                ButtonSegment(value: TimelineAxisFormat.auto, label: Text('Auto')),
                 ButtonSegment(value: TimelineAxisFormat.dayOfMonth, label: Text('Day')),
                 ButtonSegment(value: TimelineAxisFormat.dayAndMonth, label: Text('Month')),
                 ButtonSegment(value: TimelineAxisFormat.monthAndYear, label: Text('Year')),
