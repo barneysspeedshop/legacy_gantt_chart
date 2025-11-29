@@ -1,3 +1,7 @@
+## 2.9.1
+
+* **FIX**: Add gif file to the repo that the `README.md` attempts to point to
+
 ## 2.9.0
 
 * **FEATURE**: Add `weekendColor` property to allow customizing the weekend highlight color.
