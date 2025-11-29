@@ -795,6 +795,10 @@ class _GanttViewState extends State<GanttView> {
                                                 // This is the key to synchronizing the vertical scroll between the
                                                 // left-side grid and the right-side chart.
                                                 scrollController: vm.scrollController,
+                                                onRowRequestVisible: vm.ensureRowIsVisible,
+                                                focusedTaskId: vm.focusedTaskId,
+                                                onFocusChange: vm.setFocusedTaskId,
+                                                horizontalScrollController: vm.ganttHorizontalScrollController,
 
                                                 // --- Date Range ---
                                                 // These define the currently visible time window.
@@ -819,7 +823,10 @@ class _GanttViewState extends State<GanttView> {
                                                 // allowing for the creation of new tasks.
                                                 onEmptySpaceClick: (rowId, time) =>
                                                     vm.handleEmptySpaceClick(context, rowId, time),
-                                                onPressTask: (task) => _showSnackbar('Tapped on task: ${task.name}'),
+                                                onPressTask: (task) {
+                                                  vm.setFocusedTaskId(task.id);
+                                                  _showSnackbar('Selected task: ${task.name}');
+                                                },
                                                 onTaskHover: (task, globalPosition) =>
                                                     vm.onTaskHover(task, context, globalPosition),
 

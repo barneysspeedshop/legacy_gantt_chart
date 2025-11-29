@@ -115,6 +115,9 @@ class GanttViewModel extends ChangeNotifier {
   /// A flag to indicate when data is being fetched.
   bool _isLoading = true;
 
+  /// The ID of the task that currently has keyboard focus.
+  String? _focusedTaskId;
+
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
 
@@ -151,6 +154,7 @@ class GanttViewModel extends ChangeNotifier {
   DateTime? get visibleStartDate => _visibleStartDate;
   DateTime? get visibleEndDate => _visibleEndDate;
   bool get isLoading => _isLoading;
+  String? get focusedTaskId => _focusedTaskId;
 
   /// The effective total date range, including padding. This is passed to the Gantt chart widget
   /// to define the full scrollable width of the timeline.
@@ -305,6 +309,14 @@ class GanttViewModel extends ChangeNotifier {
       _resizeTooltipDateFormat = newFormat;
       notifyListeners();
     }
+  }
+
+  /// Sets the currently focused task and notifies listeners.
+  /// This is called by the Gantt chart widget when focus changes.
+  void setFocusedTaskId(String? taskId) {
+    if (_focusedTaskId == taskId) return;
+    _focusedTaskId = taskId;
+    notifyListeners();
   }
 
   /// Fetches new schedule data from the `GanttScheduleService` and processes it
@@ -952,6 +964,24 @@ class GanttViewModel extends ChangeNotifier {
     } else {
       // If there's no data, just notify to update the expansion arrow.
       notifyListeners();
+    }
+  }
+
+  /// Ensures that a given row is visible by expanding its parent if necessary.
+  /// This is called by the Gantt chart when a hidden task is focused.
+  void ensureRowIsVisible(String rowId) {
+    // Find the parent of the given row.
+    final parent = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
+
+    // If a parent is found and it's currently collapsed, expand it.
+    if (parent != null && !parent.isExpanded) {
+      // We call toggleExpansion which handles the state update and recalculates
+      // the visible rows and task stacking.
+      toggleExpansion(parent.id);
+
+      // After the state is updated and listeners are notified, the Gantt chart
+      // will be rebuilt with the newly visible row. The `_scrollToFocusedTask`
+      // logic in the package will then execute successfully on the next frame.
     }
   }
 

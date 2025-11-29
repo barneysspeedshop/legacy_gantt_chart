@@ -84,6 +84,14 @@ class LegacyGanttTask {
     this.cellBuilder,
   });
 
+  factory LegacyGanttTask.empty() => LegacyGanttTask(
+        id: '',
+        rowId: '',
+        start: DateTime(0),
+        end: DateTime(0),
+        name: '',
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'rowId': rowId,

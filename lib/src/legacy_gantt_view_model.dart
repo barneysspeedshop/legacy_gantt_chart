@@ -71,6 +71,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// An external scroll controller to sync vertical scrolling with another widget (e.g., a data grid).
   final ScrollController? scrollController;
 
+  /// An external scroll controller to sync horizontal scrolling.
+  final ScrollController? ganttHorizontalScrollController;
+
   /// A callback invoked when an empty space on the chart is clicked.
   final Function(String rowId, DateTime time)? onEmptySpaceClick;
 
@@ -82,6 +85,15 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// A callback for when the mouse hovers over a task or empty space.
   final Function(LegacyGanttTask?, Offset globalPosition)? onTaskHover;
+
+  /// A callback invoked when an action (like focusing a task) requires a row to become visible.
+  final Function(String rowId)? onRowRequestVisible;
+
+  /// The ID of the task that should initially have focus.
+  final String? initialFocusedTaskId;
+
+  /// A callback invoked when the focused task changes.
+  final Function(String? taskId)? onFocusChange;
 
   /// The width of the resize handles at the start and end of a task bar.
   final double resizeHandleWidth;
@@ -110,12 +122,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onEmptySpaceClick,
     this.onPressTask,
     this.scrollController,
+    this.ganttHorizontalScrollController,
     this.taskBarBuilder,
     this.resizeTooltipDateFormat,
     this.onTaskHover,
+    this.onRowRequestVisible,
+    this.initialFocusedTaskId,
+    this.onFocusChange,
     this.resizeHandleWidth = 10.0,
   }) {
     // 1. Pre-calculate row offsets immediately
+    _focusedTaskId = initialFocusedTaskId;
     _calculateRowOffsets();
 
     if (scrollController != null && scrollController!.hasClients) {
@@ -129,6 +146,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
     if (resizeTooltipDateFormat != newFormat) {
       resizeTooltipDateFormat = newFormat;
+      notifyListeners();
+    }
+  }
+
+  void updateFocusedTask(String? newFocusedTaskId) {
+    if (_focusedTaskId != newFocusedTaskId) {
+      _focusedTaskId = newFocusedTaskId;
       notifyListeners();
     }
   }
@@ -158,6 +182,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Offset _resizeTooltipPosition = Offset.zero;
   String? _hoveredRowId;
   DateTime? _hoveredDate;
+  String? _focusedTaskId;
 
   // Add this list to your class properties to cache row positions
   List<double> _rowVerticalOffsets = [];
@@ -204,6 +229,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The date currently being hovered over for task creation.
   DateTime? get hoveredDate => _hoveredDate;
+
+  /// The ID of the task that currently has focus.
+  String? get focusedTaskId => _focusedTaskId;
 
   /// Called by the widget to inform the view model of its available dimensions.
   /// This is crucial for calculating the time scale.
@@ -521,6 +549,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Sets the currently focused task and notifies listeners to rebuild.
+  void setFocusedTask(String? taskId) {
+    if (_focusedTaskId != taskId) {
+      _focusedTaskId = taskId;
+      onFocusChange?.call(taskId);
+      _scrollToFocusedTask();
+      notifyListeners();
+    }
+  }
+
   /// Converts a pixel offset on the canvas to a row ID and a precise DateTime.
   /// Returns `(null, null)` if the position is outside the valid row area.
   (String?, DateTime?) _getRowAndTimeAtPosition(Offset localPosition) {
@@ -548,6 +586,72 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final time = DateTime.fromMillisecondsSinceEpoch(timeMs.round());
 
     return (rowId, time);
+  }
+
+  void _scrollToFocusedTask() {
+    if (_focusedTaskId == null) return;
+
+    final focusedTask = data.firstWhere((t) => t.id == _focusedTaskId, orElse: () => LegacyGanttTask.empty());
+    if (focusedTask.id.isEmpty) return;
+
+    // Check if the task's row is currently visible. If not, its parent is collapsed.
+    final isRowVisible = visibleRows.any((r) => r.id == focusedTask.rowId);
+    if (!isRowVisible) {
+      // Request the parent widget to make this row visible by expanding its parent.
+      onRowRequestVisible?.call(focusedTask.rowId);
+      return; // Stop here. Scrolling will happen on the next frame after rebuild.
+    }
+    // --- Vertical Scrolling ---
+    if (scrollController != null && scrollController!.hasClients) {
+      final rowIndex = visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
+      if (rowIndex != -1) {
+        final rowTop = _rowVerticalOffsets[rowIndex];
+        final rowBottom = _rowVerticalOffsets[rowIndex + 1];
+        final viewportHeight = scrollController!.position.viewportDimension;
+        final currentOffset = scrollController!.offset;
+
+        if (rowTop < currentOffset) {
+          // Row is above the viewport, scroll up.
+          scrollController!.animateTo(rowTop, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        } else if (rowBottom > currentOffset + viewportHeight) {
+          // Row is below the viewport, scroll down.
+          scrollController!.animateTo(rowBottom - viewportHeight,
+              duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        }
+      }
+    }
+
+    // --- Horizontal Scrolling ---
+    if (ganttHorizontalScrollController != null && ganttHorizontalScrollController!.hasClients) {
+      final taskStartPx = _totalScale(focusedTask.start);
+      final taskEndPx = _totalScale(focusedTask.end);
+
+      final position = ganttHorizontalScrollController!.position;
+      final viewportWidth = position.viewportDimension;
+      final currentOffset = position.pixels;
+      final maxScroll = position.maxScrollExtent;
+
+      double targetOffset = currentOffset;
+
+      if (taskStartPx < currentOffset) {
+        // Task starts before the visible area, scroll left.
+        targetOffset = taskStartPx - 20; // Add some padding
+      } else if (taskEndPx > currentOffset + viewportWidth) {
+        // Task ends after the visible area, scroll right.
+        targetOffset = taskEndPx - viewportWidth + 20; // Add some padding
+      }
+
+      // Clamp the target offset to valid scroll bounds.
+      final clampedOffset = targetOffset.clamp(0.0, maxScroll);
+
+      if ((clampedOffset - currentOffset).abs() > 1.0) {
+        ganttHorizontalScrollController!.animateTo(
+          clampedOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    }
   }
 
   /// Determines which part of which task is at a given local position.

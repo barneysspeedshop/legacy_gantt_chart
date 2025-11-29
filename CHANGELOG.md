@@ -1,3 +1,17 @@
+## 2.10.0
+
+* **FEATURE**: Added comprehensive keyboard navigation and accessibility support.
+    * Added `focusedTaskId`, `onFocusChange`, and `onRowRequestVisible` properties to enable external state management of task focus.
+    * The chart now internally handles `Tab` and `Shift+Tab` key presses to cycle focus between tasks.
+    * A visual focus indicator (border) is now drawn around the task specified by `focusedTaskId`.
+    * The chart now automatically scrolls (pans) vertically and horizontally to bring the focused task into view if it is off-screen.
+    * Added `onRowRequestVisible` callback, allowing the parent application to react when a hidden task (e.g., in a collapsed row) is focused.
+    
+* **EXAMPLE FEATURE**: The example application was updated to fully demonstrate the new keyboard navigation features.
+    * Clicking a task now sets it as the focused task, unifying mouse and keyboard selection.
+    * The focused task state is now managed in the `GanttViewModel`, preserving focus across rebuilds (e.g., when expanding/collapsing rows).
+    * Implemented the `onRowRequestVisible` callback to automatically expand parent rows when a hidden child task is focused via keyboard navigation.
+
 ## 2.9.4
 
 * **FIX**: Fix for an issue that caused difficulty grabbing a drag handle to resize the task when task width is small.
