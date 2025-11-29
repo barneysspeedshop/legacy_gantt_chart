@@ -115,11 +115,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onTaskHover,
     this.resizeHandleWidth = 10.0,
   }) {
+    // 1. Pre-calculate row offsets immediately
+    _calculateRowOffsets();
+
     if (scrollController != null && scrollController!.hasClients) {
       _translateY = -scrollController!.offset;
     }
     scrollController?.addListener(_onExternalScroll);
   }
+
+  // Internal State
 
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
     if (resizeTooltipDateFormat != newFormat) {
@@ -128,7 +133,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
-  // Internal State
   double _height = 0;
   double _width = 0;
   double _translateY = 0;
@@ -154,6 +158,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Offset _resizeTooltipPosition = Offset.zero;
   String? _hoveredRowId;
   DateTime? _hoveredDate;
+
+  // Add this list to your class properties to cache row positions
+  List<double> _rowVerticalOffsets = [];
+  double _totalContentHeight = 0;
 
   /// The current vertical scroll offset of the chart content.
   double get translateY => _translateY;
@@ -204,6 +212,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _width = width;
       _height = height;
       _calculateDomains();
+      _calculateRowOffsets(); // Recalculate if layout changes
     }
   }
 
@@ -223,6 +232,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       gridMax = newGridMax;
       // Recalculate domains and scales based on the new visible range.
       _calculateDomains();
+      _calculateRowOffsets(); // Recalculate if visible rows could have changed
       notifyListeners();
     }
   }
@@ -231,6 +241,64 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void dispose() {
     scrollController?.removeListener(_onExternalScroll);
     super.dispose();
+  }
+
+  /// 2. New Helper: Pre-calculates the Y position of every row.
+  /// Call this in the constructor and if visibleRows/stackDepth ever changes.
+  void _calculateRowOffsets() {
+    _rowVerticalOffsets = List<double>.filled(visibleRows.length + 1, 0.0);
+    double currentTop = 0.0;
+
+    for (int i = 0; i < visibleRows.length; i++) {
+      _rowVerticalOffsets[i] = currentTop;
+      final rowId = visibleRows[i].id;
+      final int stackDepth = rowMaxStackDepth[rowId] ?? 1;
+      currentTop += rowHeight * stackDepth;
+    }
+    // Store the final bottom edge as the last element
+    _rowVerticalOffsets[visibleRows.length] = currentTop;
+    _totalContentHeight = currentTop;
+  }
+
+  /// 3. New Helper: O(log N) Binary Search to find the row index from a Y-coordinate.
+  int _findRowIndex(double y) {
+    if (_rowVerticalOffsets.isEmpty || y < 0 || y >= _totalContentHeight) {
+      return -1;
+    }
+    int low = 0;
+    int high = _rowVerticalOffsets.length - 2; // -2 because last index is total height
+    int result = -1;
+    while (low <= high) {
+      int mid = low + ((high - low) >> 1);
+      if (_rowVerticalOffsets[mid] <= y) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    // Check if the found index is correct
+    if (result != -1 && y >= _rowVerticalOffsets[result] && y < _rowVerticalOffsets[result + 1]) {
+      return result;
+    }
+    // Fallback for edge cases, though the above should be sufficient.
+    // A simple binary search for the insertion point is also an option.
+    // For now, let's refine the loop.
+    low = 0;
+    high = _rowVerticalOffsets.length - 2;
+    while (low <= high) {
+      int mid = (low + high) ~/ 2;
+      double top = _rowVerticalOffsets[mid];
+      double bottom = _rowVerticalOffsets[mid + 1];
+      if (y >= top && y < bottom) {
+        return mid;
+      } else if (y < top) {
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return -1;
   }
 
   void _onExternalScroll() {
@@ -459,25 +527,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (localPosition.dy < timeAxisHeight) {
       return (null, null);
     }
+
+    // Adjust Y to be relative to the scrollable content
     final pointerYRelativeToBarsArea = localPosition.dy - timeAxisHeight - _translateY;
 
-    // Find row
-    String? rowId;
-    double cumulativeHeight = 0;
-    for (final row in visibleRows) {
-      final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
-      final double currentRowHeight = rowHeight * stackDepth;
-      if (pointerYRelativeToBarsArea >= cumulativeHeight &&
-          pointerYRelativeToBarsArea < cumulativeHeight + currentRowHeight) {
-        rowId = row.id;
-        break;
-      }
-      cumulativeHeight += currentRowHeight;
-    }
+    // FAST LOOKUP: Use binary search instead of iterating
+    final rowIndex = _findRowIndex(pointerYRelativeToBarsArea);
 
-    if (rowId == null) return (null, null);
+    if (rowIndex == -1) return (null, null);
 
-    // Find time by inverting the scale function
+    final rowId = visibleRows[rowIndex].id;
+
+    // Find time by inverting the scale function (Unchanged logic)
     final totalDomainDurationMs =
         (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
     if (totalDomainDurationMs <= 0 || _width <= 0) return (rowId, null);
@@ -497,43 +558,39 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (localPosition.dy < timeAxisHeight) {
       return null;
     }
-    final pointerYRelativeToBarsArea = localPosition.dy - timeAxisHeight - _translateY;
-    final pointerXOnTotalContent = localPosition.dx;
 
-    double cumulativeHeight = 0;
-    for (final row in visibleRows) {
-      final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
-      final double currentRowHeight = rowHeight * stackDepth;
-      if (pointerYRelativeToBarsArea >= cumulativeHeight &&
-          pointerYRelativeToBarsArea < cumulativeHeight + currentRowHeight) {
-        final pointerYWithinRow = pointerYRelativeToBarsArea - cumulativeHeight;
-        final tappedStackIndex = max(0, (pointerYWithinRow / rowHeight).floor());
-        final tasksInTappedStack = data
-            .where((task) =>
-                task.rowId == row.id &&
-                task.stackIndex == tappedStackIndex &&
-                !task.isTimeRangeHighlight &&
-                !task.isOverlapIndicator)
-            .toList()
-            .reversed;
-        for (final task in tasksInTappedStack) {
-          final double barStartX = _totalScale(task.start);
-          final double barEndX = _totalScale(task.end);
-          if (pointerXOnTotalContent >= barStartX && pointerXOnTotalContent <= barEndX) {
-            if (enableResize) {
-              if (pointerXOnTotalContent < barStartX + resizeHandleWidth) {
-                return (task: task, part: TaskPart.startHandle);
-              }
-              if (pointerXOnTotalContent > barEndX - resizeHandleWidth) {
-                return (task: task, part: TaskPart.endHandle);
-              }
-            }
-            return (task: task, part: TaskPart.body);
+    final pointerYRelativeToBarsArea = localPosition.dy - timeAxisHeight - _translateY;
+    final rowIndex = _findRowIndex(pointerYRelativeToBarsArea);
+    if (rowIndex == -1) return null;
+
+    final row = visibleRows[rowIndex];
+    final rowTopY = _rowVerticalOffsets[rowIndex];
+    final pointerXOnTotalContent = localPosition.dx;
+    final pointerYWithinRow = pointerYRelativeToBarsArea - rowTopY;
+    final tappedStackIndex = max(0, (pointerYWithinRow / rowHeight).floor());
+    final tasksInTappedStack = data
+        .where((task) =>
+            task.rowId == row.id &&
+            task.stackIndex == tappedStackIndex &&
+            !task.isTimeRangeHighlight &&
+            !task.isOverlapIndicator)
+        .toList()
+        .reversed;
+
+    for (final task in tasksInTappedStack) {
+      final double barStartX = _totalScale(task.start);
+      final double barEndX = _totalScale(task.end);
+      if (pointerXOnTotalContent >= barStartX && pointerXOnTotalContent <= barEndX) {
+        if (enableResize) {
+          if (pointerXOnTotalContent < barStartX + resizeHandleWidth) {
+            return (task: task, part: TaskPart.startHandle);
+          }
+          if (pointerXOnTotalContent > barEndX - resizeHandleWidth) {
+            return (task: task, part: TaskPart.endHandle);
           }
         }
-        return null;
+        return (task: task, part: TaskPart.body);
       }
-      cumulativeHeight += currentRowHeight;
     }
     return null;
   }

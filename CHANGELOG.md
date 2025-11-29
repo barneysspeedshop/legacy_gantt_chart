@@ -1,3 +1,7 @@
+## 2.9.2
+
+* **PERFORMANCE**: Optimized hit-testing in `LegacyGanttViewModel` by replacing the linear row scan with an O(log N) binary search, improving UI performance reliability during user interactions, particularly with large datasets.
+
 ## 2.9.1
 
 * **FIX**: Add gif file to the repo that the `README.md` attempts to point to
