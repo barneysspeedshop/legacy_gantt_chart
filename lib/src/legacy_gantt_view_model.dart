@@ -582,10 +582,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final double barEndX = _totalScale(task.end);
       if (pointerXOnTotalContent >= barStartX && pointerXOnTotalContent <= barEndX) {
         if (enableResize) {
-          if (pointerXOnTotalContent < barStartX + resizeHandleWidth) {
+          final bool onStartHandle = pointerXOnTotalContent < barStartX + resizeHandleWidth;
+          final bool onEndHandle = pointerXOnTotalContent > barEndX - resizeHandleWidth;
+
+          if (onStartHandle && onEndHandle) {
+            // Overlapping handles (short task), pick the closest one.
+            final distToStart = pointerXOnTotalContent - barStartX;
+            final distToEnd = barEndX - pointerXOnTotalContent;
+            return distToStart < distToEnd
+                ? (task: task, part: TaskPart.startHandle)
+                : (task: task, part: TaskPart.endHandle);
+          } else if (onStartHandle) {
             return (task: task, part: TaskPart.startHandle);
-          }
-          if (pointerXOnTotalContent > barEndX - resizeHandleWidth) {
+          } else if (onEndHandle) {
             return (task: task, part: TaskPart.endHandle);
           }
         }

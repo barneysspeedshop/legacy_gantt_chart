@@ -1,3 +1,7 @@
+## 2.9.4
+
+* **FIX**: Fix for an issue that caused difficulty grabbing a drag handle to resize the task when task width is small.
+
 ## 2.9.3
 
 * **EXAMPLE FIX**: Fix the auto-scaling axis timeline formatting in the example application (day/hour/minute, etc).
