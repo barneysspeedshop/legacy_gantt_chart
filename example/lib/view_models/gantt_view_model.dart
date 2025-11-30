@@ -1298,7 +1298,8 @@ class GanttViewModel extends ChangeNotifier {
     // Avoid adding duplicate dependencies
     if (!_dependencies.any((d) =>
         d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
-      _dependencies = [..._dependencies, newDependency];
+      // Create a new list to ensure change notification is triggered.
+      _dependencies = List.from(_dependencies)..add(newDependency);
       notifyListeners();
     }
   }

@@ -1,6 +1,7 @@
 // packages/gantt_chart/lib/src/gantt_chart_widget.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -349,6 +350,22 @@ class LegacyGanttChartWidget extends StatefulWidget {
 }
 
 class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+  // A direct reference to the internal view model is needed to push updates
+  // when the widget's properties change.
+  LegacyGanttViewModel? _internalViewModel;
+
+  @override
+  void didUpdateWidget(covariant LegacyGanttChartWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If the dependencies list has changed, push the update to the internal view model.
+    // This is crucial for seeing new dependencies appear without a full rebuild.
+    if (_internalViewModel != null && !listEquals(oldWidget.dependencies, widget.dependencies)) {
+      // The list from the main view model is now passed down to the internal one.
+      _internalViewModel!.updateDependencies(widget.dependencies ?? []);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -463,36 +480,40 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies,
           LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
-      ChangeNotifierProvider(
+      ChangeNotifierProvider<LegacyGanttViewModel>(
         key: ValueKey(Object.hashAll(tasks)),
-        create: (_) => LegacyGanttViewModel(
-          data: tasks,
-          dependencies: dependencies,
-          visibleRows: widget.visibleRows,
-          rowMaxStackDepth: widget.rowMaxStackDepth,
-          rowHeight: widget.rowHeight,
-          axisHeight: widget.axisHeight,
-          gridMin: gridMin ?? widget.gridMin,
-          gridMax: gridMax ?? widget.gridMax,
-          totalGridMin: widget.totalGridMin,
-          totalGridMax: widget.totalGridMax,
-          enableDragAndDrop: widget.enableDragAndDrop,
-          enableResize: widget.enableResize,
-          onTaskUpdate: widget.onTaskUpdate,
-          onTaskDoubleClick: widget.onTaskDoubleClick,
-          onTaskDelete: widget.onTaskDelete,
-          onEmptySpaceClick: widget.onEmptySpaceClick,
-          onPressTask: widget.onPressTask,
-          onTaskHover: widget.onTaskHover,
-          taskBarBuilder: widget.taskBarBuilder,
-          resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
-          scrollController: widget.scrollController,
-          ganttHorizontalScrollController: widget.horizontalScrollController,
-          onRowRequestVisible: widget.onRowRequestVisible,
-          initialFocusedTaskId: widget.focusedTaskId,
-          onFocusChange: widget.onFocusChange,
-          resizeHandleWidth: widget.resizeHandleWidth,
-        ),
+        create: (context) {
+          // Create the view model and store a reference to it.
+          _internalViewModel = LegacyGanttViewModel(
+            data: tasks,
+            dependencies: dependencies,
+            visibleRows: widget.visibleRows,
+            rowMaxStackDepth: widget.rowMaxStackDepth,
+            rowHeight: widget.rowHeight,
+            axisHeight: widget.axisHeight,
+            gridMin: gridMin ?? widget.gridMin,
+            gridMax: gridMax ?? widget.gridMax,
+            totalGridMin: widget.totalGridMin,
+            totalGridMax: widget.totalGridMax,
+            enableDragAndDrop: widget.enableDragAndDrop,
+            enableResize: widget.enableResize,
+            onTaskUpdate: widget.onTaskUpdate,
+            onTaskDoubleClick: widget.onTaskDoubleClick,
+            onTaskDelete: widget.onTaskDelete,
+            onEmptySpaceClick: widget.onEmptySpaceClick,
+            onPressTask: widget.onPressTask,
+            onTaskHover: widget.onTaskHover,
+            taskBarBuilder: widget.taskBarBuilder,
+            resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
+            scrollController: widget.scrollController,
+            ganttHorizontalScrollController: widget.horizontalScrollController,
+            onRowRequestVisible: widget.onRowRequestVisible,
+            initialFocusedTaskId: widget.focusedTaskId,
+            onFocusChange: widget.onFocusChange,
+            resizeHandleWidth: widget.resizeHandleWidth,
+          );
+          return _internalViewModel!;
+        },
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
             SchedulerBinding.instance.addPostFrameCallback((_) {

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
@@ -24,7 +25,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   final List<LegacyGanttTask> data;
 
   /// The list of dependencies between tasks.
-  final List<LegacyGanttTaskDependency> dependencies;
+  List<LegacyGanttTaskDependency> dependencies;
 
   /// The list of rows currently visible in the viewport.
   final List<LegacyGanttRow> visibleRows;
@@ -146,6 +147,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
     if (resizeTooltipDateFormat != newFormat) {
       resizeTooltipDateFormat = newFormat;
+      notifyListeners();
+    }
+  }
+
+  /// Updates the list of dependencies and notifies listeners to trigger a repaint.
+  void updateDependencies(List<LegacyGanttTaskDependency> newDependencies) {
+    if (!listEquals(dependencies, newDependencies)) {
+      dependencies = newDependencies;
       notifyListeners();
     }
   }
