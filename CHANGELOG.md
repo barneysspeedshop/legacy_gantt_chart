@@ -1,10 +1,14 @@
+## 2.10.3
+
+* **FIX**: Fix changelog
+
 ## 2.10.2
 
 * **FIX**: Fix for an issue that prevented dependency lines from populating on dependency creation, only appearing after adjusting times or other repaint. 
 
 ## 2.10.1
 
-* **TEST**: Test excluding the GIF from the package for size optimization, will it break pub.dev?
+* **FIX**: Adjust pubignore to remove gif from package
 
 ## 2.10.0
 
