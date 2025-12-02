@@ -7,6 +7,7 @@ import '../ui/gantt_grid_data.dart';
 // A view model to hold the processed data ready for the UI
 class ProcessedScheduleData {
   final List<LegacyGanttTask> ganttTasks;
+  final List<LegacyGanttTask> conflictIndicators;
   final List<GanttGridData> gridData;
   final Map<String, int> rowMaxStackDepth;
   final Map<String, GanttEventData> eventMap;
@@ -14,6 +15,7 @@ class ProcessedScheduleData {
 
   ProcessedScheduleData({
     required this.ganttTasks,
+    required this.conflictIndicators,
     required this.gridData,
     required this.rowMaxStackDepth,
     required this.eventMap,
@@ -220,8 +222,8 @@ class GanttScheduleService {
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
 
     // 6. Calculate task stacking and conflicts
-    final (stackedTasks, maxDepthPerRow) =
-        publicCalculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
+    final (stackedTasks, maxDepthPerRow, conflictIndicators) =
+        _calculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
 
     return ProcessedScheduleData(
       ganttTasks: stackedTasks,
@@ -229,6 +231,7 @@ class GanttScheduleService {
       rowMaxStackDepth: maxDepthPerRow,
       eventMap: eventMap,
       apiResponse: apiResponse,
+      conflictIndicators: conflictIndicators,
     );
   }
 
@@ -272,12 +275,17 @@ class GanttScheduleService {
     return holidays;
   }
 
-  (List<LegacyGanttTask>, Map<String, int>) publicCalculateTaskStacking(
+  (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) publicCalculateTaskStacking(
+      List<LegacyGanttTask> tasks, GanttResponse apiResponse,
+      {bool showConflicts = true, Set<String>? visibleRowIds}) => _calculateTaskStacking(tasks, apiResponse, showConflicts: showConflicts, visibleRowIds: visibleRowIds);
+
+  (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) _calculateTaskStacking(
       List<LegacyGanttTask> tasks, GanttResponse apiResponse,
       {bool showConflicts = true, Set<String>? visibleRowIds}) {
     final Map<String, List<LegacyGanttTask>> eventTasksByRow = {};
     final List<LegacyGanttTask> nonStackableTasks = [];
     final List<LegacyGanttTask> actualEventTasks = [];
+    final List<LegacyGanttTask> existingConflictIndicators = [];
 
     for (var task in tasks) {
       if (task.isTimeRangeHighlight) {
@@ -285,6 +293,8 @@ class GanttScheduleService {
       } else if (!task.isOverlapIndicator) {
         actualEventTasks.add(task);
       }
+      // Separate out any existing conflict indicators so they don't get processed again.
+      if (task.isOverlapIndicator) existingConflictIndicators.add(task);
     }
 
     for (var task in actualEventTasks) {
@@ -340,9 +350,6 @@ class GanttScheduleService {
       );
     }
 
-    final finalTasks = [...stackedTasks, ...nonStackableTasks];
-    if (showConflicts) finalTasks.addAll(conflictIndicators);
-
-    return (finalTasks, rowMaxDepth);
+    return ([...stackedTasks, ...nonStackableTasks], rowMaxDepth, conflictIndicators);
   }
 }

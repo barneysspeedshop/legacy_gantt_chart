@@ -13,6 +13,7 @@ class LegacyGanttController extends ChangeNotifier {
   List<LegacyGanttTask> _tasks;
   List<LegacyGanttTask> _holidays;
   List<LegacyGanttTaskDependency> _dependencies;
+  List<LegacyGanttTask> _conflictIndicators;
 
   /// An optional asynchronous function to fetch tasks for a given date range.
   ///
@@ -46,6 +47,9 @@ class LegacyGanttController extends ChangeNotifier {
   /// `isTimeRangeHighlight` set to `true` to render them as background highlights.
   List<LegacyGanttTask> get holidays => _holidays;
 
+  /// The list of conflict indicators currently managed by the controller.
+  List<LegacyGanttTask> get conflictIndicators => _conflictIndicators;
+
   /// The list of dependencies currently managed by the controller.
   List<LegacyGanttTaskDependency> get dependencies => _dependencies;
 
@@ -72,12 +76,14 @@ class LegacyGanttController extends ChangeNotifier {
     required DateTime initialVisibleEndDate,
     List<LegacyGanttTask>? initialTasks,
     List<LegacyGanttTask>? initialHolidays,
+    List<LegacyGanttTask>? initialConflictIndicators,
     List<LegacyGanttTaskDependency>? initialDependencies,
     this.tasksAsync,
     this.holidaysAsync,
   })  : _visibleStartDate = initialVisibleStartDate,
         _visibleEndDate = initialVisibleEndDate,
         _tasks = initialTasks ?? const [],
+        _conflictIndicators = initialConflictIndicators ?? const [],
         _holidays = initialHolidays ?? const [],
         _dependencies = initialDependencies ?? const [] {
     if (tasksAsync != null) {
@@ -153,6 +159,15 @@ class LegacyGanttController extends ChangeNotifier {
       throw StateError('Cannot call setHolidays when a holidaysAsync callback is provided.');
     }
     _holidays = List.from(newHolidays);
+    notifyListeners();
+  }
+
+  /// Replaces the current list of conflict indicators with a new list and notifies listeners.
+  void setConflictIndicators(List<LegacyGanttTask> newConflictIndicators) {
+    if (tasksAsync != null) {
+      throw StateError('Conflict indicators should be derived from tasks when using tasksAsync.');
+    }
+    _conflictIndicators = List.from(newConflictIndicators);
     notifyListeners();
   }
 

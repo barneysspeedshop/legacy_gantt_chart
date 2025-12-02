@@ -32,6 +32,7 @@ void main() {
     setUp(() {
       viewModel = LegacyGanttViewModel(
         data: tasks,
+        conflictIndicators: const [],
         dependencies: [],
         visibleRows: rows,
         rowMaxStackDepth: rowMaxStackDepth,
@@ -71,6 +72,7 @@ void main() {
       final manyRows = List.generate(30, (index) => LegacyGanttRow(id: 'row$index'));
       final tallViewModel = LegacyGanttViewModel(
         data: [],
+        conflictIndicators: const [],
         dependencies: [],
         visibleRows: manyRows,
         rowMaxStackDepth: {for (var row in manyRows) row.id: 1},

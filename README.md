@@ -16,6 +16,8 @@ A flexible and performant Gantt chart widget for Flutter. Supports interactive d
   - [Customization & Theming](#customization--theming)
   - [Timeline & Dependencies](#timeline--dependencies)
 - [Installation](#installation)
+- [Migration Guide](#migration-guide)
+  - [Migrating to 3.0.0](#migrating-to-v300)
 - [Quick Start](#quick-start)
 - [Running the Example](#running-the-example)
 - [API Documentation](#api-documentation)
@@ -119,6 +121,42 @@ Now, import it in your Dart code:
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 ```
 
+[ ^Table of Contents ^ ](#table-of-contents)
+
+---
+
+## Migration Guide
+
+### Migrating to v3.0.0
+
+Version 3.0.0 introduces a breaking change to improve performance by separating conflict indicators from the main task list.
+
+**Before (v2.x.x):**
+
+Conflict indicators were mixed into the main `data` list.
+
+```dart
+// Conflict indicators were mixed into the main data list
+final allTasks = [...myTasks, ...myConflictIndicators];
+
+LegacyGanttChartWidget(
+  data: allTasks,
+  // ...
+);
+```
+
+**After (v3.0.0):**
+
+Pass conflict indicators to the new `conflictIndicators` parameter. This applies to both `LegacyGanttChartWidget` and `LegacyGanttController`.
+
+```dart
+// Pass conflict indicators separately
+LegacyGanttChartWidget(
+  data: myTasks,
+  conflictIndicators: myConflictIndicators,
+  // ...
+);
+```
 [ ^Table of Contents ^ ](#table-of-contents)
 
 ---

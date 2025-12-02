@@ -784,6 +784,7 @@ class _GanttViewState extends State<GanttView> {
                                                 // --- Data and Layout ---
                                                 data: vm.ganttTasks,
                                                 dependencies: vm.dependencies,
+                                                conflictIndicators: vm.conflictIndicators,
                                                 visibleRows: vm.visibleGanttRows, // This should be correct
                                                 rowHeight: 27.0,
                                                 rowMaxStackDepth: vm.rowMaxStackDepth,
@@ -985,7 +986,7 @@ class _GanttViewState extends State<GanttView> {
                                           visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
                                           rowMaxStackDepth: vm.rowMaxStackDepth,
                                           rowHeight: 27.0,
-                                          tasks: vm.ganttTasks
+                                          tasks: [...vm.ganttTasks, ...vm.conflictIndicators]
                                               .map((t) => scrubber.LegacyGanttTask(
                                                     id: t.id,
                                                     rowId: t.rowId,

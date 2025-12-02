@@ -18,6 +18,9 @@ class BarsCollectionPainter extends CustomPainter {
   /// The complete list of [LegacyGanttTask] objects to be potentially drawn.
   final List<LegacyGanttTask> data;
 
+  /// The list of conflict indicators to be drawn.
+  final List<LegacyGanttTask> conflictIndicators;
+
   /// The list of [LegacyGanttRow]s currently visible in the viewport.
   /// This is used to determine which tasks to draw and where.
   final List<LegacyGanttRow> visibleRows;
@@ -80,6 +83,7 @@ class BarsCollectionPainter extends CustomPainter {
   final String? hoveredTaskForDependency;
 
   BarsCollectionPainter({
+    required this.conflictIndicators,
     required this.data,
     required this.domain,
     required this.visibleRows,
@@ -241,7 +245,7 @@ class BarsCollectionPainter extends CustomPainter {
 
       // 3. Draw conflict indicators on top of the bars but under the text
       if (!hasCustomTaskBuilder) {
-        for (final task in tasksInThisRow.where((t) => t.isOverlapIndicator)) {
+        for (final task in conflictIndicators.where((c) => c.rowId == rowData.id)) {
           final double barStartX = scale(task.start);
           final double barEndX = scale(task.end);
 
@@ -257,8 +261,11 @@ class BarsCollectionPainter extends CustomPainter {
           );
 
           // We pass the task itself to check if it's a summary conflict.
-          final isSummaryConflict = data.any(
-              (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
+          final isSummaryConflict = data.any((t) =>
+              t.rowId == task.rowId &&
+              t.isSummary &&
+              t.start.isBefore(task.end) &&
+              t.end.isAfter(task.start));
 
           _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
         }
@@ -290,14 +297,13 @@ class BarsCollectionPainter extends CustomPainter {
           // --- Draw Text ---
           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
             // A task is in conflict if there is an overlap indicator that shares the same row,
-            // stack index, and has an overlapping time range.
-            final bool isInConflict = data.any((indicator) =>
-                indicator.isOverlapIndicator &&
+            // stack index, and has an overlapping time range. This now checks the separate list.
+            final bool isInConflict = conflictIndicators.any((indicator) =>
                 indicator.rowId == task.rowId &&
                 indicator.stackIndex == task.stackIndex &&
                 // Check for time overlap
                 indicator.start.isBefore(task.end) &&
-                indicator.end.isAfter(task.start));
+                indicator.end.isAfter(task.start),);
 
             if (isInConflict) {
               continue; // Skip drawing text for conflicted tasks
@@ -411,14 +417,29 @@ class BarsCollectionPainter extends CustomPainter {
   }
 
   void _drawConflictIndicator(Canvas canvas, RRect rrect, bool isSummaryConflict) {
-    // To ensure the conflict pattern is clear and not blended with underlying bars,
-    // we no longer erase the background. Instead, we draw a semi-transparent overlay.
+    // Deflate the indicator to only show on the bottom portion of the bar,
+    // making it look like an underline.
+    final indicatorHeight = rrect.height * 0.4;
+    final indicatorRect = Rect.fromLTWH(
+      rrect.left,
+      rrect.bottom - indicatorHeight,
+      rrect.width,
+      indicatorHeight,
+    );
+    final indicatorRRect = RRect.fromRectAndRadius(indicatorRect, theme.barCornerRadius);
 
-    // Deflate the indicator to only show on the bottom 30% of the bar
+    // To ensure the conflict pattern is clear and not blended with underlying bars,
+    // we first "erase" the area by drawing a solid block of the chart's background color.
+    // This prevents the pattern from mixing with the bar color underneath.
+    canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
 
     // Next, draw the semi-transparent red background for the conflict area.
-    // canvas.drawRRect(indicatorRRect, backgroundPaint);
-    // _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor.withValues(alpha: 0.85), 1.0);
+    final backgroundPaint = Paint()..color = theme.conflictBarColor.withOpacity(0.4);
+    canvas.drawRRect(indicatorRRect, backgroundPaint);
+
+    // Finally, draw the angled lines on top of that new background to create
+    // the classic "conflict" pattern.
+    _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
   }
 
   void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged) {
@@ -811,6 +832,7 @@ class BarsCollectionPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant BarsCollectionPainter oldDelegate) =>
       !listEquals(oldDelegate.data, data) ||
+      !listEquals(oldDelegate.conflictIndicators, conflictIndicators) ||
       !listEquals(oldDelegate.visibleRows, visibleRows) ||
       !mapEquals(oldDelegate.rowMaxStackDepth, rowMaxStackDepth) ||
       !listEquals(oldDelegate.dependencies, dependencies) ||

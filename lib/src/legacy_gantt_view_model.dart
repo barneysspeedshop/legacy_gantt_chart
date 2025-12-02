@@ -24,6 +24,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// The raw list of all tasks to be displayed.
   final List<LegacyGanttTask> data;
 
+  /// The list of conflict indicators to be displayed.
+  final List<LegacyGanttTask> conflictIndicators;
+
   /// The list of dependencies between tasks.
   List<LegacyGanttTaskDependency> dependencies;
 
@@ -105,6 +108,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// [LegacyGanttChartWidget] to initialize its state. It also adds a listener
   /// to the [scrollController] if one is provided, to synchronize vertical scrolling.
   LegacyGanttViewModel({
+    required this.conflictIndicators,
     required this.data,
     required this.dependencies,
     required this.visibleRows,

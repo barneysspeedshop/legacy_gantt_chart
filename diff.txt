@@ -1,0 +1,567 @@
+diff --git a/example/lib/main.dart b/example/lib/main.dart
+index 4b307ff..b5bec96 100644
+--- a/example/lib/main.dart
++++ b/example/lib/main.dart
+@@ -784,6 +784,7 @@ class _GanttViewState extends State<GanttView> {
+                                                 // --- Data and Layout ---
+                                                 data: vm.ganttTasks,
+                                                 dependencies: vm.dependencies,
++                                                conflictIndicators: vm.conflictIndicators,
+                                                 visibleRows: vm.visibleGanttRows, // This should be correct
+                                                 rowHeight: 27.0,
+                                                 rowMaxStackDepth: vm.rowMaxStackDepth,
+@@ -985,7 +986,7 @@ class _GanttViewState extends State<GanttView> {
+                                           visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
+                                           rowMaxStackDepth: vm.rowMaxStackDepth,
+                                           rowHeight: 27.0,
+-                                          tasks: vm.ganttTasks
++                                          tasks: [...vm.ganttTasks, ...vm.conflictIndicators]
+                                               .map((t) => scrubber.LegacyGanttTask(
+                                                     id: t.id,
+                                                     rowId: t.rowId,
+diff --git a/example/lib/services/gantt_schedule_service.dart b/example/lib/services/gantt_schedule_service.dart
+index c55d9e9..00a298b 100644
+--- a/example/lib/services/gantt_schedule_service.dart
++++ b/example/lib/services/gantt_schedule_service.dart
+@@ -7,6 +7,7 @@ import '../ui/gantt_grid_data.dart';
+ // A view model to hold the processed data ready for the UI
+ class ProcessedScheduleData {
+   final List<LegacyGanttTask> ganttTasks;
++  final List<LegacyGanttTask> conflictIndicators;
+   final List<GanttGridData> gridData;
+   final Map<String, int> rowMaxStackDepth;
+   final Map<String, GanttEventData> eventMap;
+@@ -14,6 +15,7 @@ class ProcessedScheduleData {
+ 
+   ProcessedScheduleData({
+     required this.ganttTasks,
++    required this.conflictIndicators,
+     required this.gridData,
+     required this.rowMaxStackDepth,
+     required this.eventMap,
+@@ -220,8 +222,8 @@ class GanttScheduleService {
+     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
+ 
+     // 6. Calculate task stacking and conflicts
+-    final (stackedTasks, maxDepthPerRow) =
+-        publicCalculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
++    final (stackedTasks, maxDepthPerRow, conflictIndicators) =
++        _calculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
+ 
+     return ProcessedScheduleData(
+       ganttTasks: stackedTasks,
+@@ -229,6 +231,7 @@ class GanttScheduleService {
+       rowMaxStackDepth: maxDepthPerRow,
+       eventMap: eventMap,
+       apiResponse: apiResponse,
++      conflictIndicators: conflictIndicators,
+     );
+   }
+ 
+@@ -272,12 +275,17 @@ class GanttScheduleService {
+     return holidays;
+   }
+ 
+-  (List<LegacyGanttTask>, Map<String, int>) publicCalculateTaskStacking(
++  (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) publicCalculateTaskStacking(
++      List<LegacyGanttTask> tasks, GanttResponse apiResponse,
++      {bool showConflicts = true, Set<String>? visibleRowIds}) => _calculateTaskStacking(tasks, apiResponse, showConflicts: showConflicts, visibleRowIds: visibleRowIds);
++
++  (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) _calculateTaskStacking(
+       List<LegacyGanttTask> tasks, GanttResponse apiResponse,
+       {bool showConflicts = true, Set<String>? visibleRowIds}) {
+     final Map<String, List<LegacyGanttTask>> eventTasksByRow = {};
+     final List<LegacyGanttTask> nonStackableTasks = [];
+     final List<LegacyGanttTask> actualEventTasks = [];
++    final List<LegacyGanttTask> existingConflictIndicators = [];
+ 
+     for (var task in tasks) {
+       if (task.isTimeRangeHighlight) {
+@@ -285,6 +293,8 @@ class GanttScheduleService {
+       } else if (!task.isOverlapIndicator) {
+         actualEventTasks.add(task);
+       }
++      // Separate out any existing conflict indicators so they don't get processed again.
++      if (task.isOverlapIndicator) existingConflictIndicators.add(task);
+     }
+ 
+     for (var task in actualEventTasks) {
+@@ -340,9 +350,6 @@ class GanttScheduleService {
+       );
+     }
+ 
+-    final finalTasks = [...stackedTasks, ...nonStackableTasks];
+-    if (showConflicts) finalTasks.addAll(conflictIndicators);
+-
+-    return (finalTasks, rowMaxDepth);
++    return ([...stackedTasks, ...nonStackableTasks], rowMaxDepth, conflictIndicators);
+   }
+ }
+diff --git a/example/lib/view_models/gantt_view_model.dart b/example/lib/view_models/gantt_view_model.dart
+index dc89888..c99c1fa 100644
+--- a/example/lib/view_models/gantt_view_model.dart
++++ b/example/lib/view_models/gantt_view_model.dart
+@@ -23,6 +23,9 @@ class GanttViewModel extends ChangeNotifier {
+   /// summary tasks, highlights, and conflict indicators.
+   List<LegacyGanttTask> _ganttTasks = [];
+ 
++  /// A separate list for conflict indicators.
++  List<LegacyGanttTask> _conflictIndicators = [];
++
+   /// The list of dependencies between tasks.
+   List<LegacyGanttTaskDependency> _dependencies = [];
+ 
+@@ -129,6 +132,7 @@ class GanttViewModel extends ChangeNotifier {
+ 
+   // Getters for the UI
+   List<LegacyGanttTask> get ganttTasks => _ganttTasks;
++  List<LegacyGanttTask> get conflictIndicators => _showConflicts ? _conflictIndicators : [];
+   String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
+   List<LegacyGanttTaskDependency> get dependencies => _showDependencies ? _dependencies : [];
+   List<GanttGridData> get gridData => _gridData;
+@@ -249,9 +253,10 @@ class GanttViewModel extends ChangeNotifier {
+     _showConflicts = value;
+     // Re-run the task stacking calculation with the new conflict visibility setting.
+     // This ensures that conflict indicators are added or removed correctly.
+-    final (recalculatedTasks, newMaxDepth) =
+-        _scheduleService.publicCalculateTaskStacking(_ganttTasks, _apiResponse!, showConflicts: _showConflicts);
+-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++    final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
++        _ganttTasks, _apiResponse!,
++        showConflicts: _showConflicts);
++    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+   }
+ 
+   Future<void> setShowEmptyParentRows(bool value) async {
+@@ -325,6 +330,7 @@ class GanttViewModel extends ChangeNotifier {
+   Future<void> fetchScheduleData() async {
+     _ganttTasks = [];
+     _isLoading = true;
++    _conflictIndicators = [];
+     _dependencies = [];
+     _gridData = [];
+     _rowMaxStackDepth = {};
+@@ -389,6 +395,7 @@ class GanttViewModel extends ChangeNotifier {
+       }
+ 
+       _ganttTasks = processedData.ganttTasks;
++      _conflictIndicators = processedData.conflictIndicators;
+       _dependencies = newDependencies;
+       _gridData = processedData.gridData;
+       _rowMaxStackDepth = processedData.rowMaxStackDepth;
+@@ -697,8 +704,9 @@ class GanttViewModel extends ChangeNotifier {
+   }
+ 
+   /// A helper method to update the task list and stack depth map, then notify listeners.
+-  void _updateTasksAndStacking(List<LegacyGanttTask> tasks, Map<String, int> maxDepth) {
++  void _updateTasksAndStacking(List<LegacyGanttTask> tasks, Map<String, int> maxDepth, List<LegacyGanttTask> conflictIndicators) {
+     _ganttTasks = tasks;
++    _conflictIndicators = conflictIndicators;
+     _rowMaxStackDepth = maxDepth;
+     notifyListeners();
+   }
+@@ -710,9 +718,9 @@ class GanttViewModel extends ChangeNotifier {
+     final index = newTasks.indexWhere((t) => t.id == task.id);
+     if (index != -1) {
+       newTasks[index] = newTasks[index].copyWith(start: newStart, end: newEnd);
+-      final (recalculatedTasks, newMaxDepth) =
++      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+           _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+     }
+   }
+ 
+@@ -910,19 +918,19 @@ class GanttViewModel extends ChangeNotifier {
+           .toList();
+     }
+ 
+-    final (recalculatedTasks, newMaxDepth) =
++    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+         _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+     _dependencies = nextDependencies;
+-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+   }
+ 
+   /// Adds a new task to the list and recalculates stacking.
+   void _addNewTask(LegacyGanttTask newTask) {
+     final newTasks = [..._ganttTasks, newTask];
+     if (_apiResponse != null) {
+-      final (recalculatedTasks, newMaxDepth) =
+-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++      final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
++          newTasks, _apiResponse!, showConflicts: _showConflicts); // ignore conflicts from this
++      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, _conflictIndicators);
+     }
+   }
+ 
+@@ -954,13 +962,13 @@ class GanttViewModel extends ChangeNotifier {
+       // After toggling, get the new set of visible row IDs.
+       final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
+       // Recalculate task stacking, but only run conflict detection on visible tasks.
+-      final (recalculatedTasks, newMaxDepth) = _scheduleService.publicCalculateTaskStacking(
++      final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+         _ganttTasks,
+         _apiResponse!,
+         showConflicts: _showConflicts,
+         visibleRowIds: visibleRowIds,
+       );
+-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+     } else {
+       // If there's no data, just notify to update the expansion arrow.
+       notifyListeners();
+@@ -998,9 +1006,9 @@ class GanttViewModel extends ChangeNotifier {
+ 
+     final newTasks = [..._ganttTasks, newTask];
+     // Recalculate stacking with the new task.
+-    final (recalculatedTasks, newMaxDepth) =
++    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+         _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+   }
+ 
+   /// Handles the "Delete Task" action from the context menu.
+@@ -1013,10 +1021,10 @@ class GanttViewModel extends ChangeNotifier {
+         _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+ 
+     // After removing the task, recalculate stacking with the new list.
+-    final (recalculatedTasks, newMaxDepth) =
++    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+         _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+     _dependencies = newDependencies;
+-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+   }
+ 
+   /// Shows a dialog to edit all parent summary tasks at once.
+@@ -1187,9 +1195,9 @@ class GanttViewModel extends ChangeNotifier {
+     }
+ 
+     // After removing the row and its tasks, recalculate stacking.
+-    final (recalculatedTasks, newMaxDepth) =
++    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+         _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth);
++    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+   }
+ 
+   /// A helper to find the parent ID for any given row ID (child or parent).
+@@ -1237,6 +1245,7 @@ class GanttViewModel extends ChangeNotifier {
+ 
+     // Update all the view model's state variables from the newly processed data.
+     _ganttTasks = processedData.ganttTasks;
++    _conflictIndicators = processedData.conflictIndicators;
+     _gridData = processedData.gridData;
+     _rowMaxStackDepth = processedData.rowMaxStackDepth;
+     _eventMap = processedData.eventMap;
+diff --git a/example/test/legacy_gantt_view_model_test.dart b/example/test/legacy_gantt_view_model_test.dart
+index 0e7050e..44f441f 100644
+--- a/example/test/legacy_gantt_view_model_test.dart
++++ b/example/test/legacy_gantt_view_model_test.dart
+@@ -32,6 +32,7 @@ void main() {
+     setUp(() {
+       viewModel = LegacyGanttViewModel(
+         data: tasks,
++        conflictIndicators: const [],
+         dependencies: [],
+         visibleRows: rows,
+         rowMaxStackDepth: rowMaxStackDepth,
+@@ -71,6 +72,7 @@ void main() {
+       final manyRows = List.generate(30, (index) => LegacyGanttRow(id: 'row$index'));
+       final tallViewModel = LegacyGanttViewModel(
+         data: [],
++        conflictIndicators: const [],
+         dependencies: [],
+         visibleRows: manyRows,
+         rowMaxStackDepth: {for (var row in manyRows) row.id: 1},
+diff --git a/lib/src/bars_collection_painter.dart b/lib/src/bars_collection_painter.dart
+index 833ffa4..a7319c9 100644
+--- a/lib/src/bars_collection_painter.dart
++++ b/lib/src/bars_collection_painter.dart
+@@ -18,6 +18,9 @@ class BarsCollectionPainter extends CustomPainter {
+   /// The complete list of [LegacyGanttTask] objects to be potentially drawn.
+   final List<LegacyGanttTask> data;
+ 
++  /// The list of conflict indicators to be drawn.
++  final List<LegacyGanttTask> conflictIndicators;
++
+   /// The list of [LegacyGanttRow]s currently visible in the viewport.
+   /// This is used to determine which tasks to draw and where.
+   final List<LegacyGanttRow> visibleRows;
+@@ -80,6 +83,7 @@ class BarsCollectionPainter extends CustomPainter {
+   final String? hoveredTaskForDependency;
+ 
+   BarsCollectionPainter({
++    required this.conflictIndicators,
+     required this.data,
+     required this.domain,
+     required this.visibleRows,
+@@ -241,7 +245,7 @@ class BarsCollectionPainter extends CustomPainter {
+ 
+       // 3. Draw conflict indicators on top of the bars but under the text
+       if (!hasCustomTaskBuilder) {
+-        for (final task in tasksInThisRow.where((t) => t.isOverlapIndicator)) {
++        for (final task in conflictIndicators.where((c) => c.rowId == rowData.id)) {
+           final double barStartX = scale(task.start);
+           final double barEndX = scale(task.end);
+ 
+@@ -257,8 +261,11 @@ class BarsCollectionPainter extends CustomPainter {
+           );
+ 
+           // We pass the task itself to check if it's a summary conflict.
+-          final isSummaryConflict = data.any(
+-              (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
++          final isSummaryConflict = data.any((t) =>
++              t.rowId == task.rowId &&
++              t.isSummary &&
++              t.start.isBefore(task.end) &&
++              t.end.isAfter(task.start));
+ 
+           _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
+         }
+@@ -290,14 +297,13 @@ class BarsCollectionPainter extends CustomPainter {
+           // --- Draw Text ---
+           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
+             // A task is in conflict if there is an overlap indicator that shares the same row,
+-            // stack index, and has an overlapping time range.
+-            final bool isInConflict = data.any((indicator) =>
+-                indicator.isOverlapIndicator &&
++            // stack index, and has an overlapping time range. This now checks the separate list.
++            final bool isInConflict = conflictIndicators.any((indicator) =>
+                 indicator.rowId == task.rowId &&
+                 indicator.stackIndex == task.stackIndex &&
+                 // Check for time overlap
+                 indicator.start.isBefore(task.end) &&
+-                indicator.end.isAfter(task.start));
++                indicator.end.isAfter(task.start),);
+ 
+             if (isInConflict) {
+               continue; // Skip drawing text for conflicted tasks
+@@ -411,14 +417,29 @@ class BarsCollectionPainter extends CustomPainter {
+   }
+ 
+   void _drawConflictIndicator(Canvas canvas, RRect rrect, bool isSummaryConflict) {
+-    // To ensure the conflict pattern is clear and not blended with underlying bars,
+-    // we no longer erase the background. Instead, we draw a semi-transparent overlay.
++    // Deflate the indicator to only show on the bottom portion of the bar,
++    // making it look like an underline.
++    final indicatorHeight = rrect.height * 0.4;
++    final indicatorRect = Rect.fromLTWH(
++      rrect.left,
++      rrect.bottom - indicatorHeight,
++      rrect.width,
++      indicatorHeight,
++    );
++    final indicatorRRect = RRect.fromRectAndRadius(indicatorRect, theme.barCornerRadius);
+ 
+-    // Deflate the indicator to only show on the bottom 30% of the bar
++    // To ensure the conflict pattern is clear and not blended with underlying bars,
++    // we first "erase" the area by drawing a solid block of the chart's background color.
++    // This prevents the pattern from mixing with the bar color underneath.
++    canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
+ 
+     // Next, draw the semi-transparent red background for the conflict area.
+-    // canvas.drawRRect(indicatorRRect, backgroundPaint);
+-    // _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor.withValues(alpha: 0.85), 1.0);
++    final backgroundPaint = Paint()..color = theme.conflictBarColor.withOpacity(0.4);
++    canvas.drawRRect(indicatorRRect, backgroundPaint);
++
++    // Finally, draw the angled lines on top of that new background to create
++    // the classic "conflict" pattern.
++    _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
+   }
+ 
+   void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged) {
+@@ -811,6 +832,7 @@ class BarsCollectionPainter extends CustomPainter {
+   @override
+   bool shouldRepaint(covariant BarsCollectionPainter oldDelegate) =>
+       !listEquals(oldDelegate.data, data) ||
++      !listEquals(oldDelegate.conflictIndicators, conflictIndicators) ||
+       !listEquals(oldDelegate.visibleRows, visibleRows) ||
+       !mapEquals(oldDelegate.rowMaxStackDepth, rowMaxStackDepth) ||
+       !listEquals(oldDelegate.dependencies, dependencies) ||
+diff --git a/lib/src/legacy_gantt_chart_widget.dart b/lib/src/legacy_gantt_chart_widget.dart
+index f995c9a..76e2ddb 100644
+--- a/lib/src/legacy_gantt_chart_widget.dart
++++ b/lib/src/legacy_gantt_chart_widget.dart
+@@ -46,6 +46,10 @@ class LegacyGanttChartWidget extends StatefulWidget {
+   /// This is ignored if a [controller] is provided.
+   final List<LegacyGanttTaskDependency>? dependencies;
+ 
++  /// A list of conflict indicators to draw on the chart. These are typically
++  /// generated by a conflict detection algorithm.
++  final List<LegacyGanttTask>? conflictIndicators;
++
+   /// A list of tasks to be rendered as background highlights, such as holidays
+   /// or weekends. These tasks should have `isTimeRangeHighlight` set to `true`.
+   /// This is ignored if a [controller] is provided.
+@@ -304,6 +308,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
+     super.key, // Use super.key
+     this.data,
+     this.dependencies,
++    this.conflictIndicators,
+     this.holidays,
+     required this.visibleRows,
+     required this.rowMaxStackDepth,
+@@ -351,6 +356,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
+   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
+         assert(controller == null || dependencies == null),
+         assert(taskBarBuilder == null || taskContentBuilder == null),
++        assert(controller == null || conflictIndicators == null),
+         assert(controller == null ||
+             (data == null &&
+                 tasksFuture == null &&
+@@ -394,7 +400,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+           final tasks = controller.tasks;
+           final holidays = controller.holidays;
+           final dependencies = controller.dependencies;
+-          final allItems = [...tasks, ...holidays];
++          final conflictIndicators = controller.conflictIndicators;
++          final allItems = [...tasks, ...holidays]; // Conflicts are handled separately
+ 
+           if (controller.isOverallLoading && allItems.isEmpty && !widget.showEmptyRows) {
+             if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
+@@ -420,6 +427,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+                 context,
+                 allItems,
+                 dependencies,
++                conflictIndicators,
+                 effectiveTheme,
+                 gridMin: controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
+                 gridMax: controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
+@@ -461,7 +469,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+           final tasks = (snapshot.data?[0] as List<LegacyGanttTask>?) ?? [];
+           final holidays = (snapshot.data?[1] as List<LegacyGanttTask>?) ?? [];
+           final allItems = [...tasks, ...holidays];
+-
++          // Conflicts are derived from tasks, so we pass them separately.
++          final conflictIndicators = widget.conflictIndicators ?? [];
+           if (allItems.isEmpty && !widget.showEmptyRows) {
+             if (widget.noDataWidgetBuilder != null) {
+               return widget.noDataWidgetBuilder!(context);
+@@ -471,12 +480,13 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+               );
+             }
+           }
+-          return _buildChart(context, allItems, widget.dependencies ?? [], effectiveTheme);
++          return _buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme);
+         },
+       );
+     } else {
+       final tasks = widget.data ?? [];
+       final holidays = widget.holidays ?? [];
++      final conflictIndicators = widget.conflictIndicators ?? [];
+       final allItems = [...tasks, ...holidays];
+       if (allItems.isEmpty && !widget.showEmptyRows) {
+         if (widget.noDataWidgetBuilder != null) {
+@@ -487,12 +497,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+           );
+         }
+       }
+-      return _buildChart(context, allItems, widget.dependencies ?? [], effectiveTheme);
++      return _buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme);
+     }
+   }
+ 
+-  Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies,
+-          LegacyGanttTheme effectiveTheme,
++  Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies, List<LegacyGanttTask> conflictIndicators,
++          LegacyGanttTheme effectiveTheme, //
+           {double? gridMin, double? gridMax}) =>
+       ChangeNotifierProvider<LegacyGanttViewModel>(
+         key: ValueKey(Object.hashAll(tasks)),
+@@ -500,6 +510,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+           // Create the view model and store a reference to it.
+           _internalViewModel = LegacyGanttViewModel(
+             data: tasks,
++            conflictIndicators: conflictIndicators,
+             dependencies: dependencies,
+             visibleRows: widget.visibleRows,
+             rowMaxStackDepth: widget.rowMaxStackDepth,
+@@ -661,6 +672,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
+                                     children: [
+                                       CustomPaint(
+                                         painter: BarsCollectionPainter(
++                                          conflictIndicators: vm.conflictIndicators,
+                                           dependencies: vm.dependencies,
+                                           data: tasks,
+                                           domain: vm.totalDomain,
+diff --git a/lib/src/legacy_gantt_controller.dart b/lib/src/legacy_gantt_controller.dart
+index 4a8d367..160a10e 100644
+--- a/lib/src/legacy_gantt_controller.dart
++++ b/lib/src/legacy_gantt_controller.dart
+@@ -13,6 +13,7 @@ class LegacyGanttController extends ChangeNotifier {
+   List<LegacyGanttTask> _tasks;
+   List<LegacyGanttTask> _holidays;
+   List<LegacyGanttTaskDependency> _dependencies;
++  List<LegacyGanttTask> _conflictIndicators;
+ 
+   /// An optional asynchronous function to fetch tasks for a given date range.
+   ///
+@@ -46,6 +47,9 @@ class LegacyGanttController extends ChangeNotifier {
+   /// `isTimeRangeHighlight` set to `true` to render them as background highlights.
+   List<LegacyGanttTask> get holidays => _holidays;
+ 
++  /// The list of conflict indicators currently managed by the controller.
++  List<LegacyGanttTask> get conflictIndicators => _conflictIndicators;
++
+   /// The list of dependencies currently managed by the controller.
+   List<LegacyGanttTaskDependency> get dependencies => _dependencies;
+ 
+@@ -72,12 +76,14 @@ class LegacyGanttController extends ChangeNotifier {
+     required DateTime initialVisibleEndDate,
+     List<LegacyGanttTask>? initialTasks,
+     List<LegacyGanttTask>? initialHolidays,
++    List<LegacyGanttTask>? initialConflictIndicators,
+     List<LegacyGanttTaskDependency>? initialDependencies,
+     this.tasksAsync,
+     this.holidaysAsync,
+   })  : _visibleStartDate = initialVisibleStartDate,
+         _visibleEndDate = initialVisibleEndDate,
+         _tasks = initialTasks ?? const [],
++        _conflictIndicators = initialConflictIndicators ?? const [],
+         _holidays = initialHolidays ?? const [],
+         _dependencies = initialDependencies ?? const [] {
+     if (tasksAsync != null) {
+@@ -156,6 +162,15 @@ class LegacyGanttController extends ChangeNotifier {
+     notifyListeners();
+   }
+ 
++  /// Replaces the current list of conflict indicators with a new list and notifies listeners.
++  void setConflictIndicators(List<LegacyGanttTask> newConflictIndicators) {
++    if (tasksAsync != null) {
++      throw StateError('Conflict indicators should be derived from tasks when using tasksAsync.');
++    }
++    _conflictIndicators = List.from(newConflictIndicators);
++    notifyListeners();
++  }
++
+   /// Replaces the current list of dependencies with a new list and notifies listeners.
+   ///
+   /// Dependencies are not typically fetched asynchronously, so this can be called at any time.
+diff --git a/lib/src/legacy_gantt_view_model.dart b/lib/src/legacy_gantt_view_model.dart
+index 49c95cc..b85e9ef 100644
+--- a/lib/src/legacy_gantt_view_model.dart
++++ b/lib/src/legacy_gantt_view_model.dart
+@@ -24,6 +24,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
+   /// The raw list of all tasks to be displayed.
+   final List<LegacyGanttTask> data;
+ 
++  /// The list of conflict indicators to be displayed.
++  final List<LegacyGanttTask> conflictIndicators;
++
+   /// The list of dependencies between tasks.
+   List<LegacyGanttTaskDependency> dependencies;
+ 
+@@ -105,6 +108,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
+   /// [LegacyGanttChartWidget] to initialize its state. It also adds a listener
+   /// to the [scrollController] if one is provided, to synchronize vertical scrolling.
+   LegacyGanttViewModel({
++    required this.conflictIndicators,
+     required this.data,
+     required this.dependencies,
+     required this.visibleRows,

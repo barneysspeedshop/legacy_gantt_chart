@@ -1,3 +1,11 @@
+## 3.0.0
+
+* **BREAKING**: Conflict indicators are now handled as a separate concern that is free from standard tasks.
+    * **LegacyGanttChartWidget**: Added a `conflictIndicators` parameter. You should no longer merge conflict indicator tasks into the main `data` list.
+    * **LegacyGanttController**: Added `conflictIndicators` getter and `setConflictIndicators()` method.
+    * **BarsCollectionPainter**: Now requires a `conflictIndicators` list to be passed explicitly.
+* **FEATURE**: Improved performance and state management by isolating conflict detection logic from task data updates.
+
 ## 2.11.0
 
 * **FEATURE**: Added extended drag handles for selected tasks as a usability improvement for smaller screen sizes
