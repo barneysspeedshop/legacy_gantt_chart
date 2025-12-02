@@ -1,3 +1,12 @@
+## 3.1.0
+
+* **FEATURE**: Added support for Milestones.
+    * Introduced the isMilestone property to LegacyGanttTask.
+    * Milestones are rendered as diamond-shaped indicators on the chart.
+    * Milestones allow for zero-duration events (start equals end) to be clearly visible.
+* **FEATURE**: Updated interaction logic to support dragging and selecting milestones.
+* **EXAMPLE FEATURE**: Updated the example application to demonstrate how to define and style milestone tasks.
+
 ## 3.0.1
 
 * **FIX**: Fix withOpacity usage

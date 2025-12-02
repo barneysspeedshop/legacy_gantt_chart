@@ -713,7 +713,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
       // If this task is focused, the hit area for its handles should be larger
       // to account for the externally drawn handles.
       final double effectiveHandleWidth = task.id == _focusedTaskId ? resizeHandleWidth * 2 : resizeHandleWidth;
-
+      if (task.isMilestone) {
+        final double diamondSize = rowHeight * 0.8; // Matches painter's barHeightRatio
+        if (pointerXOnTotalContent >= barStartX && pointerXOnTotalContent <= barStartX + diamondSize) {
+          return (task: task, part: TaskPart.body);
+        }
+      }
       // Check if the pointer is within the task's bounds, including the potentially larger handle areas.
       if (pointerXOnTotalContent >= barStartX - effectiveHandleWidth &&
           pointerXOnTotalContent <= barEndX + effectiveHandleWidth) {
@@ -721,7 +726,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           final bool onStartHandle = pointerXOnTotalContent < barStartX + effectiveHandleWidth;
           final bool onEndHandle = pointerXOnTotalContent > barEndX - effectiveHandleWidth;
 
-          if (onStartHandle && onEndHandle) {
+          if (onStartHandle && onEndHandle && !task.isMilestone) {
             // Overlapping handles (short task), pick the closest one.
             final distToStart = pointerXOnTotalContent - barStartX;
             final distToEnd = barEndX - pointerXOnTotalContent;
@@ -729,9 +734,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
                 ? (task: task, part: TaskPart.startHandle)
                 : (task: task, part: TaskPart.endHandle);
           } else if (onStartHandle) {
-            return (task: task, part: TaskPart.startHandle);
+            if (!task.isMilestone) return (task: task, part: TaskPart.startHandle);
           } else if (onEndHandle) {
-            return (task: task, part: TaskPart.endHandle);
+            if (!task.isMilestone) return (task: task, part: TaskPart.endHandle);
           }
         }
         return (task: task, part: TaskPart.body);
@@ -769,7 +774,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
     switch (_dragMode) {
       case DragMode.move:
         newStart = _originalTaskStart!.add(durationDelta);
-        newEnd = _originalTaskEnd!.add(durationDelta);
+        if (_draggedTask?.isMilestone ?? false) {
+          newEnd = newStart;
+        } else {
+          newEnd = _originalTaskEnd!.add(durationDelta);
+        }
+
         if (resizeTooltipDateFormat != null) {
           final startStr = resizeTooltipDateFormat!(newStart).replaceAll(' ', '\u00A0');
           final endStr = resizeTooltipDateFormat!(newEnd).replaceAll(' ', '\u00A0');

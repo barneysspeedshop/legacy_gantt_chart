@@ -158,9 +158,18 @@ class _GanttViewState extends State<GanttView> {
   /// A handler that demonstrates how to programmatically change the visible
   /// window of the Gantt chart to focus on a specific task.
   void _handleSnapToTask(LegacyGanttTask task) {
-    final taskDuration = task.end.difference(task.start);
-    // Make the new window 3 times the duration of the task for context.
-    final newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
+    var taskDuration = task.end.difference(task.start);
+    Duration newWindowDuration;
+
+    // If the task is a milestone (zero duration), set a default window duration.
+    if (taskDuration == Duration.zero) {
+      newWindowDuration = const Duration(days: 1);
+      taskDuration = newWindowDuration; // Use this for centering calculation
+    } else {
+      // For regular tasks, make the new window 3 times the duration for context.
+      newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
+    }
+
     // Center the window on the task.
     final newStart = task.start
         .subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));

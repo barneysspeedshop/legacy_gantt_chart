@@ -401,6 +401,22 @@ class GanttViewModel extends ChangeNotifier {
       _eventMap = processedData.eventMap;
       _apiResponse = processedData.apiResponse;
 
+      // --- Manually add a milestone for demonstration ---
+      // Find a valid row to place the milestone on.
+      if (_gridData.isNotEmpty && _gridData.first.children.isNotEmpty) {
+        final firstChildRowId = _gridData.first.children.first.id;
+        final milestoneDate = _startDate.add(const Duration(days: 5));
+        final milestone = LegacyGanttTask(
+          id: 'milestone_demo_1',
+          rowId: firstChildRowId,
+          name: 'Project Kick-off',
+          start: milestoneDate,
+          end: milestoneDate, // start and end are the same for a milestone
+          isMilestone: true,
+          color: Colors.deepPurple, // Give it a distinct color
+        );
+        _ganttTasks.add(milestone);
+      }
       // Calculate total date range based on all tasks
       if (_ganttTasks.isNotEmpty) {
         DateTime minStart = _ganttTasks.first.start;

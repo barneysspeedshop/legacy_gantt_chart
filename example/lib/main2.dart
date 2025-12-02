@@ -95,6 +95,15 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
         start: DateTime(2024, 6, 9),
         end: DateTime(2024, 6, 15),
       ),
+      // A milestone task. Note that start and end are the same.
+      LegacyGanttTask(
+        id: 'milestone_1',
+        rowId: 'project_a',
+        name: 'Project Deadline',
+        start: DateTime(2024, 6, 20),
+        end: DateTime(2024, 6, 20), // Same start and end for a milestone
+        isMilestone: true,
+      ),
     ];
 
     _dependencies = [

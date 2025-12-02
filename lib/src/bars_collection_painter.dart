@@ -169,11 +169,6 @@ class BarsCollectionPainter extends CustomPainter {
             continue;
           }
 
-          // Don't draw zero-duration tasks.
-          if (taskEndX <= taskStartX) {
-            continue;
-          }
-
           final isBeingDragged = task.id == draggedTaskId;
 
           final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
@@ -182,11 +177,21 @@ class BarsCollectionPainter extends CustomPainter {
 
           final bool hasSegments = task.segments != null && task.segments!.isNotEmpty;
 
+          if (task.isMilestone) {
+            _drawMilestone(canvas, task, taskStartX, barTop + barVerticalCenterOffset, barHeight, isBeingDragged);
+            continue; // Skip the rest of the bar drawing logic for milestones
+          }
+
           // Define the RRect for the whole task, used for dependency handles and non-segmented bars.
           final RRect barRRect = RRect.fromRectAndRadius(
             Rect.fromLTWH(taskStartX, barTop + barVerticalCenterOffset, taskEndX - taskStartX, barHeight),
             theme.barCornerRadius,
           );
+
+          // Don't draw zero-duration tasks unless they are milestones.
+          if (taskEndX <= taskStartX) {
+            continue;
+          }
 
           if (hasSegments) {
             // --- Draw Segmented Bar ---
@@ -273,7 +278,7 @@ class BarsCollectionPainter extends CustomPainter {
         for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
           final double taskStartX = scale(task.start);
           final double taskEndX = scale(task.end);
-          if (taskEndX < 0 || taskStartX > size.width || taskEndX <= taskStartX) {
+          if (taskEndX < 0 || taskStartX > size.width || (taskEndX <= taskStartX && !task.isMilestone)) {
             continue;
           }
 
@@ -288,7 +293,7 @@ class BarsCollectionPainter extends CustomPainter {
 
           // --- Draw dependency handles ---
           if (enableDependencyCreation) {
-            _drawDependencyHandles(canvas, barRRect, task, isBeingDragged);
+            _drawDependencyHandles(canvas, barRRect, task, isBeingDragged, task.isMilestone);
           }
 
           // --- Draw Text ---
@@ -370,19 +375,23 @@ class BarsCollectionPainter extends CustomPainter {
         final double barHeight = rowHeight * theme.barHeightRatio;
         final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
-        final double barStartX = scale(ghostTaskStart!);
-        final double barEndX = scale(ghostTaskEnd!);
-        final double barWidth = max(0, barEndX - barStartX);
-
-        final RRect barRRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
-          theme.barCornerRadius,
-        );
-
-        // Draw the ghost bar
-        final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
-        canvas.drawRRect(barRRect, barPaint);
-        // Not drawing text on ghost bar for simplicity
+        if (originalTask.isMilestone) {
+          final double milestoneX = scale(ghostTaskStart!);
+          final double milestoneY = barTop + barVerticalCenterOffset;
+          // We can reuse the _drawMilestone helper, passing `true` for isBeingDragged
+          // to get a semi-transparent effect.
+          _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
+        } else {
+          final double barStartX = scale(ghostTaskStart!);
+          final double barEndX = scale(ghostTaskEnd!);
+          final double barWidth = max(0, barEndX - barStartX);
+          final RRect barRRect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+            theme.barCornerRadius,
+          );
+          final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
+          canvas.drawRRect(barRRect, barPaint);
+        }
       }
     }
     canvas.restore();
@@ -441,19 +450,38 @@ class BarsCollectionPainter extends CustomPainter {
     _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
   }
 
-  void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged) {
+  void _drawMilestone(Canvas canvas, LegacyGanttTask task, double x, double y, double height, bool isBeingDragged) {
+    final paint = Paint()..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.3 : 1.0);
+
+    final double diamondSize = height;
+    final path = Path();
+    path.moveTo(x, y + diamondSize / 2); // Center left
+    path.lineTo(x + diamondSize / 2, y); // Top
+    path.lineTo(x + diamondSize, y + diamondSize / 2); // Center right
+    path.lineTo(x + diamondSize / 2, y + diamondSize); // Bottom
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged, bool isMilestone) {
     if (isBeingDragged || task.isSummary) return;
 
     final handlePaint = Paint()..color = theme.dependencyLineColor.withValues(alpha: 0.8);
     const handleRadius = 4.0;
 
-    // Left handle
-    final leftCenter = Offset(rrect.left, rrect.center.dy);
-    canvas.drawCircle(leftCenter, handleRadius, handlePaint);
-
-    // Right handle
-    final rightCenter = Offset(rrect.right, rrect.center.dy);
-    canvas.drawCircle(rightCenter, handleRadius, handlePaint);
+    if (isMilestone) {
+      // For milestones, draw a single handle in the center.
+      final center = Offset(rrect.center.dx + (rrect.height / 2), rrect.center.dy);
+      canvas.drawCircle(center, handleRadius, handlePaint);
+    } else {
+      // Left handle
+      final leftCenter = Offset(rrect.left, rrect.center.dy);
+      canvas.drawCircle(leftCenter, handleRadius, handlePaint);
+      // Right handle
+      final rightCenter = Offset(rrect.right, rrect.center.dy);
+      canvas.drawCircle(rightCenter, handleRadius, handlePaint);
+    }
 
     // Highlight task if it's being hovered over as a potential dependency target
     if (task.id == hoveredTaskForDependency) {

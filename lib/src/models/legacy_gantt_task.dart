@@ -61,6 +61,7 @@ class LegacyGanttTask {
   final bool isOverlapIndicator;
   final double completion;
   final List<LegacyGanttTaskSegment>? segments;
+  final bool isMilestone;
 
   /// A builder to create a custom widget for each day cell this task spans.
   /// If provided, the default task bar will not be drawn for this task.
@@ -82,6 +83,7 @@ class LegacyGanttTask {
     this.completion = 0.0,
     this.segments,
     this.cellBuilder,
+    this.isMilestone = false,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -107,6 +109,7 @@ class LegacyGanttTask {
         'isOverlapIndicator': isOverlapIndicator,
         'completion': completion,
         'segments': segments?.map((s) => s.toJson()).toList(),
+        'isMilestone': isMilestone,
         // Note: copyWith does not support functions, so cellBuilder is not included here.
         // cellBuilder is a function and cannot be serialized to JSON.
         'hasCellBuilder': cellBuilder != null,
@@ -131,6 +134,7 @@ class LegacyGanttTask {
           isOverlapIndicator == other.isOverlapIndicator &&
           completion == other.completion &&
           listEquals(segments, other.segments) &&
+          isMilestone == other.isMilestone &&
           cellBuilder == other.cellBuilder;
 
   @override
@@ -149,6 +153,7 @@ class LegacyGanttTask {
       isOverlapIndicator.hashCode ^
       completion.hashCode ^
       Object.hashAll(segments ?? []) ^
+      isMilestone.hashCode ^
       cellBuilder.hashCode;
 
   LegacyGanttTask copyWith({
@@ -166,6 +171,7 @@ class LegacyGanttTask {
     bool? isOverlapIndicator,
     double? completion,
     List<LegacyGanttTaskSegment>? segments,
+    bool? isMilestone,
     Widget Function(DateTime cellDate)? cellBuilder,
   }) =>
       LegacyGanttTask(
@@ -183,6 +189,7 @@ class LegacyGanttTask {
         isOverlapIndicator: isOverlapIndicator ?? this.isOverlapIndicator,
         completion: completion ?? this.completion,
         segments: segments ?? this.segments,
+        isMilestone: isMilestone ?? this.isMilestone,
         cellBuilder: cellBuilder ?? this.cellBuilder,
       );
 }
