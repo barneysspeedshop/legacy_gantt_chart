@@ -276,8 +276,9 @@ class GanttScheduleService {
   }
 
   (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) publicCalculateTaskStacking(
-      List<LegacyGanttTask> tasks, GanttResponse apiResponse,
-      {bool showConflicts = true, Set<String>? visibleRowIds}) => _calculateTaskStacking(tasks, apiResponse, showConflicts: showConflicts, visibleRowIds: visibleRowIds);
+          List<LegacyGanttTask> tasks, GanttResponse apiResponse,
+          {bool showConflicts = true, Set<String>? visibleRowIds}) =>
+      _calculateTaskStacking(tasks, apiResponse, showConflicts: showConflicts, visibleRowIds: visibleRowIds);
 
   (List<LegacyGanttTask>, Map<String, int>, List<LegacyGanttTask>) _calculateTaskStacking(
       List<LegacyGanttTask> tasks, GanttResponse apiResponse,

@@ -253,9 +253,8 @@ class GanttViewModel extends ChangeNotifier {
     _showConflicts = value;
     // Re-run the task stacking calculation with the new conflict visibility setting.
     // This ensures that conflict indicators are added or removed correctly.
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
-        _ganttTasks, _apiResponse!,
-        showConflicts: _showConflicts);
+    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+        _scheduleService.publicCalculateTaskStacking(_ganttTasks, _apiResponse!, showConflicts: _showConflicts);
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
   }
 
@@ -704,7 +703,8 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// A helper method to update the task list and stack depth map, then notify listeners.
-  void _updateTasksAndStacking(List<LegacyGanttTask> tasks, Map<String, int> maxDepth, List<LegacyGanttTask> conflictIndicators) {
+  void _updateTasksAndStacking(
+      List<LegacyGanttTask> tasks, Map<String, int> maxDepth, List<LegacyGanttTask> conflictIndicators) {
     _ganttTasks = tasks;
     _conflictIndicators = conflictIndicators;
     _rowMaxStackDepth = maxDepth;
@@ -929,7 +929,8 @@ class GanttViewModel extends ChangeNotifier {
     final newTasks = [..._ganttTasks, newTask];
     if (_apiResponse != null) {
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
-          newTasks, _apiResponse!, showConflicts: _showConflicts); // ignore conflicts from this
+          newTasks, _apiResponse!,
+          showConflicts: _showConflicts); // ignore conflicts from this
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, _conflictIndicators);
     }
   }

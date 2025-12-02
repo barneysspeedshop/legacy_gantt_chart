@@ -501,9 +501,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     }
   }
 
-  Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies, List<LegacyGanttTask> conflictIndicators,
-          LegacyGanttTheme effectiveTheme, //
-          {double? gridMin, double? gridMax}) =>
+  Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies,
+          List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme, //
+          {double? gridMin,
+          double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
         key: ValueKey(Object.hashAll(tasks)),
         create: (context) {

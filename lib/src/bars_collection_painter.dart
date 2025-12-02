@@ -261,11 +261,8 @@ class BarsCollectionPainter extends CustomPainter {
           );
 
           // We pass the task itself to check if it's a summary conflict.
-          final isSummaryConflict = data.any((t) =>
-              t.rowId == task.rowId &&
-              t.isSummary &&
-              t.start.isBefore(task.end) &&
-              t.end.isAfter(task.start));
+          final isSummaryConflict = data.any(
+              (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
 
           _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
         }
@@ -298,12 +295,14 @@ class BarsCollectionPainter extends CustomPainter {
           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
             // A task is in conflict if there is an overlap indicator that shares the same row,
             // stack index, and has an overlapping time range. This now checks the separate list.
-            final bool isInConflict = conflictIndicators.any((indicator) =>
-                indicator.rowId == task.rowId &&
-                indicator.stackIndex == task.stackIndex &&
-                // Check for time overlap
-                indicator.start.isBefore(task.end) &&
-                indicator.end.isAfter(task.start),);
+            final bool isInConflict = conflictIndicators.any(
+              (indicator) =>
+                  indicator.rowId == task.rowId &&
+                  indicator.stackIndex == task.stackIndex &&
+                  // Check for time overlap
+                  indicator.start.isBefore(task.end) &&
+                  indicator.end.isAfter(task.start),
+            );
 
             if (isInConflict) {
               continue; // Skip drawing text for conflicted tasks
