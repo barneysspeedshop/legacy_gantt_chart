@@ -1,3 +1,7 @@
+## 2.11.0
+
+* **FEATURE**: Added extended drag handles for selected tasks as a usability improvement for smaller screen sizes
+
 ## 2.10.3
 
 * **FIX**: Fix changelog

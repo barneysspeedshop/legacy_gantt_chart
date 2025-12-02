@@ -242,6 +242,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// The ID of the task that currently has focus.
   String? get focusedTaskId => _focusedTaskId;
 
+  /// Gets the pre-calculated vertical offset for a given row index.
+  double? getRowVerticalOffset(int rowIndex) {
+    if (rowIndex >= 0 && rowIndex < _rowVerticalOffsets.length) return _rowVerticalOffsets[rowIndex];
+    return null;
+  }
+
   /// Called by the widget to inform the view model of its available dimensions.
   /// This is crucial for calculating the time scale.
   void updateLayout(double width, double height) {
@@ -393,7 +399,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// Gesture handler for the start of a pan gesture. Determines if the pan is
   /// for vertical scrolling, moving a task, or resizing a task.
-  void onPanStart(DragStartDetails details) {
+  void onPanStart(
+    DragStartDetails details, {
+    LegacyGanttTask? overrideTask,
+    TaskPart? overridePart,
+  }) {
     _panType = PanType.none;
     _initialTranslateY = _translateY;
     _initialTouchY = details.globalPosition.dy;
@@ -403,7 +413,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
-    final hit = _getTaskPartAtPosition(details.localPosition);
+    final hit = overrideTask != null && overridePart != null
+        ? (task: overrideTask, part: overridePart)
+        : _getTaskPartAtPosition(details.localPosition);
     if (hit != null) {
       _draggedTask = hit.task;
       _originalTaskStart = hit.task.start;
@@ -693,10 +705,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
     for (final task in tasksInTappedStack) {
       final double barStartX = _totalScale(task.start);
       final double barEndX = _totalScale(task.end);
-      if (pointerXOnTotalContent >= barStartX && pointerXOnTotalContent <= barEndX) {
+
+      // If this task is focused, the hit area for its handles should be larger
+      // to account for the externally drawn handles.
+      final double effectiveHandleWidth = task.id == _focusedTaskId ? resizeHandleWidth * 2 : resizeHandleWidth;
+
+      // Check if the pointer is within the task's bounds, including the potentially larger handle areas.
+      if (pointerXOnTotalContent >= barStartX - effectiveHandleWidth &&
+          pointerXOnTotalContent <= barEndX + effectiveHandleWidth) {
         if (enableResize) {
-          final bool onStartHandle = pointerXOnTotalContent < barStartX + resizeHandleWidth;
-          final bool onEndHandle = pointerXOnTotalContent > barEndX - resizeHandleWidth;
+          final bool onStartHandle = pointerXOnTotalContent < barStartX + effectiveHandleWidth;
+          final bool onEndHandle = pointerXOnTotalContent > barEndX - effectiveHandleWidth;
 
           if (onStartHandle && onEndHandle) {
             // Overlapping handles (short task), pick the closest one.

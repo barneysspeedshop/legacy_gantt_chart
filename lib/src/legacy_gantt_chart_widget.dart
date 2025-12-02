@@ -288,6 +288,18 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// A callback invoked when the focused task changes due to user interaction.
   final Function(String? taskId)? onFocusChange;
 
+  /// A builder function to create custom resize handles that appear next to a focused task.
+  ///
+  /// The builder provides the `task` and a `part` enum (`TaskPart.startHandle` or `TaskPart.endHandle`)
+  /// to allow for different widgets for the start and end handles. If this is `null`, no
+  /// external handles are shown for focused tasks.
+  final Widget Function(LegacyGanttTask task, TaskPart part, LegacyGanttViewModel vm, double handleWidth)?
+      focusedTaskResizeHandleBuilder;
+
+  /// The width of the floating resize handles that appear on a focused task.
+  /// This value is passed to the [focusedTaskResizeHandleBuilder]. Defaults to `24.0`.
+  final double focusedTaskResizeHandleWidth;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -334,6 +346,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.focusedTaskId,
     this.onFocusChange,
     this.horizontalScrollController,
+    this.focusedTaskResizeHandleBuilder,
+    this.focusedTaskResizeHandleWidth = 24.0,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -669,7 +683,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                       ..._buildTaskWidgets(vm, tasks, effectiveTheme),
                                       ..._buildCustomCellWidgets(vm, tasks),
                                       if (vm.focusedTaskId != null)
-                                        ..._buildFocusedTaskOutline(vm, tasks, effectiveTheme),
+                                        ..._buildFocusedTaskWidgets(vm, tasks, effectiveTheme,
+                                            widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
                                     ],
                                   ),
                                 ),
@@ -843,39 +858,67 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   }
 }
 
-List<Widget> _buildFocusedTaskOutline(LegacyGanttViewModel vm, List<LegacyGanttTask> tasks, LegacyGanttTheme theme) {
+List<Widget> _buildFocusedTaskWidgets(
+  LegacyGanttViewModel vm,
+  List<LegacyGanttTask> tasks,
+  LegacyGanttTheme theme,
+  Widget Function(LegacyGanttTask, TaskPart, LegacyGanttViewModel, double)? handleBuilder,
+  double handleWidth,
+) {
   if (vm.focusedTaskId == null) return [];
 
   final focusedTask = tasks.firstWhere((t) => t.id == vm.focusedTaskId, orElse: () => LegacyGanttTask.empty());
   if (focusedTask.id.isEmpty) return [];
 
-  double cumulativeRowTop = 0;
-  for (final rowData in vm.visibleRows) {
-    if (rowData.id == focusedTask.rowId) {
-      final startX = vm.totalScale(focusedTask.start);
-      final endX = vm.totalScale(focusedTask.end);
-      final width = endX - startX;
-      final top = cumulativeRowTop + (focusedTask.stackIndex * vm.rowHeight) + vm.translateY;
+  // Find the row index and its vertical offset.
+  final rowIndex = vm.visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
+  if (rowIndex == -1) return [];
 
-      return [
-        Positioned(
-          left: startX,
-          top: top,
-          width: width,
-          height: vm.rowHeight,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: theme.barColorSecondary, width: 2),
-              borderRadius: BorderRadius.circular(4.0),
-            ),
-          ),
-        )
-      ];
-    }
-    final stackDepth = vm.rowMaxStackDepth[rowData.id] ?? 1;
-    cumulativeRowTop += vm.rowHeight * stackDepth;
+  final rowTop = vm.getRowVerticalOffset(rowIndex);
+  if (rowTop == null) return [];
+
+  final startX = vm.totalScale(focusedTask.start);
+  final endX = vm.totalScale(focusedTask.end);
+  final width = endX - startX;
+  final top = rowTop + (focusedTask.stackIndex * vm.rowHeight) + vm.translateY;
+
+  final List<Widget> widgets = [
+    Positioned(
+      left: startX,
+      top: top,
+      width: width,
+      height: vm.rowHeight,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.barColorSecondary, width: 2),
+          borderRadius: BorderRadius.circular(4.0),
+        ),
+      ),
+    )
+  ];
+
+  // Add custom resize handles if a builder is provided
+  if (handleBuilder != null) {
+    final startHandle = handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth);
+    final endHandle = handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth);
+
+    widgets.addAll([
+      Positioned(
+        left: startX - handleWidth,
+        top: top,
+        height: vm.rowHeight,
+        child: startHandle,
+      ),
+      Positioned(
+        left: endX,
+        top: top,
+        height: vm.rowHeight,
+        child: endHandle,
+      ),
+    ]);
   }
-  return [];
+
+  return widgets;
 }
 
 class _DefaultTaskBar extends StatefulWidget {

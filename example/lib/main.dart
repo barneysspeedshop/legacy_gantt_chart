@@ -837,6 +837,7 @@ class _GanttViewState extends State<GanttView> {
                                                 resizeTooltipBackgroundColor: Colors.purple,
                                                 resizeHandleWidth: vm.resizeHandleWidth,
                                                 resizeTooltipFontColor: Colors.white,
+                                                focusedTaskResizeHandleWidth: vm.resizeHandleWidth,
 
                                                 // --- Custom Task Content ---
                                                 // This builder injects custom content *inside* the default task bar.
@@ -917,6 +918,43 @@ class _GanttViewState extends State<GanttView> {
                                                         ],
                                                       );
                                                     }),
+                                                  );
+                                                },
+                                                // This is the new builder for the floating resize handles.
+                                                focusedTaskResizeHandleBuilder: (task, part, internalVm, handleWidth) {
+                                                  final icon = part == TaskPart.startHandle
+                                                      ? Icons.chevron_left
+                                                      : Icons.chevron_right;
+
+                                                  // Using a GestureDetector to make the handle draggable.
+                                                  // The onPanStart call directly triggers the resize logic
+                                                  // in the view model.
+                                                  return GestureDetector(
+                                                    key: ValueKey(handleWidth), // Pass width for positioning
+                                                    onPanStart: (details) {
+                                                      internalVm.onPanStart(
+                                                        DragStartDetails(
+                                                          sourceTimeStamp: details.sourceTimeStamp,
+                                                          globalPosition: details.globalPosition,
+                                                          localPosition: details.localPosition,
+                                                        ),
+                                                        // We explicitly tell the view model which task and part
+                                                        // is being dragged, bypassing the need for hit-testing.
+                                                        overrideTask: task,
+                                                        overridePart: part,
+                                                      );
+                                                    },
+                                                    onPanUpdate: internalVm.onPanUpdate,
+                                                    onPanEnd: internalVm.onPanEnd,
+                                                    child: Container(
+                                                      width: handleWidth,
+                                                      color: Colors.transparent, // Make the gesture area larger
+                                                      child: Icon(
+                                                        icon,
+                                                        size: handleWidth,
+                                                        color: ganttTheme.barColorSecondary,
+                                                      ),
+                                                    ),
                                                   );
                                                 },
                                               ),
