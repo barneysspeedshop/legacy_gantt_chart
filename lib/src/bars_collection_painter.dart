@@ -433,7 +433,7 @@ class BarsCollectionPainter extends CustomPainter {
     canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
 
     // Next, draw the semi-transparent red background for the conflict area.
-    final backgroundPaint = Paint()..color = theme.conflictBarColor.withOpacity(0.4);
+    final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
     canvas.drawRRect(indicatorRRect, backgroundPaint);
 
     // Finally, draw the angled lines on top of that new background to create

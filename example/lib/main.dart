@@ -597,6 +597,7 @@ class _GanttViewState extends State<GanttView> {
       'resourcesData': apiResponse.resourcesData.map((r) => r.toJson()).toList(),
       'assignmentsData': apiResponse.assignmentsData.map((a) => a.toJson()).toList(),
       'resourceTimeRangesData': apiResponse.resourceTimeRangesData.map((r) => r.toJson()).toList(),
+      'conflictIndicators': vm.conflictIndicators.map((c) => c.toJson()).toList(),
     };
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(

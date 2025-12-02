@@ -1,3 +1,8 @@
+## 3.0.1
+
+* **FIX**: Fix withOpacity usage
+* **EXAMPLE IMPROVEMENT**: Add conflictIndicators to the JSON export
+
 ## 3.0.0
 
 * **BREAKING**: Conflict indicators are now handled as a separate concern that is free from standard tasks.
