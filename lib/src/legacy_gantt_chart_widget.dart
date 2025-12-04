@@ -1,5 +1,6 @@
 // packages/gantt_chart/lib/src/gantt_chart_widget.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
@@ -506,7 +507,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           {double? gridMin,
           double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(Object.hashAll([tasks, widget.visibleRows])),
+        key: ValueKey(Object.hashAll([...tasks, ...widget.visibleRows])),
         create: (context) {
           // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(
@@ -635,12 +636,25 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                       cursor: vm.cursor,
                       onHover: vm.onHover,
                       onExit: vm.onHoverExit,
-                      child: GestureDetector(
-                        onPanStart: vm.onPanStart,
-                        onPanUpdate: vm.onPanUpdate,
-                        onPanEnd: vm.onPanEnd,
-                        onTapUp: vm.onTapUp,
-                        onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
+                      child: RawGestureDetector(
+                        gestures: {
+                          _AllowMultipleHorizontalDragGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<_AllowMultipleHorizontalDragGestureRecognizer>(
+                            () => _AllowMultipleHorizontalDragGestureRecognizer(),
+                            (instance) {
+                              instance
+                                ..onStart = vm.onPanStart
+                                ..onUpdate = vm.onPanUpdate
+                                ..onEnd = vm.onPanEnd;
+                            },
+                          ),
+                          TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                              () => TapGestureRecognizer()..onTapUp = vm.onTapUp, (instance) {}),
+                          DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+                              () => DoubleTapGestureRecognizer()
+                                ..onDoubleTapDown = (details) => vm.onDoubleTap(details.localPosition),
+                              (instance) {}),
+                        },
                         child: Container(
                           color: effectiveTheme.backgroundColor,
                           height: chartHeight,
@@ -1003,6 +1017,15 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
       ),
     );
   }
+}
+
+/// A custom gesture recognizer that allows multiple horizontal drag gesture
+/// recognizers to compete and win simultaneously. This is crucial for allowing
+/// both the inner Gantt chart's task drag/resize and the outer `SingleChildScrollView`'s
+/// scroll to be recognized.
+class _AllowMultipleHorizontalDragGestureRecognizer extends HorizontalDragGestureRecognizer {
+  @override
+  void rejectGesture(int pointer) => acceptGesture(pointer);
 }
 
 /// A widget that uses a [CustomPainter] to draw the conflict/overlap pattern.
