@@ -6,10 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:legacy_tree_grid/legacy_tree_grid.dart';
 import 'package:provider/provider.dart';
 import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
-import 'ui/widgets/gantt_grid.dart';
 import 'ui/widgets/dashboard_header.dart';
 import 'view_models/gantt_view_model.dart';
 
@@ -665,11 +665,14 @@ class _GanttViewState extends State<GanttView> {
           body: SafeArea(
             child: Consumer<GanttViewModel>(
               builder: (context, vm, child) {
-                final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
                 final ganttTheme = _buildGanttTheme();
                 // Update the format after the current frame is built to avoid calling notifyListeners during build.
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
+                  // Attach scroll listeners after the first frame is built to ensure
+                  // the controllers are attached to their respective scroll views.
+                  // This prevents the "ScrollController not attached" error.
+                  vm.attachScrollListeners();
                 });
 
                 return Row(
@@ -710,26 +713,145 @@ class _GanttViewState extends State<GanttView> {
                               // It is synchronized with the Gantt chart via a shared ScrollController.
                               // This is a common pattern for building a complete Gantt chart UI.
                               SizedBox(
-                                width: vm.gridWidth ?? constraints.maxWidth * 0.4,
+                                width: vm.gridWidth ??
+                                    constraints.maxWidth * 0.41,
                                 child: Column(
                                   children: [
                                     Expanded(
-                                      child: GanttGrid(
-                                        headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                        gridData: vm.visibleGridData,
-                                        visibleGanttRows: vm.visibleGanttRows,
-                                        rowMaxStackDepth: vm.rowMaxStackDepth,
-                                        scrollController: vm.scrollController,
-                                        onToggleExpansion: vm.toggleExpansion,
-                                        isDarkMode: isDarkMode,
-                                        onAddContact: () => vm.addContact(context),
-                                        onAddLineItem: (parentId) => vm.addLineItem(context, parentId),
-                                        onSetParentTaskType: vm.setParentTaskType,
-                                        onEditParentTask: (parentId) => vm.editParentTask(context, parentId),
-                                        onEditDependentTasks: (parentId) => vm.editDependentTasks(context, parentId),
-                                        onEditAllParentTasks: () => vm.editAllParentTasks(context),
-                                        onDeleteRow: vm.deleteRow,
-                                        ganttTasks: vm.ganttTasks,
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>( // Use a key that changes when data reloads to force a grid refresh.
+                                          key: ValueKey(
+                                              '${vm.flatGridData.length}-${vm.gridData.where((p) => p.isExpanded).length}'),
+                                          mode: DataGridMode.client,
+                                          clientData: vm.flatGridData,
+                                          toMap: (item) => item,
+                                          rowIdKey: 'id',
+                                          isTree: true,
+                                          parentIdKey: 'parentId',
+                                          rowHeightBuilder: (data) {
+                                            final rowId = data['id'] as String;
+                                            return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
+                                          },
+                                          onRowToggle: (rowId, _) => vm.toggleExpansion(rowId),
+                                          initialExpandedRowIds: vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
+                                          scrollController: vm.gridScrollController,
+                                          headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                          showFooter: false,
+                                          allowFiltering: false, // Filtering can be enabled if desired.
+                                          columnDefs: [
+                                            DataColumnDef(
+                                              id: 'name',
+                                              caption: 'Name',
+                                              // Use flex to make the name column fill available space.
+                                              flex: 1,
+                                              isNameColumn: true,
+                                              minWidth: 150,
+                                            ),
+                                            DataColumnDef(
+                                              id: 'completion',
+                                              caption: 'Completed %',
+                                              width: 100,
+                                              minWidth: 100,
+                                              cellBuilder: (context, data) {
+                                                final double? completion = data['completion'];
+                                                if (completion == null) return const SizedBox.shrink();
+                                                final percentage = (completion * 100).clamp(0, 100);
+                                                final percentageText = '${percentage.toStringAsFixed(0)}%';
+                                                return Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+                                                  child: Stack(
+                                                    alignment: Alignment.center,
+                                                    children: [
+                                                      LinearProgressIndicator(
+                                                        value: completion,
+                                                        backgroundColor: Colors.grey.shade300,
+                                                        color: Colors.blue,
+                                                        minHeight: 20,
+                                                      ),
+                                                      Text(
+                                                        percentageText,
+                                                        style: TextStyle(
+                                                          color: percentage > 50 ? Colors.white : Colors.black,
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                            DataColumnDef(
+                                              id: 'actions',
+                                              caption: '',
+                                              width: 56,
+                                              minWidth: 56,
+                                              cellBuilder: (context, data) {
+                                                final bool isParent = data['parentId'] == null;
+                                                final String rowId = data['id'];
+                                                if (isParent) {
+                                                  return PopupMenuButton<String>(
+                                                    padding: EdgeInsets.zero,
+                                                    icon: const Icon(Icons.more_vert, size: 16),
+                                                    tooltip: 'Options',
+                                                    onSelected: (value) {
+                                                      if (value == 'add_line_item') {
+                                                        vm.addLineItem(context, rowId);
+                                                      } else if (value == 'delete_row') {
+                                                        vm.deleteRow(rowId);
+                                                      } else if (value == 'edit_task') {
+                                                        vm.editParentTask(context, rowId);
+                                                      } else if (value == 'edit_dependent_tasks') {
+                                                        vm.editDependentTasks(context, rowId);
+                                                      }
+                                                    },
+                                                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                                      const PopupMenuItem<String>(
+                                                          value: 'add_line_item', child: Text('Add Line Item')),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'edit_task', child: Text('Edit Task')),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'edit_dependent_tasks',
+                                                          child: Text('Edit Dependent Tasks')),
+                                                      const PopupMenuDivider(),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'delete_row', child: Text('Delete Row')),
+                                                    ],
+                                                  );
+                                                } else {
+                                                  return IconButton(
+                                                    icon: const Icon(Icons.delete_outline, size: 18),
+                                                    tooltip: 'Delete Row',
+                                                    onPressed: () => vm.deleteRow(rowId),
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                          ],
+                                          // Replicate the header buttons from the old GanttGrid.
+                                          headerTrailingWidgets: [(context) => PopupMenuButton<String>(
+                                              padding: const EdgeInsets.only( right:16.0 ),
+                                              icon: const Icon(Icons.more_vert, size: 16),
+                                              tooltip: 'More Options',
+                                              onSelected: (value) {
+                                                if (value == 'add_contact') {
+                                                  vm.addContact(context);
+                                                } else if (value == 'edit_all_parents') {
+                                                  vm.editAllParentTasks(context);
+                                                }
+                                              },
+                                              itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                const PopupMenuItem<String>(
+                                                  value: 'add_contact',
+                                                  child: ListTile(leading: Icon(Icons.person_add), title: Text('Add Contact')),
+                                                ),
+                                                const PopupMenuItem<String>(
+                                                  value: 'edit_all_parents',
+                                                  child: ListTile(leading: Icon(Icons.edit), title: Text('Edit All Parent Tasks')),
+                                                ),
+                                              ],
+                                            )],
+                                        ),
                                       ),
                                     ),
                                     // This SizedBox balances the height of the timeline scrubber on the right.
@@ -804,8 +926,9 @@ class _GanttViewState extends State<GanttView> {
 
                                                 // --- Scroll Controllers and Syncing ---
                                                 // This is the key to synchronizing the vertical scroll between the
-                                                // left-side grid and the right-side chart.
-                                                scrollController: vm.scrollController,
+                                                // left-side grid and the right-side chart. We pass the grid's
+                                                // controller here for the internal view model to drive.
+                                                scrollController: vm.gridScrollController,
                                                 onRowRequestVisible: vm.ensureRowIsVisible,
                                                 focusedTaskId: vm.focusedTaskId,
                                                 onFocusChange: vm.setFocusedTaskId,
@@ -959,11 +1082,14 @@ class _GanttViewState extends State<GanttView> {
                                                     onPanEnd: internalVm.onPanEnd,
                                                     child: Container(
                                                       width: handleWidth,
+                                                      height: vm.rowHeight, // Ensure container has height for alignment
                                                       color: Colors.transparent, // Make the gesture area larger
-                                                      child: Icon(
-                                                        icon,
-                                                        size: handleWidth,
-                                                        color: ganttTheme.barColorSecondary,
+                                                      child: Center( // Center the icon
+                                                        child: Icon(
+                                                          icon,
+                                                          size: handleWidth,
+                                                          color: ganttTheme.barColorSecondary,
+                                                        ),
                                                       ),
                                                     ),
                                                   );
