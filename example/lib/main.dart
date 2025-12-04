@@ -784,14 +784,15 @@ class _GanttViewState extends State<GanttView> {
                                             DataColumnDef(
                                               id: 'actions',
                                               caption: '',
-                                              width: 48,
-                                              minWidth: 48,
+                                              width: 56,
+                                              minWidth: 56,
                                               cellBuilder: (context, data) {
                                                 final bool isParent = data['parentId'] == null;
                                                 final String rowId = data['id'];
                                                 if (isParent) {
                                                   return PopupMenuButton<String>(
-                                                    icon: const Icon(Icons.more_vert, size: 20),
+                                                    padding: EdgeInsets.zero,
+                                                    icon: const Icon(Icons.more_vert, size: 16),
                                                     tooltip: 'Options',
                                                     onSelected: (value) {
                                                       if (value == 'add_line_item') {
@@ -828,18 +829,28 @@ class _GanttViewState extends State<GanttView> {
                                             ),
                                           ],
                                           // Replicate the header buttons from the old GanttGrid.
-                                          headerTrailingWidgets: [
-                                            (context) => IconButton(
-                                                  icon: const Icon(Icons.person_add),
-                                                  tooltip: 'Add Contact',
-                                                  onPressed: () => vm.addContact(context),
+                                          headerTrailingWidgets: [(context) => PopupMenuButton<String>(
+                                              padding: const EdgeInsets.only( right:16.0 ),
+                                              icon: const Icon(Icons.more_vert, size: 16),
+                                              tooltip: 'More Options',
+                                              onSelected: (value) {
+                                                if (value == 'add_contact') {
+                                                  vm.addContact(context);
+                                                } else if (value == 'edit_all_parents') {
+                                                  vm.editAllParentTasks(context);
+                                                }
+                                              },
+                                              itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                const PopupMenuItem<String>(
+                                                  value: 'add_contact',
+                                                  child: ListTile(leading: Icon(Icons.person_add), title: Text('Add Contact')),
                                                 ),
-                                            (context) => IconButton(
-                                                  icon: const Icon(Icons.edit),
-                                                  tooltip: 'Edit All Parent Tasks',
-                                                  onPressed: () => vm.editAllParentTasks(context),
+                                                const PopupMenuItem<String>(
+                                                  value: 'edit_all_parents',
+                                                  child: ListTile(leading: Icon(Icons.edit), title: Text('Edit All Parent Tasks')),
                                                 ),
-                                          ],
+                                              ],
+                                            )],
                                         ),
                                       ),
                                     ),
@@ -1071,11 +1082,14 @@ class _GanttViewState extends State<GanttView> {
                                                     onPanEnd: internalVm.onPanEnd,
                                                     child: Container(
                                                       width: handleWidth,
+                                                      height: vm.rowHeight, // Ensure container has height for alignment
                                                       color: Colors.transparent, // Make the gesture area larger
-                                                      child: Icon(
-                                                        icon,
-                                                        size: handleWidth,
-                                                        color: ganttTheme.barColorSecondary,
+                                                      child: Center( // Center the icon
+                                                        child: Icon(
+                                                          icon,
+                                                          size: handleWidth,
+                                                          color: ganttTheme.barColorSecondary,
+                                                        ),
                                                       ),
                                                     ),
                                                   );

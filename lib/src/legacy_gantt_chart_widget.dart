@@ -506,7 +506,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           {double? gridMin,
           double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(Object.hashAll(tasks)),
+        key: ValueKey(Object.hashAll([tasks, widget.visibleRows])),
         create: (context) {
           // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(
@@ -530,8 +530,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
             taskBarBuilder: widget.taskBarBuilder,
-            resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
-            scrollController: widget.scrollController,
+            resizeTooltipDateFormat: widget.resizeTooltipDateFormat, // The external controller to LISTEN to
+            scrollController: widget.scrollController, // The external controller to LISTEN to
             ganttHorizontalScrollController: widget.horizontalScrollController,
             onRowRequestVisible: widget.onRowRequestVisible,
             initialFocusedTaskId: widget.focusedTaskId,
