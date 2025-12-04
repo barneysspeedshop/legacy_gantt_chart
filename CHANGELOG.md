@@ -1,3 +1,7 @@
+## 3.1.3
+
+* **FIX**: Remove some left over tests that are not needed which caused false-positive CI failures.
+
 ## 3.1.2
 
 * **FIX**: Fix for an issue that caused interactions to be ignored on the gantt view for dragon drop, resize, and gantt bar action menu.
