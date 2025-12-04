@@ -340,8 +340,10 @@ class GanttScheduleService {
       final conflictDetector = LegacyGanttConflictDetector();
       // If visibleRowIds is provided, filter the tasks before running conflict detection.
       // This prevents generating conflicts for tasks in collapsed rows.
-      final tasksForConflictDetection =
-          visibleRowIds != null ? stackedTasks.where((t) => visibleRowIds.contains(t.rowId)).toList() : stackedTasks;
+      // FIX: We MUST run conflict detection on ALL tasks, even hidden ones, because
+      // the conflict detector needs to see child tasks to generate summary indicators
+      // on the parent row.
+      final tasksForConflictDetection = stackedTasks;
       conflictIndicators = conflictDetector.run<String>(
         tasks: tasksForConflictDetection,
         taskGrouper: (task) {

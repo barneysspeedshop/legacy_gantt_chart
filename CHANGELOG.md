@@ -1,3 +1,7 @@
+## 3.1.2
+
+* **FIX**: Fix for an issue that caused interactions to be ignored on the gantt view for dragon drop, resize, and gantt bar action menu.
+
 ## 3.1.1
 
 * **FIX**: Fix for an issue that caused labels to fall out of sync with gantt bars when expanding/collapsing rows.
