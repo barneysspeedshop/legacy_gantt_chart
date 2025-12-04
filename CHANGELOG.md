@@ -1,3 +1,7 @@
+## 3.1.4
+
+* **FIX**: More test adjustments. Enjoy some π!
+
 ## 3.1.3
 
 * **FIX**: Remove some left over tests that are not needed which caused false-positive CI failures.
