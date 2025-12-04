@@ -109,8 +109,14 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
   /// and to manage the horizontal scroll of the chart.
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _ganttScrollController = ScrollController();
+  final ScrollController _gridScrollController = ScrollController();
   final ScrollController _ganttHorizontalScrollController = ScrollController();
+
+  // Flags to prevent listener feedback loops during programmatic scrolling.
+  bool _isSyncingGridScroll = false;
+  bool _isSyncingGanttScroll = false;
+  bool _areScrollListenersAttached = false;
 
   /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
   bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
@@ -167,12 +173,36 @@ class GanttViewModel extends ChangeNotifier {
 
   /// A map of row IDs to their maximum task stack depth, used by the Gantt chart widget.
   Map<String, int> get rowMaxStackDepth => _rowMaxStackDepth;
-  ScrollController get scrollController => _scrollController;
+  ScrollController get ganttScrollController => _ganttScrollController;
+  ScrollController get gridScrollController => _gridScrollController;
   ScrollController get ganttHorizontalScrollController => _ganttHorizontalScrollController;
   double? get gridWidth => _gridWidth;
   double? get controlPanelWidth => _controlPanelWidth;
 
   List<GanttGridData> get visibleGridData => _gridData;
+
+  /// Flattens the hierarchical `_gridData` into a single list suitable for `UnifiedDataGrid`.
+  /// It also adds a 'parentId' to each child's data map.
+  List<Map<String, dynamic>> get flatGridData {
+    final List<Map<String, dynamic>> flatList = [];
+    for (final parent in _gridData) {
+      flatList.add({
+        'id': parent.id,
+        'name': parent.name,
+        'completion': parent.completion,
+        'parentId': null, // Explicitly set parentId to null for root nodes
+      });
+      for (final child in parent.children) {
+        flatList.add({
+          'id': child.id,
+          'name': child.name,
+          'completion': child.completion,
+          'parentId': parent.id,
+        });
+      }
+    }
+    return flatList;
+  }
 
   /// Calculates the list of `LegacyGanttRow`s that should be visible based on the
   /// expanded/collapsed state of the parent items in the `gridData`.
@@ -197,10 +227,45 @@ class GanttViewModel extends ChangeNotifier {
     fetchScheduleData();
   }
 
+  /// Attaches the vertical scroll listeners. This should be called after the
+  /// widgets using the controllers have been built.
+  void attachScrollListeners() {
+    if (_areScrollListenersAttached) return;
+    _gridScrollController.addListener(_syncGanttScroll);
+    _ganttScrollController.addListener(_syncGridScroll);
+    _areScrollListenersAttached = true;
+  }
+
+  void _syncGanttScroll() {
+    if (_isSyncingGanttScroll) return;
+    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
+
+    _isSyncingGridScroll = true;
+    if (_ganttScrollController.offset != _gridScrollController.offset) {
+      _gridScrollController.jumpTo(_ganttScrollController.offset);
+    }
+    _isSyncingGridScroll = false;
+  }
+
+  void _syncGridScroll() {
+    if (_isSyncingGridScroll) return;
+    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
+
+    _isSyncingGanttScroll = true;
+    if (_gridScrollController.offset != _ganttScrollController.offset) {
+      _ganttScrollController.jumpTo(_gridScrollController.offset);
+    }
+    _isSyncingGanttScroll = false;
+  }
+
   @override
   void dispose() {
     _removeTooltip();
-    _scrollController.dispose();
+    // Remove listeners before disposing controllers.
+    _gridScrollController.removeListener(_syncGanttScroll);
+    _ganttScrollController.removeListener(_syncGridScroll);
+    _gridScrollController.dispose();
+    _ganttScrollController.dispose();
     _ganttHorizontalScrollController.removeListener(_onGanttScroll);
     _ganttHorizontalScrollController.dispose();
     super.dispose();
@@ -438,8 +503,13 @@ class GanttViewModel extends ChangeNotifier {
 
       _isLoading = false;
 
-      _visibleStartDate = effectiveTotalStartDate;
-      _visibleEndDate = effectiveTotalEndDate;
+      // Set the initial visible window. If a previous window existed, try to maintain it.
+      // Otherwise, default to the full effective range. This prevents the view from
+      // resetting its zoom level every time data is fetched.
+      _visibleStartDate = _visibleStartDate ?? effectiveTotalStartDate;
+      _visibleEndDate = _visibleEndDate ?? effectiveTotalEndDate;
+      // Ensure the visible range is not null if the total range is also null.
+      if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
       notifyListeners();
 
@@ -452,6 +522,15 @@ class GanttViewModel extends ChangeNotifier {
       debugPrint('Error fetching gantt schedule data: $e');
       // Consider showing an error message to the user
     }
+  }
+
+  /// Sets a default visible window when no other range is available.
+  void _setInitialVisibleWindow() {
+    final now = DateTime.now();
+    _totalStartDate = now.subtract(const Duration(days: 15));
+    _totalEndDate = now.add(const Duration(days: 15));
+    _visibleStartDate = effectiveTotalStartDate;
+    _visibleEndDate = effectiveTotalEndDate;
   }
 
   // Helper to parse hex color strings
@@ -528,6 +607,9 @@ class GanttViewModel extends ChangeNotifier {
     // scroll the Gantt chart to the correct position.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (effectiveTotalStartDate != null &&
+          // Add a guard to ensure the controller is attached before use.
+          // This is crucial, especially during initial load or rapid state changes.
+          _ganttHorizontalScrollController.hasClients &&
           effectiveTotalEndDate != null &&
           _ganttHorizontalScrollController.hasClients) {
         final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
@@ -972,10 +1054,55 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Toggles the expanded/collapsed state of a parent row in the grid.
   void toggleExpansion(String id) {
-    final item = _gridData.firstWhere((element) => element.id == id);
+    final item = _gridData.firstWhereOrNull((element) => element.id == id);
+    if (item == null || !_gridScrollController.hasClients) return;
+
+    // --- Scroll Position Preservation Logic ---
+    // 1. Get the current scroll offset before any changes.
+    final currentOffset = _gridScrollController.offset;
+    final currentMaxScroll = _gridScrollController.position.maxScrollExtent;
+
+    // 2. Find the index of the row being toggled in the *current* visible list.
+    final visibleRowsBefore = visibleGanttRows;
+    final rowIndex = visibleRowsBefore.indexWhere((r) => r.id == id);
+
+    // 3. Calculate the height of the children that will be hidden/shown.
+    double childrenHeight = 0;
+    if (item.isParent && item.children.isNotEmpty) {
+      childrenHeight = item.children.fold<double>(0.0, (prev, child) {
+        final stackDepth = _rowMaxStackDepth[child.id] ?? 1;
+        return prev + (stackDepth * rowHeight);
+      });
+    }
+
+    // --- Proactive Scroll Adjustment (to handle animation) ---
+    // If we are collapsing a row, we predict the new max scroll extent.
+    // If the current scroll position would be invalid after the animation,
+    // we jump to the predicted new max extent *before* the animation starts.
+    // This prevents the scroll "jump" when collapsing from the bottom up.
+    if (!item.isExpanded && ganttScrollController.hasClients ) {
+      final predictedNewMaxScroll = currentMaxScroll - childrenHeight;
+      if (currentOffset >= predictedNewMaxScroll) {
+        // The current position will be out of bounds. Jump to the new end.
+        _gridScrollController.jumpTo(predictedNewMaxScroll);
+        // By jumping, we've handled the scroll adjustment for this case.
+        // We must also manually update the Gantt chart's internal translateY
+        // to keep the bars in sync with the grid's new scroll position.
+        _ganttScrollController.jumpTo(predictedNewMaxScroll);
+
+        // We can now skip the top-down adjustment logic later on.
+        item.isExpanded = !item.isExpanded; // Toggle state
+        _recalculateStackingAndNotify(); // Rebuild UI
+        return; // Exit early
+      }
+    }
+
+    // --- State Update ---
+    // This path is taken for expansions or for top-down collapses.
+    // 4. Toggle the expansion state.
     item.isExpanded = !item.isExpanded;
 
-    if (_apiResponse != null) {
+    if (_apiResponse != null) { //
       // After toggling, get the new set of visible row IDs.
       final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
       // Recalculate task stacking, but only run conflict detection on visible tasks.
@@ -986,10 +1113,39 @@ class GanttViewModel extends ChangeNotifier {
         visibleRowIds: visibleRowIds,
       );
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+
+      // --- Top-Down Collapse Adjustment ---
+      // This logic now only runs if the bottom-up case was not met.
+      // If a row *above* the viewport was collapsed, we need to shift the scroll position up.
+      if (rowIndex != -1 && !item.isExpanded) {
+        double rowTop = 0;
+        for (int i = 0; i < rowIndex; i++) {
+          rowTop += (_rowMaxStackDepth[visibleRowsBefore[i].id] ?? 1) * rowHeight;
+        }
+        if (rowTop < currentOffset) {
+          _gridScrollController.jumpTo(currentOffset - childrenHeight);
+        }
+      }
     } else {
       // If there's no data, just notify to update the expansion arrow.
       notifyListeners();
     }
+  }
+
+  /// Helper to centralize the logic for recalculating stacking and notifying listeners.
+  void _recalculateStackingAndNotify() {
+    if (_apiResponse == null) {
+      notifyListeners();
+      return;
+    }
+    final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
+    final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+      _ganttTasks,
+      _apiResponse!,
+      showConflicts: _showConflicts,
+      visibleRowIds: visibleRowIds,
+    );
+    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
   }
 
   /// Ensures that a given row is visible by expanding its parent if necessary.
@@ -1282,8 +1438,10 @@ class GanttViewModel extends ChangeNotifier {
       _totalEndDate = _startDate.add(Duration(days: _range));
     }
 
-    _visibleStartDate = effectiveTotalStartDate;
-    _visibleEndDate = effectiveTotalEndDate;
+    // When reprocessing, we must preserve the current visible window.
+    // If we reset it to the total effective range, any user zoom/pan is lost.
+    // If the visible range is somehow null, we reset it.
+    if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
     notifyListeners();
   }

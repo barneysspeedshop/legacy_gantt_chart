@@ -1,3 +1,7 @@
+## 3.1.5
+
+* **EXAMPLE IMPROVEMENT**: Update example to use `legacy_tree_grid` instead of `legacy_gantt_grid`.
+
 ## 3.1.4
 
 * **FIX**: More test adjustments. Enjoy some π!

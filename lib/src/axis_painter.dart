@@ -176,11 +176,17 @@ class AxisPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant AxisPainter oldDelegate) =>
-      oldDelegate.theme != theme ||
-      oldDelegate.scale != scale ||
-      !listEquals(oldDelegate.visibleDomain, visibleDomain) ||
-      oldDelegate.width != width ||
-      oldDelegate.height != height;
+      theme != oldDelegate.theme ||
+      width != oldDelegate.width ||
+      height != oldDelegate.height ||
+      // A direct comparison of scale functions is not reliable.
+      // Instead, we check the domains which determine the scale.
+      !listEquals(domain, oldDelegate.domain) ||
+      // Check if the visible domain's start or end has changed.
+      (visibleDomain.isNotEmpty && oldDelegate.visibleDomain.isNotEmpty
+          ? visibleDomain.first != oldDelegate.visibleDomain.first ||
+              visibleDomain.last != oldDelegate.visibleDomain.last
+          : listEquals(visibleDomain, oldDelegate.visibleDomain));
 
   DateTime _roundDownTo(DateTime dt, Duration delta) {
     final ms = dt.millisecondsSinceEpoch;

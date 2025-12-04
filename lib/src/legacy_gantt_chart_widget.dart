@@ -531,8 +531,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
             taskBarBuilder: widget.taskBarBuilder,
-            resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
-            scrollController: widget.scrollController,
+            resizeTooltipDateFormat: widget.resizeTooltipDateFormat, // The external controller to LISTEN to
+            scrollController: widget.scrollController, // The external controller to LISTEN to
             ganttHorizontalScrollController: widget.horizontalScrollController,
             onRowRequestVisible: widget.onRowRequestVisible,
             initialFocusedTaskId: widget.focusedTaskId,
