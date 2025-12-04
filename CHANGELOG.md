@@ -1,3 +1,7 @@
+## 3.1.1
+
+* **FIX**: Fix for an issue that caused labels to fall out of sync with gantt bars when expanding/collapsing rows.
+
 ## 3.1.0
 
 * **FEATURE**: Added support for Milestones.
