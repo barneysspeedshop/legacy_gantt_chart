@@ -713,15 +713,14 @@ class _GanttViewState extends State<GanttView> {
                               // It is synchronized with the Gantt chart via a shared ScrollController.
                               // This is a common pattern for building a complete Gantt chart UI.
                               SizedBox(
-                                width: vm.gridWidth ??
-                                    constraints.maxWidth * 0.41,
+                                width: vm.gridWidth ?? constraints.maxWidth * 0.41,
                                 child: Column(
                                   children: [
                                     Expanded(
                                       child: LayoutBuilder(
-                                        builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>( // Use a key that changes when data reloads to force a grid refresh.
-                                          key: ValueKey(
-                                              '${vm.flatGridData.length}-${vm.gridData.where((p) => p.isExpanded).length}'),
+                                        builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
+                                          // Use a key that changes when data reloads to force a grid refresh.
+                                          key: const ValueKey('gantt_grid'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,
@@ -733,7 +732,8 @@ class _GanttViewState extends State<GanttView> {
                                             return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
                                           },
                                           onRowToggle: (rowId, _) => vm.toggleExpansion(rowId),
-                                          initialExpandedRowIds: vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
+                                          initialExpandedRowIds:
+                                              vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
                                           scrollController: vm.gridScrollController,
                                           headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
                                           showFooter: false,
@@ -829,28 +829,33 @@ class _GanttViewState extends State<GanttView> {
                                             ),
                                           ],
                                           // Replicate the header buttons from the old GanttGrid.
-                                          headerTrailingWidgets: [(context) => PopupMenuButton<String>(
-                                              padding: const EdgeInsets.only( right:16.0 ),
-                                              icon: const Icon(Icons.more_vert, size: 16),
-                                              tooltip: 'More Options',
-                                              onSelected: (value) {
-                                                if (value == 'add_contact') {
-                                                  vm.addContact(context);
-                                                } else if (value == 'edit_all_parents') {
-                                                  vm.editAllParentTasks(context);
-                                                }
-                                              },
-                                              itemBuilder: (context) => <PopupMenuEntry<String>>[
-                                                const PopupMenuItem<String>(
-                                                  value: 'add_contact',
-                                                  child: ListTile(leading: Icon(Icons.person_add), title: Text('Add Contact')),
-                                                ),
-                                                const PopupMenuItem<String>(
-                                                  value: 'edit_all_parents',
-                                                  child: ListTile(leading: Icon(Icons.edit), title: Text('Edit All Parent Tasks')),
-                                                ),
-                                              ],
-                                            )],
+                                          headerTrailingWidgets: [
+                                            (context) => PopupMenuButton<String>(
+                                                  padding: const EdgeInsets.only(right: 16.0),
+                                                  icon: const Icon(Icons.more_vert, size: 16),
+                                                  tooltip: 'More Options',
+                                                  onSelected: (value) {
+                                                    if (value == 'add_contact') {
+                                                      vm.addContact(context);
+                                                    } else if (value == 'edit_all_parents') {
+                                                      vm.editAllParentTasks(context);
+                                                    }
+                                                  },
+                                                  itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                    const PopupMenuItem<String>(
+                                                      value: 'add_contact',
+                                                      child: ListTile(
+                                                          leading: Icon(Icons.person_add), title: Text('Add Contact')),
+                                                    ),
+                                                    const PopupMenuItem<String>(
+                                                      value: 'edit_all_parents',
+                                                      child: ListTile(
+                                                          leading: Icon(Icons.edit),
+                                                          title: Text('Edit All Parent Tasks')),
+                                                    ),
+                                                  ],
+                                                )
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -1084,7 +1089,8 @@ class _GanttViewState extends State<GanttView> {
                                                       width: handleWidth,
                                                       height: vm.rowHeight, // Ensure container has height for alignment
                                                       color: Colors.transparent, // Make the gesture area larger
-                                                      child: Center( // Center the icon
+                                                      child: Center(
+                                                        // Center the icon
                                                         child: Icon(
                                                           icon,
                                                           size: handleWidth,

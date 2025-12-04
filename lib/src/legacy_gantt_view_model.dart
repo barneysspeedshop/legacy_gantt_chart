@@ -254,12 +254,53 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// Called by the widget to inform the view model of its available dimensions.
   /// This is crucial for calculating the time scale.
+  /// Called by the widget to inform the view model of its available dimensions.
+  /// This is crucial for calculating the time scale.
   void updateLayout(double width, double height) {
     if (_width != width || _height != height) {
       _width = width;
       _height = height;
       _calculateDomains();
       _calculateRowOffsets(); // Recalculate if layout changes
+    }
+
+    // Fix for scroll synchronization issue:
+    // When the grid collapses rows, the scroll controller's offset might change (clamped by the new smaller extent).
+    // However, this view model might not receive the notification immediately if the listener hasn't fired yet
+    // or if the timing is off. We force a check here.
+    if (scrollController != null && scrollController!.hasClients) {
+      // Safely get the offset. If attached to multiple views (e.g. during transition or complex grids),
+      // pick the first one or avoid throwing.
+      double? currentControllerOffset;
+      if (scrollController!.positions.length == 1) {
+        currentControllerOffset = scrollController!.offset;
+      } else if (scrollController!.positions.isNotEmpty) {
+        currentControllerOffset = scrollController!.positions.first.pixels;
+      }
+
+      if (currentControllerOffset != null) {
+        // _translateY should be negative of the scroll offset.
+        // We use a small epsilon for float comparison.
+        if ((_translateY - (-currentControllerOffset)).abs() > 0.1) {
+          // Schedule the update to avoid "setState during build" or similar issues,
+          // although setTranslateY just notifies listeners.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (scrollController != null && scrollController!.hasClients) {
+              // Re-check safely inside the callback
+              double? callbackOffset;
+              if (scrollController!.positions.length == 1) {
+                callbackOffset = scrollController!.offset;
+              } else if (scrollController!.positions.isNotEmpty) {
+                callbackOffset = scrollController!.positions.first.pixels;
+              }
+
+              if (callbackOffset != null) {
+                setTranslateY(-callbackOffset);
+              }
+            }
+          });
+        }
+      }
     }
   }
 
