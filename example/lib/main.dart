@@ -720,6 +720,7 @@ class _GanttViewState extends State<GanttView> {
                                       child: LayoutBuilder(
                                         builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
                                           // Use a key that changes when data reloads to force a grid refresh.
+                                          allowSorting: false,
                                           key: const ValueKey('gantt_grid'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,

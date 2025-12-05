@@ -1,3 +1,7 @@
+## 3.1.6
+
+* **EXAMPLE FIX**: Disable sorting in the example grid to prevent unexpected behavior.
+
 ## 3.1.5
 
 * **EXAMPLE IMPROVEMENT**: Update example to use `legacy_tree_grid` instead of `legacy_gantt_grid`.
