@@ -13,6 +13,7 @@ import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 import 'ui/widgets/dashboard_header.dart';
 import 'view_models/gantt_view_model.dart';
+import 'mock_gantt_sync_client.dart';
 
 void main() => runApp(const MyApp());
 
@@ -73,6 +74,7 @@ class _GanttViewState extends State<GanttView> {
   bool _isPanelVisible = true;
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
+  final _mockSyncClient = MockGanttSyncClient();
 
   @override
   void initState() {
@@ -352,6 +354,11 @@ class _GanttViewState extends State<GanttView> {
                   icon: const Icon(Icons.data_object),
                   tooltip: 'Export Tasks to JSON',
                   onPressed: () => _showJsonExportDialog(vm),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.cloud_download),
+                  tooltip: 'Simulate Remote Update',
+                  onPressed: _simulateRemoteUpdate,
                 ),
               ],
             ),
@@ -648,6 +655,30 @@ class _GanttViewState extends State<GanttView> {
     );
   }
 
+  void _simulateRemoteUpdate() {
+    if (_viewModel.ganttTasks.isEmpty) return;
+
+    // Pick a random task to move
+    final task = _viewModel.ganttTasks.first;
+    final newStart = task.start.add(const Duration(days: 1));
+    final newEnd = task.end.add(const Duration(days: 1));
+
+    final op = Operation(
+      type: 'UPDATE_TASK',
+      data: {
+        'id': task.id,
+        'start': newStart.toIso8601String(),
+        'end': newEnd.toIso8601String(),
+        'name': '${task.name} (Remote Update)',
+      },
+      timestamp: DateTime.now().millisecondsSinceEpoch + 1000, // Future timestamp to win LWW
+      actorId: 'remote_user',
+    );
+
+    _mockSyncClient.simulateIncomingOperation(op);
+    _showSnackbar('Simulated remote update for ${task.name}');
+  }
+
   // The root of the application uses a ChangeNotifierProvider to make the
   // GanttViewModel available to the entire widget tree below it. This allows
   // any widget to listen to changes in the view model and rebuild accordingly.
@@ -916,6 +947,8 @@ class _GanttViewState extends State<GanttView> {
                                               child: LegacyGanttChartWidget(
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
+                                                syncClient: _mockSyncClient,
+                                                taskGrouper: (task) => task.rowId,
                                                 // --- Custom Builders ---
                                                 timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
                                                 timelineAxisHeaderBuilder:
