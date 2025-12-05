@@ -1,3 +1,7 @@
+## 3.1.8
+
+* **FIX**: Fix block function body lint.
+
 ## 3.1.7
 
 * **EXAMPLE FEATURE**: Implemented the ability to select a task in the gantt view and have the corresponding row in the grid view selected.

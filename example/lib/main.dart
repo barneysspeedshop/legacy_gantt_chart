@@ -721,151 +721,147 @@ class _GanttViewState extends State<GanttView> {
                                   children: [
                                     Expanded(
                                       child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          return UnifiedDataGrid<Map<String, dynamic>>(
-                                            // Use a key that changes when data reloads to force a grid refresh.
-                                            allowSorting: false,
-                                            key: _gridKey,
-                                            mode: DataGridMode.client,
-                                            clientData: vm.flatGridData,
-                                            toMap: (item) => item,
-                                            rowIdKey: 'id',
-                                            isTree: true,
-                                            parentIdKey: 'parentId',
-                                            rowHeightBuilder: (data) {
-                                              final rowId = data['id'] as String;
-                                              return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
-                                            },
-                                            onRowToggle: (rowId, _) => vm.toggleExpansion(rowId),
-                                            initialExpandedRowIds:
-                                                vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
-                                            scrollController: vm.gridScrollController,
-                                            headerHeight:
-                                                _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                            showFooter: false,
-                                            allowFiltering: false, // Filtering can be enabled if desired.
-                                            selectedRowId: vm.selectedRowId,
-                                            columnDefs: [
-                                              DataColumnDef(
-                                                id: 'name',
-                                                caption: 'Name',
-                                                // Use flex to make the name column fill available space.
-                                                flex: 1,
-                                                isNameColumn: true,
-                                                minWidth: 150,
-                                              ),
-                                              DataColumnDef(
-                                                id: 'completion',
-                                                caption: 'Completed %',
-                                                width: 100,
-                                                minWidth: 100,
-                                                cellBuilder: (context, data) {
-                                                  final double? completion = data['completion'];
-                                                  if (completion == null) return const SizedBox.shrink();
-                                                  final percentage = (completion * 100).clamp(0, 100);
-                                                  final percentageText = '${percentage.toStringAsFixed(0)}%';
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
-                                                    child: Stack(
-                                                      alignment: Alignment.center,
-                                                      children: [
-                                                        LinearProgressIndicator(
-                                                          value: completion,
-                                                          backgroundColor: Colors.grey.shade300,
-                                                          color: Colors.blue,
-                                                          minHeight: 20,
-                                                        ),
-                                                        Text(
-                                                          percentageText,
-                                                          style: TextStyle(
-                                                            color: percentage > 50 ? Colors.white : Colors.black,
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                              DataColumnDef(
-                                                id: 'actions',
-                                                caption: '',
-                                                width: 56,
-                                                minWidth: 56,
-                                                cellBuilder: (context, data) {
-                                                  final bool isParent = data['parentId'] == null;
-                                                  final String rowId = data['id'];
-                                                  if (isParent) {
-                                                    return PopupMenuButton<String>(
-                                                      padding: EdgeInsets.zero,
-                                                      icon: const Icon(Icons.more_vert, size: 16),
-                                                      tooltip: 'Options',
-                                                      onSelected: (value) {
-                                                        if (value == 'add_line_item') {
-                                                          vm.addLineItem(context, rowId);
-                                                        } else if (value == 'delete_row') {
-                                                          vm.deleteRow(rowId);
-                                                        } else if (value == 'edit_task') {
-                                                          vm.editParentTask(context, rowId);
-                                                        } else if (value == 'edit_dependent_tasks') {
-                                                          vm.editDependentTasks(context, rowId);
-                                                        }
-                                                      },
-                                                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                                        const PopupMenuItem<String>(
-                                                            value: 'add_line_item', child: Text('Add Line Item')),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'edit_task', child: Text('Edit Task')),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'edit_dependent_tasks',
-                                                            child: Text('Edit Dependent Tasks')),
-                                                        const PopupMenuDivider(),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'delete_row', child: Text('Delete Row')),
-                                                      ],
-                                                    );
-                                                  } else {
-                                                    return IconButton(
-                                                      icon: const Icon(Icons.delete_outline, size: 18),
-                                                      tooltip: 'Delete Row',
-                                                      onPressed: () => vm.deleteRow(rowId),
-                                                    );
-                                                  }
-                                                },
-                                              ),
-                                            ],
-                                            // Replicate the header buttons from the old GanttGrid.
-                                            headerTrailingWidgets: [
-                                              (context) => PopupMenuButton<String>(
-                                                    padding: const EdgeInsets.only(right: 16.0),
-                                                    icon: const Icon(Icons.more_vert, size: 16),
-                                                    tooltip: 'More Options',
-                                                    onSelected: (value) {
-                                                      if (value == 'add_contact') {
-                                                        vm.addContact(context);
-                                                      } else if (value == 'edit_all_parents') {
-                                                        vm.editAllParentTasks(context);
-                                                      }
-                                                    },
-                                                    itemBuilder: (context) => <PopupMenuEntry<String>>[
-                                                      const PopupMenuItem<String>(
-                                                        value: 'add_contact',
-                                                        child: ListTile(
-                                                            leading: Icon(Icons.person_add),
-                                                            title: Text('Add Contact')),
+                                        builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
+                                          // Use a key that changes when data reloads to force a grid refresh.
+                                          allowSorting: false,
+                                          key: _gridKey,
+                                          mode: DataGridMode.client,
+                                          clientData: vm.flatGridData,
+                                          toMap: (item) => item,
+                                          rowIdKey: 'id',
+                                          isTree: true,
+                                          parentIdKey: 'parentId',
+                                          rowHeightBuilder: (data) {
+                                            final rowId = data['id'] as String;
+                                            return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
+                                          },
+                                          onRowToggle: (rowId, _) => vm.toggleExpansion(rowId),
+                                          initialExpandedRowIds:
+                                              vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
+                                          scrollController: vm.gridScrollController,
+                                          headerHeight: _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                          showFooter: false,
+                                          allowFiltering: false, // Filtering can be enabled if desired.
+                                          selectedRowId: vm.selectedRowId,
+                                          columnDefs: [
+                                            DataColumnDef(
+                                              id: 'name',
+                                              caption: 'Name',
+                                              // Use flex to make the name column fill available space.
+                                              flex: 1,
+                                              isNameColumn: true,
+                                              minWidth: 150,
+                                            ),
+                                            DataColumnDef(
+                                              id: 'completion',
+                                              caption: 'Completed %',
+                                              width: 100,
+                                              minWidth: 100,
+                                              cellBuilder: (context, data) {
+                                                final double? completion = data['completion'];
+                                                if (completion == null) return const SizedBox.shrink();
+                                                final percentage = (completion * 100).clamp(0, 100);
+                                                final percentageText = '${percentage.toStringAsFixed(0)}%';
+                                                return Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+                                                  child: Stack(
+                                                    alignment: Alignment.center,
+                                                    children: [
+                                                      LinearProgressIndicator(
+                                                        value: completion,
+                                                        backgroundColor: Colors.grey.shade300,
+                                                        color: Colors.blue,
+                                                        minHeight: 20,
                                                       ),
-                                                      const PopupMenuItem<String>(
-                                                        value: 'edit_all_parents',
-                                                        child: ListTile(
-                                                            leading: Icon(Icons.edit),
-                                                            title: Text('Edit All Parent Tasks')),
+                                                      Text(
+                                                        percentageText,
+                                                        style: TextStyle(
+                                                          color: percentage > 50 ? Colors.white : Colors.black,
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w600,
+                                                        ),
                                                       ),
                                                     ],
-                                                  )
-                                            ],
-                                          );
-                                        },
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                            DataColumnDef(
+                                              id: 'actions',
+                                              caption: '',
+                                              width: 56,
+                                              minWidth: 56,
+                                              cellBuilder: (context, data) {
+                                                final bool isParent = data['parentId'] == null;
+                                                final String rowId = data['id'];
+                                                if (isParent) {
+                                                  return PopupMenuButton<String>(
+                                                    padding: EdgeInsets.zero,
+                                                    icon: const Icon(Icons.more_vert, size: 16),
+                                                    tooltip: 'Options',
+                                                    onSelected: (value) {
+                                                      if (value == 'add_line_item') {
+                                                        vm.addLineItem(context, rowId);
+                                                      } else if (value == 'delete_row') {
+                                                        vm.deleteRow(rowId);
+                                                      } else if (value == 'edit_task') {
+                                                        vm.editParentTask(context, rowId);
+                                                      } else if (value == 'edit_dependent_tasks') {
+                                                        vm.editDependentTasks(context, rowId);
+                                                      }
+                                                    },
+                                                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                                      const PopupMenuItem<String>(
+                                                          value: 'add_line_item', child: Text('Add Line Item')),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'edit_task', child: Text('Edit Task')),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'edit_dependent_tasks',
+                                                          child: Text('Edit Dependent Tasks')),
+                                                      const PopupMenuDivider(),
+                                                      const PopupMenuItem<String>(
+                                                          value: 'delete_row', child: Text('Delete Row')),
+                                                    ],
+                                                  );
+                                                } else {
+                                                  return IconButton(
+                                                    icon: const Icon(Icons.delete_outline, size: 18),
+                                                    tooltip: 'Delete Row',
+                                                    onPressed: () => vm.deleteRow(rowId),
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                          ],
+                                          // Replicate the header buttons from the old GanttGrid.
+                                          headerTrailingWidgets: [
+                                            (context) => PopupMenuButton<String>(
+                                                  padding: const EdgeInsets.only(right: 16.0),
+                                                  icon: const Icon(Icons.more_vert, size: 16),
+                                                  tooltip: 'More Options',
+                                                  onSelected: (value) {
+                                                    if (value == 'add_contact') {
+                                                      vm.addContact(context);
+                                                    } else if (value == 'edit_all_parents') {
+                                                      vm.editAllParentTasks(context);
+                                                    }
+                                                  },
+                                                  itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                    const PopupMenuItem<String>(
+                                                      value: 'add_contact',
+                                                      child: ListTile(
+                                                          leading: Icon(Icons.person_add), title: Text('Add Contact')),
+                                                    ),
+                                                    const PopupMenuItem<String>(
+                                                      value: 'edit_all_parents',
+                                                      child: ListTile(
+                                                          leading: Icon(Icons.edit),
+                                                          title: Text('Edit All Parent Tasks')),
+                                                    ),
+                                                  ],
+                                                )
+                                          ],
+                                        ),
                                       ),
                                     ),
                                     // This SizedBox balances the height of the timeline scrubber on the right.
