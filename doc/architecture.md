@@ -29,3 +29,7 @@ The following diagram illustrates the main components and their roles:
 *   **Painters (`CustomPainter`)**: For maximum performance, the chart relies on `CustomPainter` to draw the most complex visual elements.
     *   **`AxisPainter`**: Responsible for drawing the background grid lines and the labels on the timeline axis.
     *   **`BarsCollectionPainter`**: A highly optimized painter that draws all task bars, summary bars, highlights, conflict indicators, and dependency lines in a single paint cycle.
+
+*   **Repository Layer (Optional)**: For offline-first or local-only deployments, the package supports a repository pattern backed by SQLite and CRDTs.
+    *   **`LocalGanttRepository`**: Handles CRUD operations and data synchronization logic. It abstracts the underlying database and provides streams for real-time UI updates.
+    *   **`GanttDb`**: The local SQLite database, enhanced with `sqlite_crdt` to ensure consistent state across multiple devices or offline sessions.
