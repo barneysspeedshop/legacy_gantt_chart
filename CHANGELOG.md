@@ -1,3 +1,8 @@
+## 3.1.7
+
+* **EXAMPLE FEATURE**: Implemented the ability to select a task in the gantt view and have the corresponding row in the grid view selected.
+* **EXAMPLE FEATURE**: Added a new test file `select_gantt_selects_grid_row_test.dart` to demonstrate the issue where selecting a task in the gantt view does not select the corresponding row in the grid view.
+
 ## 3.1.6
 
 * **EXAMPLE FIX**: Disable sorting in the example grid to prevent unexpected behavior.

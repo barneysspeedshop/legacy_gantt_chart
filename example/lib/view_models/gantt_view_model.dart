@@ -166,6 +166,12 @@ class GanttViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get focusedTaskId => _focusedTaskId;
 
+  String? get selectedRowId {
+    if (_focusedTaskId == null) return null;
+    final task = _ganttTasks.firstWhereOrNull((t) => t.id == _focusedTaskId);
+    return task?.rowId;
+  }
+
   /// The effective total date range, including padding. This is passed to the Gantt chart widget
   /// to define the full scrollable width of the timeline.
   DateTime? get effectiveTotalStartDate => _totalStartDate?.subtract(_ganttStartPadding);
@@ -181,9 +187,12 @@ class GanttViewModel extends ChangeNotifier {
 
   List<GanttGridData> get visibleGridData => _gridData;
 
+  List<Map<String, dynamic>>? _cachedFlatGridData;
+
   /// Flattens the hierarchical `_gridData` into a single list suitable for `UnifiedDataGrid`.
   /// It also adds a 'parentId' to each child's data map.
   List<Map<String, dynamic>> get flatGridData {
+    if (_cachedFlatGridData != null) return _cachedFlatGridData!;
     final List<Map<String, dynamic>> flatList = [];
     for (final parent in _gridData) {
       flatList.add({
@@ -201,6 +210,7 @@ class GanttViewModel extends ChangeNotifier {
         });
       }
     }
+    _cachedFlatGridData = flatList;
     return flatList;
   }
 
@@ -402,6 +412,7 @@ class GanttViewModel extends ChangeNotifier {
     _totalEndDate = null;
     _visibleStartDate = null;
     _visibleEndDate = null;
+    _cachedFlatGridData = null;
     notifyListeners();
 
     try {
@@ -911,6 +922,7 @@ class GanttViewModel extends ChangeNotifier {
       // Update the mock API response and the grid data
       _apiResponse?.resourcesData.add(newResource);
       _gridData.add(newGridItem);
+      _cachedFlatGridData = null;
       notifyListeners();
     }
   }
@@ -936,6 +948,7 @@ class GanttViewModel extends ChangeNotifier {
       final parentResource = _apiResponse?.resourcesData.firstWhere((r) => r.id == parentId);
       parentResource?.children.add(newJob);
       parentGridItem.children.add(newGridItem);
+      _cachedFlatGridData = null;
       notifyListeners();
     }
   }
@@ -1080,7 +1093,7 @@ class GanttViewModel extends ChangeNotifier {
     // If the current scroll position would be invalid after the animation,
     // we jump to the predicted new max extent *before* the animation starts.
     // This prevents the scroll "jump" when collapsing from the bottom up.
-    if (!item.isExpanded && ganttScrollController.hasClients ) {
+    if (!item.isExpanded && ganttScrollController.hasClients) {
       final predictedNewMaxScroll = currentMaxScroll - childrenHeight;
       if (currentOffset >= predictedNewMaxScroll) {
         // The current position will be out of bounds. Jump to the new end.
@@ -1102,7 +1115,8 @@ class GanttViewModel extends ChangeNotifier {
     // 4. Toggle the expansion state.
     item.isExpanded = !item.isExpanded;
 
-    if (_apiResponse != null) { //
+    if (_apiResponse != null) {
+      //
       // After toggling, get the new set of visible row IDs.
       final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
       // Recalculate task stacking, but only run conflict detection on visible tasks.
@@ -1361,6 +1375,7 @@ class GanttViewModel extends ChangeNotifier {
 
         // Remove from data sources
         _gridData.removeWhere((parent) => parent.id == rowId);
+        _cachedFlatGridData = null;
         _apiResponse?.resourcesData.removeWhere((resource) => resource.id == rowId);
       } else {
         nextTasks = List.from(_ganttTasks);
@@ -1420,6 +1435,7 @@ class GanttViewModel extends ChangeNotifier {
     _ganttTasks = processedData.ganttTasks;
     _conflictIndicators = processedData.conflictIndicators;
     _gridData = processedData.gridData;
+    _cachedFlatGridData = null;
     _rowMaxStackDepth = processedData.rowMaxStackDepth;
     _eventMap = processedData.eventMap;
 

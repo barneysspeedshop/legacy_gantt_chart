@@ -19,7 +19,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   collection: ^1.19.1
-  legacy_tree_grid: ^0.8.0
+  legacy_tree_grid: ^0.10.0
 
 dev_dependencies:
   flutter_test:
