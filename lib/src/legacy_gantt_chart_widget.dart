@@ -393,9 +393,23 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
     // If the dependencies list has changed, push the update to the internal view model.
     // This is crucial for seeing new dependencies appear without a full rebuild.
-    if (_internalViewModel != null && !listEquals(oldWidget.dependencies, widget.dependencies)) {
-      // The list from the main view model is now passed down to the internal one.
-      _internalViewModel!.updateDependencies(widget.dependencies ?? []);
+    if (_internalViewModel != null) {
+      if (!listEquals(oldWidget.dependencies, widget.dependencies)) {
+        _internalViewModel!.updateDependencies(widget.dependencies ?? []);
+      }
+      if (!listEquals(oldWidget.data, widget.data) || !listEquals(oldWidget.holidays, widget.holidays)) {
+        final List<LegacyGanttTask> allItems = [...(widget.data ?? []), ...(widget.holidays ?? [])];
+        _internalViewModel!.updateData(allItems);
+      }
+      if (!listEquals(oldWidget.conflictIndicators, widget.conflictIndicators)) {
+        _internalViewModel!.updateConflictIndicators(widget.conflictIndicators ?? []);
+      }
+      if (!listEquals(oldWidget.visibleRows, widget.visibleRows)) {
+        _internalViewModel!.updateVisibleRows(widget.visibleRows);
+      }
+      if (!mapEquals(oldWidget.rowMaxStackDepth, widget.rowMaxStackDepth)) {
+        _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+      }
     }
   }
 
@@ -518,7 +532,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(Object.hashAll([...tasks, ...widget.visibleRows])),
+        key: ValueKey(Object.hashAll([...tasks, ...conflictIndicators, ...widget.visibleRows])),
         create: (context) {
           // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(

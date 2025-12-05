@@ -31,16 +31,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
   List<LegacyGanttTask> get data => _tasks;
 
   /// The list of conflict indicators to be displayed.
-  final List<LegacyGanttTask> conflictIndicators;
+  /// The list of conflict indicators to be displayed.
+  List<LegacyGanttTask> conflictIndicators;
 
   /// The list of dependencies between tasks.
   List<LegacyGanttTaskDependency> dependencies;
 
   /// The list of rows currently visible in the viewport.
-  final List<LegacyGanttRow> visibleRows;
+  /// The list of rows currently visible in the viewport.
+  List<LegacyGanttRow> visibleRows;
 
   /// A map defining the maximum number of overlapping tasks for each row.
-  final Map<String, int> rowMaxStackDepth;
+  /// A map defining the maximum number of overlapping tasks for each row.
+  Map<String, int> rowMaxStackDepth;
 
   /// The height of a single task lane.
   final double rowHeight;
@@ -193,6 +196,34 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   /// Updates the list of dependencies and notifies listeners to trigger a repaint.
+  void updateData(List<LegacyGanttTask> data) {
+    if (!listEquals(_tasks, data)) {
+      _tasks = data;
+      notifyListeners();
+    }
+  }
+
+  void updateConflictIndicators(List<LegacyGanttTask> conflictIndicators) {
+    if (!listEquals(this.conflictIndicators, conflictIndicators)) {
+      this.conflictIndicators = conflictIndicators;
+      notifyListeners();
+    }
+  }
+
+  void updateVisibleRows(List<LegacyGanttRow> visibleRows) {
+    if (!listEquals(this.visibleRows, visibleRows)) {
+      this.visibleRows = visibleRows;
+      notifyListeners();
+    }
+  }
+
+  void updateRowMaxStackDepth(Map<String, int> rowMaxStackDepth) {
+    if (!mapEquals(this.rowMaxStackDepth, rowMaxStackDepth)) {
+      this.rowMaxStackDepth = rowMaxStackDepth;
+      notifyListeners();
+    }
+  }
+
   void updateDependencies(List<LegacyGanttTaskDependency> newDependencies) {
     if (!listEquals(dependencies, newDependencies)) {
       dependencies = newDependencies;
@@ -212,6 +243,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   double _translateY = 0;
   double _initialTranslateY = 0;
   double _initialTouchY = 0;
+  Offset _initialLocalPosition = Offset.zero;
   bool _isScrollingInternally = false;
   String? _lastHoveredTaskId;
   double Function(DateTime) _totalScale = (DateTime date) => 0.0;
@@ -606,6 +638,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     // Otherwise heuristic based - this is risky with conflicting recognizers.
     // We'll leave it simple:
     _panType = PanType.none;
+    _initialTranslateY = _translateY;
+    _initialTouchY = details.globalPosition.dy;
+    _initialLocalPosition = details.localPosition;
+    _dragStartGlobalX = details.globalPosition.dx;
   }
 
   void onPanUpdate(DragUpdateDetails details) {
@@ -616,9 +652,28 @@ class LegacyGanttViewModel extends ChangeNotifier {
     } else {
       // Heuristic
       if (details.delta.dx.abs() > details.delta.dy.abs()) {
-        // Only switch to horizontal if we hit a task?
-        // It's hard to know without starting hit test.
-        // This legacy path is deprecated for RawGestureDetector usage.
+        final hit = _getTaskPartAtPosition(_initialLocalPosition);
+        if (hit != null) {
+          _panType = PanType.horizontal;
+          _draggedTask = hit.task;
+          _originalTaskStart = hit.task.start;
+          _originalTaskEnd = hit.task.end;
+          switch (hit.part) {
+            case TaskPart.startHandle:
+              _dragMode = DragMode.resizeStart;
+              break;
+            case TaskPart.endHandle:
+              _dragMode = DragMode.resizeEnd;
+              break;
+            case TaskPart.body:
+              _dragMode = DragMode.move;
+              break;
+          }
+          onHorizontalPanUpdate(details);
+        }
+      } else {
+        _panType = PanType.vertical;
+        onVerticalPanUpdate(details);
       }
     }
   }

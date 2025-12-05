@@ -47,11 +47,13 @@ class LegacyGanttConflictDetector {
       }
 
       // Add indicators for the conflicting child tasks
-      for (final overlap in rawOverlaps) {
+      // Add indicators for the conflicting child tasks
+      for (int i = 0; i < rawOverlaps.length; i++) {
+        final overlap = rawOverlaps[i];
         conflictIndicators
-            .add(_createIndicator(task: overlap.taskA, start: overlap.start, end: overlap.end, idSuffix: 'a'));
+            .add(_createIndicator(task: overlap.taskA, start: overlap.start, end: overlap.end, idSuffix: 'a-$i'));
         conflictIndicators
-            .add(_createIndicator(task: overlap.taskB, start: overlap.start, end: overlap.end, idSuffix: 'b'));
+            .add(_createIndicator(task: overlap.taskB, start: overlap.start, end: overlap.end, idSuffix: 'b-$i'));
       }
 
       // Merge overlap intervals to handle complex multi-shift conflicts

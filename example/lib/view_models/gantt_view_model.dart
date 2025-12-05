@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 import '../main.dart';
 
 import '../data/models.dart';
+import '../data/local/local_gantt_repository.dart';
 import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
@@ -19,15 +21,26 @@ enum ThemePreset {
 
 class GanttViewModel extends ChangeNotifier {
   // --- Core Data State ---
+  final LocalGanttRepository _localRepository = LocalGanttRepository();
+  bool _useLocalDatabase = false;
+  StreamSubscription<List<LegacyGanttTask>>? _tasksSubscription;
+  StreamSubscription<List<LegacyGanttTaskDependency>>? _dependenciesSubscription;
+  StreamSubscription<List<LocalResource>>? _resourcesSubscription;
+
   /// The main list of tasks displayed on the Gantt chart, including regular tasks,
   /// summary tasks, highlights, and conflict indicators.
   List<LegacyGanttTask> _ganttTasks = [];
+
+  /// The complete source list of tasks from the database or API.
+  /// Used for filtering visible rows without losing data.
+  List<LegacyGanttTask> _allGanttTasks = [];
 
   /// A separate list for conflict indicators.
   List<LegacyGanttTask> _conflictIndicators = [];
 
   /// The list of dependencies between tasks.
   List<LegacyGanttTaskDependency> _dependencies = [];
+  List<LocalResource> _localResources = [];
 
   /// The hierarchical data structure for the grid on the left side of the chart.
   List<GanttGridData> _gridData = [];
@@ -133,6 +146,313 @@ class GanttViewModel extends ChangeNotifier {
   final GanttScheduleService _scheduleService = GanttScheduleService();
   GanttResponse? get apiResponse => _apiResponse;
 
+  bool get useLocalDatabase => _useLocalDatabase;
+
+  Future<void> setUseLocalDatabase(bool value) async {
+    if (_useLocalDatabase == value) return;
+    _useLocalDatabase = value;
+    notifyListeners();
+    if (_useLocalDatabase) {
+      await _initLocalMode();
+    } else {
+      await _exitLocalMode();
+    }
+  }
+
+  bool _shouldAutoSeed = false;
+
+  Future<void> _initLocalMode() async {
+    _isLoading = true;
+    _shouldAutoSeed = true;
+    notifyListeners();
+    await _localRepository.init();
+
+    _tasksSubscription?.cancel();
+    _dependenciesSubscription?.cancel();
+    _resourcesSubscription?.cancel();
+
+    // Listen to resources
+    _resourcesSubscription = _localRepository.watchResources().listen((resources) {
+      _localResources = resources;
+      // processing triggered by tasks usually, but we might need to trigger if resources change
+      if (_ganttTasks.isNotEmpty) {
+        _processLocalData();
+      }
+    });
+
+    // Listen to tasks
+    _tasksSubscription = _localRepository.watchTasks().listen((tasks) async {
+      if (tasks.isEmpty && _shouldAutoSeed) {
+        _shouldAutoSeed = false;
+        await seedLocalDatabase();
+        return;
+      }
+      _shouldAutoSeed = false;
+
+      _allGanttTasks = tasks;
+      await _processLocalData();
+    });
+
+    // Listen to dependencies
+    _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
+      _dependencies = deps;
+      notifyListeners();
+    });
+  }
+
+  Future<void> _processLocalData() async {
+    if (_allGanttTasks.isEmpty) {
+      _isLoading = false;
+      _conflictIndicators = [];
+      _gridData = [];
+      _rowMaxStackDepth = {};
+      notifyListeners();
+      return;
+    }
+
+    // 1. Build Grid Data first to determine hierarchy and visibility (expansion state)
+    _gridData = _buildGridDataFromResources(_localResources, _allGanttTasks);
+    _cachedFlatGridData = null; // Invalidate cache
+
+    // 2. Determine visible (expanded) row IDs
+    final visibleRowIds = <String>{};
+    void collectVisible(List<GanttGridData> nodes) {
+      for (final node in nodes) {
+        visibleRowIds.add(node.id);
+        if (node.isExpanded) {
+          collectVisible(node.children);
+        }
+      }
+    }
+
+    collectVisible(_gridData);
+
+    // Build valid GanttResponse from _localResources for conflict detection
+    // Conflict detector needs to know which child rows belong to which parent resource
+    // to group them correctly.
+    final List<GanttResourceData> resourcesData = [];
+    // We assume _localResources is flat list of all resources
+    final parentResources = _localResources.where((r) => r.parentId == null);
+
+    for (final parent in parentResources) {
+      final children = _localResources
+          .where((r) => r.parentId == parent.id)
+          .map((child) => GanttJobData(
+                id: child.id,
+                name: child.name ?? 'Unnamed', // Name defaults
+                taskName: null,
+                status: 'Open', // Dummy data
+                taskColor: '888888', // Dummy data
+                completion: 0,
+              ))
+          .toList();
+
+      resourcesData.add(GanttResourceData(
+        id: parent.id,
+        name: parent.name ?? 'Unnamed',
+        taskName: null,
+        children: children,
+      ));
+    }
+
+    final dummyResponse = GanttResponse(
+      success: true,
+      resourcesData: resourcesData,
+      eventsData: [],
+      assignmentsData: [],
+      resourceTimeRangesData: [],
+    );
+    _apiResponse = dummyResponse;
+
+    // 3. Calculate Stacking based on visible rows
+    final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+        _allGanttTasks, dummyResponse,
+        showConflicts: _showConflicts, visibleRowIds: visibleRowIds);
+
+    _ganttTasks = recalculatedTasks;
+    _conflictIndicators = newConflictIndicators;
+    _rowMaxStackDepth = newMaxDepth;
+
+    // Calculate total range
+    if (_ganttTasks.isNotEmpty) {
+      DateTime minStart = _ganttTasks.first.start;
+      DateTime maxEnd = _ganttTasks.first.end;
+      for (final task in _ganttTasks) {
+        if (task.start.isBefore(minStart)) minStart = task.start;
+        if (task.end.isAfter(maxEnd)) maxEnd = task.end;
+      }
+      _totalStartDate = minStart;
+      _totalEndDate = maxEnd;
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> seedLocalDatabase() async {
+    _isLoading = true;
+    notifyListeners();
+
+    // Clear existing data
+    await _localRepository.deleteAllTasks();
+    await _localRepository.deleteAllDependencies();
+    await _localRepository.deleteAllResources();
+
+    // Generate new data using the mock service logic
+    final processedData = await _scheduleService.fetchAndProcessSchedule(
+      startDate: _startDate,
+      range: _range,
+      personCount: _personCount,
+      jobCount: _jobCount,
+    );
+
+    final tasks = processedData.ganttTasks;
+    final dependencies = <LegacyGanttTaskDependency>[];
+
+    // Re-create sample dependencies similar to fetchScheduleData
+    // Find a suitable task to be the "successor" for all contained dependencies.
+    final successorForContainedDemo = tasks.firstWhere(
+      (t) => !t.isSummary && !t.isTimeRangeHighlight,
+      orElse: () => tasks.first,
+    );
+
+    for (final task in tasks) {
+      if (task.isSummary) {
+        dependencies.add(
+          LegacyGanttTaskDependency(
+            predecessorTaskId: task.id,
+            successorTaskId: successorForContainedDemo.id,
+            type: DependencyType.contained,
+          ),
+        );
+      }
+    }
+
+    final validTasksForDependency =
+        tasks.where((task) => !task.isSummary && !task.isTimeRangeHighlight && !task.isOverlapIndicator).toList();
+
+    if (validTasksForDependency.length > 1) {
+      validTasksForDependency.sort((a, b) {
+        final startCompare = a.start.compareTo(b.start);
+        if (startCompare != 0) return startCompare;
+        return a.id.compareTo(b.id);
+      });
+      dependencies.add(
+        LegacyGanttTaskDependency(
+          predecessorTaskId: validTasksForDependency[0].id,
+          successorTaskId: validTasksForDependency[1].id,
+        ),
+      );
+    }
+
+    // Insert into local DB
+    for (final task in tasks) {
+      await _localRepository.insertOrUpdateTask(task);
+    }
+    for (final dep in dependencies) {
+      await _localRepository.insertOrUpdateDependency(dep);
+    }
+
+    // Insert resources
+    final expansionMap = <String, bool>{};
+    void fillExpansion(List<GanttGridData> nodes) {
+      for (final node in nodes) {
+        expansionMap[node.id] = node.isExpanded;
+        fillExpansion(node.children);
+      }
+    }
+
+    fillExpansion(processedData.gridData);
+
+    for (final resource in processedData.apiResponse.resourcesData) {
+      await _localRepository.insertOrUpdateResource(LocalResource(
+          id: resource.id, name: resource.name, parentId: null, isExpanded: expansionMap[resource.id] ?? true));
+      for (final child in resource.children) {
+        await _localRepository.insertOrUpdateResource(LocalResource(
+            id: child.id, name: child.name, parentId: resource.id, isExpanded: expansionMap[child.id] ?? true));
+      }
+    }
+  }
+
+  Future<void> _exitLocalMode() async {
+    _tasksSubscription?.cancel();
+    _dependenciesSubscription?.cancel();
+    // Reload mock data
+    await fetchScheduleData();
+  }
+
+  List<GanttGridData> _buildGridDataFromResources(List<LocalResource> resources, List<LegacyGanttTask> tasks) {
+    if (resources.isEmpty) {
+      return _buildGridDataFromTasksFallback(tasks);
+    }
+
+    final activeRowIds = tasks.map((t) => t.rowId).toSet();
+    final byParent = <String?, List<LocalResource>>{};
+    for (final res in resources) {
+      byParent.putIfAbsent(res.parentId, () => []).add(res);
+    }
+
+    // final expansionStates = {for (var item in _gridData) item.id: item.isExpanded}; // No longer needed for local mode as we use DB state
+
+    List<GanttGridData> buildNodes(String? parentId) {
+      final children = byParent[parentId] ?? [];
+      final List<GanttGridData> nodes = [];
+
+      for (final child in children) {
+        final grandChildren = buildNodes(child.id);
+
+        final hasDirectTask = activeRowIds.contains(child.id);
+        final hasVisibleChildren = grandChildren.isNotEmpty;
+
+        if (hasDirectTask || hasVisibleChildren || _showEmptyParentRows) {
+          double completion = 0.0;
+          if (hasDirectTask) {
+            final task = tasks.firstWhereOrNull((t) => t.rowId == child.id && !t.isSummary && !t.isTimeRangeHighlight);
+            completion = task?.completion ?? 0.0;
+          } else if (hasVisibleChildren) {
+            if (grandChildren.isNotEmpty) {
+              final total = grandChildren.fold(0.0, (sum, c) => sum + (c.completion ?? 0.0));
+              completion = total / grandChildren.length;
+            }
+          }
+
+          nodes.add(GanttGridData(
+            id: child.id,
+            name: child.name ?? 'Unnamed',
+            isParent: grandChildren.isNotEmpty,
+            children: grandChildren,
+            isExpanded: child.isExpanded,
+            completion: completion,
+          ));
+        }
+      }
+      return nodes;
+    }
+
+    return buildNodes(null);
+  }
+
+  List<GanttGridData> _buildGridDataFromTasksFallback(List<LegacyGanttTask> tasks) {
+    final Map<String, List<LegacyGanttTask>> byRow = {};
+    for (final t in tasks) {
+      if (!t.isTimeRangeHighlight && !t.isOverlapIndicator) {
+        byRow.putIfAbsent(t.rowId, () => []).add(t);
+      }
+    }
+
+    final List<GanttGridData> grid = [];
+
+    for (final key in byRow.keys) {
+      grid.add(GanttGridData(
+        id: key,
+        name: tasks.firstWhereOrNull((t) => t.rowId == key)?.name ?? 'Row $key',
+        isParent: false,
+        children: [],
+      ));
+    }
+    return grid;
+  }
+
   double? _gridWidth;
   double? _controlPanelWidth = 300.0;
 
@@ -186,6 +506,7 @@ class GanttViewModel extends ChangeNotifier {
   double? get controlPanelWidth => _controlPanelWidth;
 
   List<GanttGridData> get visibleGridData => _gridData;
+  LocalGanttRepository get localRepository => _localRepository;
 
   List<Map<String, dynamic>>? _cachedFlatGridData;
 
@@ -328,9 +649,7 @@ class GanttViewModel extends ChangeNotifier {
     _showConflicts = value;
     // Re-run the task stacking calculation with the new conflict visibility setting.
     // This ensures that conflict indicators are added or removed correctly.
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-        _scheduleService.publicCalculateTaskStacking(_ganttTasks, _apiResponse!, showConflicts: _showConflicts);
-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    _recalculateStackingAndNotify();
   }
 
   Future<void> setShowEmptyParentRows(bool value) async {
@@ -823,7 +1142,39 @@ class GanttViewModel extends ChangeNotifier {
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   void handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) {
-    final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
+    if (_apiResponse != null) {
+      // Find the parent resource and child job to update the "backend" (apiResponse)
+      final parentResource =
+          _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
+      if (parentResource != null) {
+        final jobIndex = parentResource.children.indexWhere((j) => j.id == task.rowId);
+        if (jobIndex != -1) {
+          // Determine which event corresponds to this task.
+          // In this simple model, we assume 1:1, but the task might be from an assignment.
+          // For simplicity in this demo, we update the event in the events list if found.
+
+          // Actually, we must update the EVENT, not the job, because tasks are derived from Assignments -> Events.
+          // Find assignment for this task ID.
+          final assignment = _apiResponse?.assignmentsData.firstWhereOrNull((a) => a.id == task.id);
+          if (assignment != null) {
+            final eventIndex = _apiResponse!.eventsData.indexWhere((e) => e.id == assignment.event);
+            if (eventIndex != -1) {
+              final oldEvent = _apiResponse!.eventsData[eventIndex];
+              _apiResponse!.eventsData[eventIndex] = GanttEventData(
+                id: oldEvent.id,
+                name: oldEvent.name,
+                utcStartDate: newStart.toIso8601String(),
+                utcEndDate: newEnd.toIso8601String(),
+                referenceData: oldEvent.referenceData,
+                resourceId: oldEvent.resourceId,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    final newTasks = List<LegacyGanttTask>.from(_allGanttTasks);
     final index = newTasks.indexWhere((t) => t.id == task.id);
     if (index != -1) {
       newTasks[index] = newTasks[index].copyWith(start: newStart, end: newEnd);
@@ -1037,13 +1388,8 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Adds a new task to the list and recalculates stacking.
   void _addNewTask(LegacyGanttTask newTask) {
-    final newTasks = [..._ganttTasks, newTask];
-    if (_apiResponse != null) {
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
-          newTasks, _apiResponse!,
-          showConflicts: _showConflicts); // ignore conflicts from this
-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, _conflictIndicators);
-    }
+    _allGanttTasks.add(newTask);
+    _recalculateStackingAndNotify();
   }
 
   /// Calculates the total width of the Gantt chart's content area based on the
@@ -1105,6 +1451,9 @@ class GanttViewModel extends ChangeNotifier {
 
         // We can now skip the top-down adjustment logic later on.
         item.isExpanded = !item.isExpanded; // Toggle state
+        if (_useLocalDatabase) {
+          _localRepository.updateResourceExpansion(item.id, item.isExpanded);
+        }
         _recalculateStackingAndNotify(); // Rebuild UI
         return; // Exit early
       }
@@ -1114,6 +1463,10 @@ class GanttViewModel extends ChangeNotifier {
     // This path is taken for expansions or for top-down collapses.
     // 4. Toggle the expansion state.
     item.isExpanded = !item.isExpanded;
+
+    if (_useLocalDatabase) {
+      _localRepository.updateResourceExpansion(item.id, item.isExpanded);
+    }
 
     if (_apiResponse != null) {
       //
@@ -1154,7 +1507,7 @@ class GanttViewModel extends ChangeNotifier {
     }
     final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
     final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
-      _ganttTasks,
+      _allGanttTasks,
       _apiResponse!,
       showConflicts: _showConflicts,
       visibleRowIds: visibleRowIds,
@@ -1315,7 +1668,7 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> _updateMultipleTasks(List<LegacyGanttTask> updatedTasks) async {
     if (_apiResponse == null) return;
 
-    final newTasks = List<LegacyGanttTask>.from(_ganttTasks);
+    final newTasks = List<LegacyGanttTask>.from(_allGanttTasks);
     for (final updatedTask in updatedTasks) {
       final index = newTasks.indexWhere((t) => t.id == updatedTask.id);
       if (index != -1) {
@@ -1363,22 +1716,22 @@ class GanttViewModel extends ChangeNotifier {
       parentData.children.removeWhere((child) => child.id == rowId);
       final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
       parentResource?.children.removeWhere((job) => job.id == rowId);
-
-      nextTasks = _ganttTasks.where((task) => task.rowId != rowId).toList();
+      // Deleting a child row is simple
+      nextTasks = _allGanttTasks.where((task) => task.rowId != rowId).toList();
     } else {
       // This is a parent row (a person).
       final parentToDelete = _gridData.firstWhereOrNull((p) => p.id == rowId);
       if (parentToDelete != null) {
         final childIds = parentToDelete.children.map((c) => c.id).toSet();
         // Remove tasks associated with the parent and all its children.
-        nextTasks = _ganttTasks.where((task) => task.rowId != rowId && !childIds.contains(task.rowId)).toList();
+        nextTasks = _allGanttTasks.where((task) => task.rowId != rowId && !childIds.contains(task.rowId)).toList();
 
         // Remove from data sources
         _gridData.removeWhere((parent) => parent.id == rowId);
         _cachedFlatGridData = null;
         _apiResponse?.resourcesData.removeWhere((resource) => resource.id == rowId);
       } else {
-        nextTasks = List.from(_ganttTasks);
+        nextTasks = List.from(_allGanttTasks);
       }
     }
 

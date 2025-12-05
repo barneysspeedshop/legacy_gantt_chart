@@ -15,7 +15,16 @@ import 'ui/widgets/dashboard_header.dart';
 import 'view_models/gantt_view_model.dart';
 import 'mock_gantt_sync_client.dart';
 
-void main() => runApp(const MyApp());
+import 'dart:io';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+void main() {
+  if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -369,6 +378,31 @@ class _GanttViewState extends State<GanttView> {
               onSelectDate: vm.onSelectDate,
               onRangeChange: vm.onRangeChange,
             ),
+            const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Local Database Mode'),
+                Switch(
+                  value: vm.useLocalDatabase,
+                  onChanged: (val) {
+                    vm.setUseLocalDatabase(val);
+                    // If switching to local, we might want to ensure we have a valid view
+                  },
+                ),
+              ],
+            ),
+            if (vm.useLocalDatabase)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Center(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Re-seed Local Data'),
+                    onPressed: () => vm.seedLocalDatabase(),
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -755,7 +789,7 @@ class _GanttViewState extends State<GanttView> {
                                         builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
                                           // Use a key that changes when data reloads to force a grid refresh.
                                           allowSorting: false,
-                                          key: _gridKey,
+                                          key: ValueKey('${vm.useLocalDatabase ? "local" : "mock"}_grid'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,

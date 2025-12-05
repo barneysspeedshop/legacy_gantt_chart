@@ -1,3 +1,8 @@
+## 4.0.0+CRDT-Alpha
+
+* **FEATURE**: Added support for CRDTs. 
+* **EXAMPLE FEATURE**: Added a toggle to the example application that demonstrates how to use CRDTs with the gantt chart.
+
 ## 3.1.8
 
 * **FIX**: Fix block function body lint
