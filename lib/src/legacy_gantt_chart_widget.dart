@@ -636,6 +636,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                           instance.onStart = vm.onHorizontalPanStart;
                           instance.onUpdate = vm.onHorizontalPanUpdate;
                           instance.onEnd = vm.onHorizontalPanEnd;
+                          instance.onCancel = vm.onHorizontalPanCancel;
                         },
                       ),
                       VerticalDragGestureRecognizer:
@@ -645,6 +646,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                           instance.onStart = vm.onVerticalPanStart;
                           instance.onUpdate = vm.onVerticalPanUpdate;
                           instance.onEnd = vm.onVerticalPanEnd;
+                          instance.onCancel = vm.onVerticalPanCancel;
                         },
                       ),
                       TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(

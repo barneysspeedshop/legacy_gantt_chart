@@ -582,6 +582,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _resetDragState();
   }
 
+  void onHorizontalPanCancel() {
+    _resetDragState();
+  }
+
   void onVerticalPanStart(DragStartDetails details) {
     if (_panType != PanType.none) return;
     _panType = PanType.vertical;
@@ -600,6 +604,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_panType == PanType.vertical) {
       // Momentum logic could go here
     }
+    _resetDragState();
+  }
+
+  void onVerticalPanCancel() {
     _resetDragState();
   }
 
@@ -683,6 +691,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
       onHorizontalPanEnd(details);
     } else {
       onVerticalPanEnd(details);
+    }
+  }
+
+  void onPanCancel() {
+    if (_panType == PanType.horizontal) {
+      onHorizontalPanCancel();
+    } else {
+      onVerticalPanCancel();
     }
   }
 
