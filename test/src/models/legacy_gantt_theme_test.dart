@@ -18,7 +18,7 @@ void main() {
 
     test('fromTheme factory', () {
       final themeData = ThemeData(
-        colorScheme: ColorScheme.light(
+        colorScheme: const ColorScheme.light(
           primary: Colors.purple,
           secondary: Colors.amber,
           surface: Colors.grey,

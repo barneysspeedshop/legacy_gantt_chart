@@ -12,8 +12,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   group('LegacyGanttViewModel', () {
     late LegacyGanttViewModel viewModel;
-    final row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
-    final row2 = LegacyGanttRow(id: 'r2', label: 'Row 2');
+    const row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
+    const row2 = LegacyGanttRow(id: 'r2', label: 'Row 2');
     final task1 = LegacyGanttTask(
       id: 't1',
       rowId: 'r1',
@@ -201,8 +201,8 @@ void main() {
 
   group('LegacyGanttViewModel Interaction', () {
     late LegacyGanttViewModel viewModel;
-    final row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
-    final row2 = LegacyGanttRow(id: 'r2', label: 'Row 2');
+    const row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
+    const row2 = LegacyGanttRow(id: 'r2', label: 'Row 2');
     final task1 = LegacyGanttTask(
       id: 't1',
       rowId: 'r1',

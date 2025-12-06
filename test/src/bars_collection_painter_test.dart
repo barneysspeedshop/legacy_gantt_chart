@@ -9,7 +9,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 void main() {
   group('BarsCollectionPainter', () {
     // Basic setup data common to most tests
-    final row1 = LegacyGanttRow(id: 'r1');
+    const row1 = LegacyGanttRow(id: 'r1');
     final task1 = LegacyGanttTask(
       id: 't1',
       rowId: 'r1',
@@ -25,17 +25,14 @@ void main() {
       taskTextStyle: const TextStyle(color: Colors.black),
     );
 
-    double mockScale(DateTime date) {
-      return date.difference(DateTime(2023, 1, 1)).inDays * 20.0;
-    }
+    double mockScale(DateTime date) => date.difference(DateTime(2023, 1, 1)).inDays * 20.0;
 
     // Helper to find the CustomPaint using our specific painter
-    Finder findPainter() {
-      return find.descendant(
-        of: find.byType(CustomPaint),
-        matching: find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is BarsCollectionPainter),
-      );
-    }
+    Finder findPainter() => find.descendant(
+          of: find.byType(CustomPaint),
+          matching:
+              find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is BarsCollectionPainter),
+        );
 
     test('shouldRepaint returns true when data changes', () {
       final oldPainter = BarsCollectionPainter(
@@ -154,7 +151,7 @@ void main() {
         name: 'Task 2',
       );
 
-      final dependency = LegacyGanttTaskDependency(
+      const dependency = LegacyGanttTaskDependency(
         predecessorTaskId: 't1',
         successorTaskId: 't2',
         type: DependencyType.finishToStart,
@@ -191,10 +188,13 @@ void main() {
       final task5 = LegacyGanttTask(id: 't5', rowId: 'r1', start: DateTime(2023, 1, 6), end: DateTime(2023, 1, 8));
 
       final deps = [
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToStart),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.finishToFinish),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't4', type: DependencyType.startToFinish),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't5', type: DependencyType.contained),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToStart),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.finishToFinish),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't4', type: DependencyType.startToFinish),
+        const LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't5', type: DependencyType.contained),
       ];
 
       await tester.pumpWidget(MaterialApp(
@@ -373,7 +373,7 @@ void main() {
     });
 
     testWidgets('handles missing tasks in dependencies gracefully', (WidgetTester tester) async {
-      final badDep = LegacyGanttTaskDependency(
+      const badDep = LegacyGanttTaskDependency(
           predecessorTaskId: 't1', successorTaskId: 'nonExistent', type: DependencyType.finishToStart);
 
       await tester.pumpWidget(MaterialApp(
@@ -399,7 +399,7 @@ void main() {
       final parent = LegacyGanttTask(
           id: 'parent', rowId: 'r1', start: DateTime(2023, 1, 1), end: DateTime(2023, 1, 10), isSummary: true);
       final child = LegacyGanttTask(id: 'child', rowId: 'r1', start: DateTime(2023, 1, 2), end: DateTime(2023, 1, 5));
-      final dep = LegacyGanttTaskDependency(
+      const dep = LegacyGanttTaskDependency(
           predecessorTaskId: 'parent', successorTaskId: 'child', type: DependencyType.contained);
 
       await tester.pumpWidget(MaterialApp(
@@ -408,7 +408,7 @@ void main() {
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
           data: [parent, child],
-          visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+          visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
           rowMaxStackDepth: {'r1': 1, 'r2': 1},
           domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
           scale: mockScale,
@@ -438,7 +438,7 @@ void main() {
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
               data: [task1],
-              visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+              visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 1},
               domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
               scale: mockScale,
@@ -585,7 +585,7 @@ void main() {
     testWidgets('paints complex finishToStart dependency (successor to left)', (WidgetTester tester) async {
       final t1 = LegacyGanttTask(id: 't1', rowId: 'r1', start: DateTime(2023, 1, 5), end: DateTime(2023, 1, 8));
       final t2 = LegacyGanttTask(id: 't2', rowId: 'r2', start: DateTime(2023, 1, 1), end: DateTime(2023, 1, 3));
-      final dep = LegacyGanttTaskDependency(
+      const dep = LegacyGanttTaskDependency(
         predecessorTaskId: 't1',
         successorTaskId: 't2',
         type: DependencyType.finishToStart,
@@ -597,7 +597,7 @@ void main() {
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
               data: [t1, t2],
-              visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+              visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 1},
               domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
               scale: mockScale,
@@ -620,8 +620,10 @@ void main() {
       final t3 = LegacyGanttTask(id: 't3', rowId: 'r2', start: DateTime(2023, 1, 1), end: DateTime(2023, 1, 3));
 
       final deps = [
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToStart),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.startToStart),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToStart),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.startToStart),
       ];
 
       await tester.pumpWidget(MaterialApp(
@@ -630,7 +632,7 @@ void main() {
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
               data: [t1, t2, t3],
-              visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+              visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 2, 'r2': 1},
               domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
               scale: mockScale,
@@ -653,8 +655,10 @@ void main() {
       final t3 = LegacyGanttTask(id: 't3', rowId: 'r2', start: DateTime(2023, 1, 1), end: DateTime(2023, 1, 3));
 
       final deps = [
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.finishToFinish),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.finishToFinish),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.finishToFinish),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.finishToFinish),
       ];
 
       await tester.pumpWidget(MaterialApp(
@@ -663,7 +667,7 @@ void main() {
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
               data: [t1, t2, t3],
-              visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+              visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 2, 'r2': 1},
               domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
               scale: mockScale,
@@ -687,8 +691,10 @@ void main() {
       final t3 = LegacyGanttTask(id: 't3', rowId: 'r2', start: DateTime(2023, 1, 8), end: DateTime(2023, 1, 9));
 
       final deps = [
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToFinish),
-        LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.startToFinish),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't2', type: DependencyType.startToFinish),
+        const LegacyGanttTaskDependency(
+            predecessorTaskId: 't1', successorTaskId: 't3', type: DependencyType.startToFinish),
       ];
 
       await tester.pumpWidget(MaterialApp(
@@ -697,7 +703,7 @@ void main() {
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
               data: [t1, t2, t3],
-              visibleRows: [row1, LegacyGanttRow(id: 'r2')],
+              visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 2}, // t2, t3 in r2
               domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
               scale: mockScale,

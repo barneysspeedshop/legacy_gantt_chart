@@ -15,16 +15,12 @@ void main() {
       axisTextStyle: const TextStyle(color: Colors.black, fontSize: 10),
     );
 
-    double mockScale(DateTime date) {
-      return date.difference(DateTime(2023, 1, 1)).inHours * 2.0; // 2 pixels per hour
-    }
+    double mockScale(DateTime date) => date.difference(DateTime(2023, 1, 1)).inHours * 2.0; // 2 pixels per hour
 
-    Finder findPainter() {
-          return find.descendant(
-            of: find.byType(CustomPaint),
-            matching: find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AxisPainter),
-          );
-    }
+    Finder findPainter() => find.descendant(
+          of: find.byType(CustomPaint),
+          matching: find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AxisPainter),
+        );
 
     testWidgets('paints basic axis without error', (WidgetTester tester) async {
       final domain = [DateTime(2023, 1, 1), DateTime(2023, 1, 10)];
@@ -54,7 +50,7 @@ void main() {
     test('shouldRepaint returns true when fields change', () {
       final domain = [DateTime(2023, 1, 1), DateTime(2023, 1, 10)];
       final visibleDomain = [DateTime(2023, 1, 1), DateTime(2023, 1, 5)];
-      
+
       final painter = AxisPainter(
         x: 0,
         y: 0,
@@ -80,28 +76,57 @@ void main() {
       expect(painter.shouldRepaint(painter2), isFalse);
 
       // Changed dimension
-      expect(painter.shouldRepaint(AxisPainter(
-        x: 0, y: 0, width: 600, height: 100, scale: mockScale, domain: domain, visibleDomain: visibleDomain, theme: theme
-      )), isTrue);
+      expect(
+          painter.shouldRepaint(AxisPainter(
+              x: 0,
+              y: 0,
+              width: 600,
+              height: 100,
+              scale: mockScale,
+              domain: domain,
+              visibleDomain: visibleDomain,
+              theme: theme)),
+          isTrue);
 
       // Changed theme
-      expect(painter.shouldRepaint(AxisPainter(
-        x: 0, y: 0, width: 500, height: 100, scale: mockScale, domain: domain, visibleDomain: visibleDomain, 
-        theme: theme.copyWith(gridColor: Colors.red),
-      )), isTrue);
-      
+      expect(
+          painter.shouldRepaint(AxisPainter(
+            x: 0,
+            y: 0,
+            width: 500,
+            height: 100,
+            scale: mockScale,
+            domain: domain,
+            visibleDomain: visibleDomain,
+            theme: theme.copyWith(gridColor: Colors.red),
+          )),
+          isTrue);
+
       // Changed domain
-      expect(painter.shouldRepaint(AxisPainter(
-        x: 0, y: 0, width: 500, height: 100, scale: mockScale, 
-        domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 11)], 
-        visibleDomain: visibleDomain, theme: theme
-      )), isTrue);
+      expect(
+          painter.shouldRepaint(AxisPainter(
+              x: 0,
+              y: 0,
+              width: 500,
+              height: 100,
+              scale: mockScale,
+              domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 11)],
+              visibleDomain: visibleDomain,
+              theme: theme)),
+          isTrue);
 
       // Changed visible domain
-       expect(painter.shouldRepaint(AxisPainter(
-        x: 0, y: 0, width: 500, height: 100, scale: mockScale, domain: domain, 
-        visibleDomain: [DateTime(2023, 1, 1), DateTime(2023, 1, 6)], theme: theme
-      )), isTrue);
+      expect(
+          painter.shouldRepaint(AxisPainter(
+              x: 0,
+              y: 0,
+              width: 500,
+              height: 100,
+              scale: mockScale,
+              domain: domain,
+              visibleDomain: [DateTime(2023, 1, 1), DateTime(2023, 1, 6)],
+              theme: theme)),
+          isTrue);
     });
 
     testWidgets('paints weekend highlights when enabled', (WidgetTester tester) async {
@@ -132,15 +157,15 @@ void main() {
     });
 
     // --- Tick Interval Tests ---
-    
+
     // Helper to run a test with specific visible duration
     Future<void> testTickInterval(WidgetTester tester, Duration visibleDuration) async {
-       final start = DateTime(2023, 1, 1);
-       final end = start.add(visibleDuration);
-       final domain = [start, end];
-       final visibleDomain = [start, end]; // Full domain visible
+      final start = DateTime(2023, 1, 1);
+      final end = start.add(visibleDuration);
+      final domain = [start, end];
+      final visibleDomain = [start, end]; // Full domain visible
 
-       await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: CustomPaint(
             size: const Size(800, 100),
@@ -206,9 +231,9 @@ void main() {
 
     testWidgets('uses custom label builder', (WidgetTester tester) async {
       final start = DateTime(2023, 1, 1);
-       final end = start.add(const Duration(hours: 10));
-       
-       await tester.pumpWidget(MaterialApp(
+      final end = start.add(const Duration(hours: 10));
+
+      await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: CustomPaint(
             size: const Size(800, 100),
@@ -230,7 +255,7 @@ void main() {
     });
 
     testWidgets('handles empty domain gracefuly', (WidgetTester tester) async {
-       await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: CustomPaint(
             size: const Size(800, 100),
@@ -251,10 +276,10 @@ void main() {
     });
 
     testWidgets('handles start after end gracefuly', (WidgetTester tester) async {
-       final start = DateTime(2023, 1, 10);
-       final end = DateTime(2023, 1, 1); // backwards
-       
-       await tester.pumpWidget(MaterialApp(
+      final start = DateTime(2023, 1, 10);
+      final end = DateTime(2023, 1, 1); // backwards
+
+      await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: CustomPaint(
             size: const Size(800, 100),
@@ -275,8 +300,8 @@ void main() {
     });
 
     test('week number calculation boundaries', () {
-      // Need to access _weekNumber - but it's private. 
-      // We can verify it indirectly via painting text, or just assume the coverage check 
+      // Need to access _weekNumber - but it's private.
+      // We can verify it indirectly via painting text, or just assume the coverage check
       // will hit it via the >60days test if that includes year boundaries.
       // Let's rely on the >60days test for now, ensuring it spans a year boundary.
     });
@@ -285,7 +310,7 @@ void main() {
       // Spanning Dec 2022 to Feb 2023
       final start = DateTime(2022, 12, 1);
       final end = DateTime(2023, 2, 1);
-      
+
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: CustomPaint(

@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -18,7 +17,7 @@ void main() {
       name: 'Task 1',
     );
 
-    final row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
+    const row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
 
     final List<LegacyGanttRow> rows = [row1];
     final rowMaxStackDepth = {'r1': 1};
@@ -98,7 +97,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: LegacyGanttChartWidget(
-            data: [],
+            data: const [],
             visibleRows: rows,
             rowMaxStackDepth: rowMaxStackDepth,
           ),
@@ -112,7 +111,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: LegacyGanttChartWidget(
-            data: [],
+            data: const [],
             visibleRows: rows,
             rowMaxStackDepth: rowMaxStackDepth,
             noDataWidgetBuilder: (context) => const Text('Custom Empty'),
@@ -127,7 +126,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: LegacyGanttChartWidget(
-            data: [],
+            data: const [],
             visibleRows: rows,
             rowMaxStackDepth: rowMaxStackDepth,
             showEmptyRows: true,

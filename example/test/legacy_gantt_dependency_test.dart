@@ -31,19 +31,19 @@ void main() {
     });
 
     test('should support equality', () {
-      final dep1 = LegacyGanttTaskDependency(
+      const dep1 = LegacyGanttTaskDependency(
         predecessorTaskId: '1',
         successorTaskId: '2',
       );
-      final dep2 = LegacyGanttTaskDependency(
+      const dep2 = LegacyGanttTaskDependency(
         predecessorTaskId: '1',
         successorTaskId: '2',
       );
-      final dep3 = LegacyGanttTaskDependency(
+      const dep3 = LegacyGanttTaskDependency(
         predecessorTaskId: '1',
         successorTaskId: '3',
       );
-      final dep4 = LegacyGanttTaskDependency(
+      const dep4 = LegacyGanttTaskDependency(
         predecessorTaskId: '1',
         successorTaskId: '2',
         type: DependencyType.finishToFinish,
@@ -57,8 +57,8 @@ void main() {
 
     test('equality should account for all properties', () {
       // Lag
-      final depNoLag = LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2');
-      final depWithLag =
+      const depNoLag = LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2');
+      const depWithLag =
           LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2', lag: Duration(days: 1));
 
       expect(depNoLag, isNot(equals(depWithLag)));

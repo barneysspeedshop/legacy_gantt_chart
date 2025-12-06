@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:example/view_models/gantt_view_model.dart';
-import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
