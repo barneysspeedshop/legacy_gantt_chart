@@ -5,8 +5,15 @@ import 'package:flutter/foundation.dart';
 @immutable
 class LegacyGanttRow {
   final String id;
+  final int? lastUpdated;
+  final String? lastUpdatedBy;
 
-  const LegacyGanttRow({required this.id, this.label});
+  const LegacyGanttRow({
+    required this.id,
+    this.label,
+    this.lastUpdated,
+    this.lastUpdatedBy,
+  });
 
   final String? label;
 

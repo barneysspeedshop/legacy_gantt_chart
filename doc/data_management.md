@@ -48,7 +48,22 @@ LegacyGanttChartWidget(
   loadingIndicatorHeight: 8.0,
   // ... other properties
 )
-```
+## 3. Local Databases & CRDTs (Offline-First)
+
+For applications requiring offline capabilities or real-time collaboration, `legacy_gantt_chart` supports a local database mode backed by `sqlite_crdt`.
+
+### Key Benefits
+-   **Offline Persistence**: Data is stored locally on the device (SQLite).
+-   **Conflict-Free**: Uses Conflict-Free Replicated Data Types (CRDTs) to handle data synchronization, allowing multiple users or devices to edit the same schedule without write conflicts.
+-   **Reactive Updates**: The UI listens to database streams, ensuring that changes (local or remote) are reflected immediately.
+
+### Implementation Pattern
+
+1.  **Repository**: Use `LocalGanttRepository` to mediate between the UI (ViewModel) and the Database.
+2.  **Source vs. View**: Maintain a clear separation between your source data (the full dataset from the DB) and the view data (filtered list for the UI).
+    -   **Source (`_allGanttTasks`)**: The authoritative list from the repository stream. All mutations (add, update, delete) must operate on this list.
+    -   **View (`_ganttTasks`)**: The filtered subset passed to the `LegacyGanttChartWidget`. This list mirrors the source but excludes hidden rows or filtered items.
+
 
 ## Understanding Stacking
 

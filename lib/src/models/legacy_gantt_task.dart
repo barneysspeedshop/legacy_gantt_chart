@@ -67,6 +67,9 @@ class LegacyGanttTask {
   /// If provided, the default task bar will not be drawn for this task.
   final Widget Function(DateTime cellDate)? cellBuilder;
 
+  final int? lastUpdated;
+  final String? lastUpdatedBy;
+
   const LegacyGanttTask({
     required this.id,
     required this.rowId,
@@ -84,6 +87,8 @@ class LegacyGanttTask {
     this.segments,
     this.cellBuilder,
     this.isMilestone = false,
+    this.lastUpdated,
+    this.lastUpdatedBy,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -113,6 +118,8 @@ class LegacyGanttTask {
         // Note: copyWith does not support functions, so cellBuilder is not included here.
         // cellBuilder is a function and cannot be serialized to JSON.
         'hasCellBuilder': cellBuilder != null,
+        'lastUpdated': lastUpdated,
+        'lastUpdatedBy': lastUpdatedBy,
       };
 
   @override
@@ -135,7 +142,9 @@ class LegacyGanttTask {
           completion == other.completion &&
           listEquals(segments, other.segments) &&
           isMilestone == other.isMilestone &&
-          cellBuilder == other.cellBuilder;
+          cellBuilder == other.cellBuilder &&
+          lastUpdated == other.lastUpdated &&
+          lastUpdatedBy == other.lastUpdatedBy;
 
   @override
   int get hashCode =>
@@ -154,7 +163,9 @@ class LegacyGanttTask {
       completion.hashCode ^
       Object.hashAll(segments ?? []) ^
       isMilestone.hashCode ^
-      cellBuilder.hashCode;
+      cellBuilder.hashCode ^
+      lastUpdated.hashCode ^
+      lastUpdatedBy.hashCode;
 
   LegacyGanttTask copyWith({
     String? id,
@@ -173,6 +184,8 @@ class LegacyGanttTask {
     List<LegacyGanttTaskSegment>? segments,
     bool? isMilestone,
     Widget Function(DateTime cellDate)? cellBuilder,
+    int? lastUpdated,
+    String? lastUpdatedBy,
   }) =>
       LegacyGanttTask(
         id: id ?? this.id,
@@ -191,5 +204,7 @@ class LegacyGanttTask {
         segments: segments ?? this.segments,
         isMilestone: isMilestone ?? this.isMilestone,
         cellBuilder: cellBuilder ?? this.cellBuilder,
+        lastUpdated: lastUpdated ?? this.lastUpdated,
+        lastUpdatedBy: lastUpdatedBy ?? this.lastUpdatedBy,
       );
 }

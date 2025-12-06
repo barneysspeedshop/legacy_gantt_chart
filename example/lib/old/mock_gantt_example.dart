@@ -4,15 +4,16 @@ import 'dart:ui' as ui;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:collection/collection.dart';
+import 'package:collection/collection.dart'; // Added this import
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:legacy_tree_grid/legacy_tree_grid.dart';
 import 'package:provider/provider.dart';
 import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
-import 'ui/widgets/dashboard_header.dart';
-import 'view_models/gantt_view_model.dart';
+import '../ui/widgets/dashboard_header.dart';
+import '../view_models/gantt_view_model.dart';
+import 'mock_gantt_sync_client.dart';
 
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -82,11 +83,12 @@ class _GanttViewState extends State<GanttView> {
   bool _isPanelVisible = true;
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
+  final _mockSyncClient = MockGanttSyncClient();
 
   @override
   void initState() {
     super.initState();
-    _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
+    _viewModel = GanttViewModel(initialLocale: _selectedLocale);
   }
 
   @override
@@ -362,6 +364,11 @@ class _GanttViewState extends State<GanttView> {
                   tooltip: 'Export Tasks to JSON',
                   onPressed: () => _showJsonExportDialog(vm),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.cloud_download),
+                  tooltip: 'Simulate Remote Update',
+                  onPressed: _simulateRemoteUpdate,
+                ),
               ],
             ),
             const Divider(height: 24),
@@ -372,16 +379,30 @@ class _GanttViewState extends State<GanttView> {
               onRangeChange: vm.onRangeChange,
             ),
             const Divider(height: 24),
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Center(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Re-seed Local Data'),
-                  onPressed: () => vm.seedLocalDatabase(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Local Database Mode'),
+                Switch(
+                  value: vm.useLocalDatabase,
+                  onChanged: (val) {
+                    vm.setUseLocalDatabase(val);
+                    // If switching to local, we might want to ensure we have a valid view
+                  },
+                ),
+              ],
+            ),
+            if (vm.useLocalDatabase)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Center(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Re-seed Local Data'),
+                    onPressed: () => vm.seedLocalDatabase(),
+                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -668,6 +689,30 @@ class _GanttViewState extends State<GanttView> {
     );
   }
 
+  void _simulateRemoteUpdate() {
+    if (_viewModel.ganttTasks.isEmpty) return;
+
+    // Pick a random task to move
+    final task = _viewModel.ganttTasks.first;
+    final newStart = task.start.add(const Duration(days: 1));
+    final newEnd = task.end.add(const Duration(days: 1));
+
+    final op = Operation(
+      type: 'UPDATE_TASK',
+      data: {
+        'id': task.id,
+        'start': newStart.toIso8601String(),
+        'end': newEnd.toIso8601String(),
+        'name': '${task.name} (Remote Update)',
+      },
+      timestamp: DateTime.now().millisecondsSinceEpoch + 1000, // Future timestamp to win LWW
+      actorId: 'remote_user',
+    );
+
+    _mockSyncClient.simulateIncomingOperation(op);
+    _showSnackbar('Simulated remote update for ${task.name}');
+  }
+
   // The root of the application uses a ChangeNotifierProvider to make the
   // GanttViewModel available to the entire widget tree below it. This allows
   // any widget to listen to changes in the view model and rebuild accordingly.
@@ -744,7 +789,7 @@ class _GanttViewState extends State<GanttView> {
                                         builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
                                           // Use a key that changes when data reloads to force a grid refresh.
                                           allowSorting: false,
-                                          key: ValueKey('local_grid_${vm.seedVersion}'),
+                                          key: ValueKey('${vm.useLocalDatabase ? "local" : "mock"}_grid'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,
@@ -936,7 +981,7 @@ class _GanttViewState extends State<GanttView> {
                                               child: LegacyGanttChartWidget(
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                                // syncClient: _mockSyncClient, // Removed for local db mode
+                                                syncClient: _mockSyncClient,
                                                 taskGrouper: (task) => task.rowId,
                                                 // --- Custom Builders ---
                                                 timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),

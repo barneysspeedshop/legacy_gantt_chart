@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:collection/collection.dart';
+import 'package:collection/collection.dart'; // Added this import
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:legacy_tree_grid/legacy_tree_grid.dart';
@@ -14,16 +14,7 @@ import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrub
 import 'ui/widgets/dashboard_header.dart';
 import 'view_models/gantt_view_model.dart';
 
-import 'dart:io';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-
-void main() {
-  if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -86,7 +77,7 @@ class _GanttViewState extends State<GanttView> {
   @override
   void initState() {
     super.initState();
-    _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
+    _viewModel = GanttViewModel(initialLocale: _selectedLocale);
   }
 
   @override
@@ -370,17 +361,6 @@ class _GanttViewState extends State<GanttView> {
               selectedRange: vm.range,
               onSelectDate: vm.onSelectDate,
               onRangeChange: vm.onRangeChange,
-            ),
-            const Divider(height: 24),
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Center(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Re-seed Local Data'),
-                  onPressed: () => vm.seedLocalDatabase(),
-                ),
-              ),
             ),
             const SizedBox(height: 16),
             Row(
@@ -744,7 +724,7 @@ class _GanttViewState extends State<GanttView> {
                                         builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
                                           // Use a key that changes when data reloads to force a grid refresh.
                                           allowSorting: false,
-                                          key: ValueKey('local_grid_${vm.seedVersion}'),
+                                          key: _gridKey,
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,
@@ -936,8 +916,6 @@ class _GanttViewState extends State<GanttView> {
                                               child: LegacyGanttChartWidget(
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                                // syncClient: _mockSyncClient, // Removed for local db mode
-                                                taskGrouper: (task) => task.rowId,
                                                 // --- Custom Builders ---
                                                 timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
                                                 timelineAxisHeaderBuilder:

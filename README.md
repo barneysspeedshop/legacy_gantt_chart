@@ -63,6 +63,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Full CRUD Support:** Create, read, update, and delete tasks with intuitive callbacks.
 -   **Custom Data Fields:** Add custom data to your own models and display it using builders.
 -   **Inactive Tasks:** Filter your data source or use custom styling to represent inactive tasks or dependencies.
+-   **CRDT Support:** Implemented alpha support for Conflict-Free Replicated Data Types (CRDTs) for building robust offline-first and real-time collaborative applications.
 
 ### Interactivity
 -   **Task Creation:** Create new tasks by clicking on empty chart space.

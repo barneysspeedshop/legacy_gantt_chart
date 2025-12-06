@@ -286,16 +286,14 @@ class GanttScheduleService {
     final Map<String, List<LegacyGanttTask>> eventTasksByRow = {};
     final List<LegacyGanttTask> nonStackableTasks = [];
     final List<LegacyGanttTask> actualEventTasks = [];
-    final List<LegacyGanttTask> existingConflictIndicators = [];
 
     for (var task in tasks) {
       if (task.isTimeRangeHighlight) {
-        nonStackableTasks.add(task); // Only add highlights, indicators are regenerated
+        nonStackableTasks.add(task); // Only add highlights
       } else if (!task.isOverlapIndicator) {
         actualEventTasks.add(task);
       }
-      // Separate out any existing conflict indicators so they don't get processed again.
-      if (task.isOverlapIndicator) existingConflictIndicators.add(task);
+      // Intentionally ignoring existing overlap indicators so they are regenerated.
     }
 
     for (var task in actualEventTasks) {
@@ -353,6 +351,16 @@ class GanttScheduleService {
       );
     }
 
-    return ([...stackedTasks, ...nonStackableTasks], rowMaxDepth, conflictIndicators);
+    var finalTasks = [...stackedTasks, ...nonStackableTasks];
+    var finalConflictIndicators = conflictIndicators;
+    var finalRowMaxDepth = Map<String, int>.from(rowMaxDepth);
+
+    if (visibleRowIds != null) {
+      finalTasks = finalTasks.where((t) => visibleRowIds.contains(t.rowId)).toList();
+      finalConflictIndicators = finalConflictIndicators.where((t) => visibleRowIds.contains(t.rowId)).toList();
+      finalRowMaxDepth.removeWhere((key, _) => !visibleRowIds.contains(key));
+    }
+
+    return (finalTasks, finalRowMaxDepth, finalConflictIndicators);
   }
 }

@@ -20,6 +20,11 @@ dependencies:
     sdk: flutter
   collection: ^1.19.1
   legacy_tree_grid: ^0.10.0
+  sqlite_crdt: ^3.0.0
+  uuid: ^4.0.0
+  path_provider: ^2.1.0
+  sqflite_common_ffi: ^2.3.0
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
