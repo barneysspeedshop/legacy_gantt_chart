@@ -1,3 +1,11 @@
+## 4.0.0-CRDT.alpha.3
+
+* **FIX**: Fix changelog
+
+## 4.0.0-CRDT.alpha.2
+
+* **EXAMPLE FEATURE**: Implement websocket gantt sync client
+
 ## 4.0.0-CRDT.alpha.1
 
 * **FEATURE**: Added support for CRDTs. 
