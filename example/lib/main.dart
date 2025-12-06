@@ -14,14 +14,12 @@ import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrub
 import 'ui/widgets/dashboard_header.dart';
 import 'view_models/gantt_view_model.dart';
 
-import 'dart:io';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'platform/platform_init.dart'
+    if (dart.library.io) 'platform/platform_init_io.dart'
+    if (dart.library.html) 'platform/platform_init_web.dart';
 
 void main() {
-  if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  initializePlatform();
   runApp(const MyApp());
 }
 
