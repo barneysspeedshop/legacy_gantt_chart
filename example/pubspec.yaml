@@ -26,6 +26,7 @@ dependencies:
   sqflite_common_ffi: ^2.3.0
   path: ^1.9.1
   sqflite_common_ffi_web: ^1.1.0
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:
