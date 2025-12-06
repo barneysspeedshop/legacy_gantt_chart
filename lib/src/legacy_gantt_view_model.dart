@@ -295,7 +295,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   double Function(DateTime) get totalScale => _totalScale;
 
   /// The calculated height of the time axis header.
-  double get timeAxisHeight => axisHeight ?? _height * 0.1;
+  double get timeAxisHeight => axisHeight ?? (_height.isFinite ? _height * 0.1 : 30.0);
 
   /// Whether the resize/drag tooltip should be visible.
   bool get showResizeTooltip => _showResizeTooltip;

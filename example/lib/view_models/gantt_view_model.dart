@@ -139,6 +139,9 @@ class GanttViewModel extends ChangeNotifier {
 
   /// The ID of the task that currently has keyboard focus.
   String? _focusedTaskId;
+  int _seedVersion = 0;
+  int get seedVersion => _seedVersion;
+  bool _pendingSeedReset = false;
 
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
@@ -195,9 +198,12 @@ class GanttViewModel extends ChangeNotifier {
 
     // Listen to dependencies
     _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
-      _dependencies = deps;
       notifyListeners();
     });
+
+    // Trigger reset on first load
+    _pendingSeedReset = true;
+    notifyListeners();
   }
 
   Future<void> _processLocalData() async {
@@ -213,6 +219,11 @@ class GanttViewModel extends ChangeNotifier {
     // 1. Build Grid Data first to determine hierarchy and visibility (expansion state)
     _gridData = _buildGridDataFromResources(_localResources, _allGanttTasks);
     _cachedFlatGridData = null; // Invalidate cache
+
+    if (_pendingSeedReset) {
+      _seedVersion++;
+      _pendingSeedReset = false;
+    }
 
     // 2. Determine visible (expanded) row IDs
     final visibleRowIds = <String>{};
@@ -283,6 +294,18 @@ class GanttViewModel extends ChangeNotifier {
       }
       _totalStartDate = minStart;
       _totalEndDate = maxEnd;
+
+      // Initialize visible range if not set
+      if (_visibleStartDate == null || _visibleEndDate == null) {
+        // Default to showing the whole range initially, or a sensible default window
+        _visibleStartDate = _totalStartDate!.subtract(_ganttStartPadding);
+        _visibleEndDate = _totalEndDate!.add(_ganttEndPadding);
+
+        // Or if you want a specific window (e.g. 1 month):
+        // if (_visibleEndDate!.difference(_visibleStartDate!).inDays > 30) {
+        //   _visibleEndDate = _visibleStartDate!.add(const Duration(days: 30));
+        // }
+      }
     }
 
     _isLoading = false;
@@ -364,14 +387,24 @@ class GanttViewModel extends ChangeNotifier {
 
     fillExpansion(processedData.gridData);
 
-    for (final resource in processedData.apiResponse.resourcesData) {
-      await _localRepository.insertOrUpdateResource(LocalResource(
-          id: resource.id, name: resource.name, parentId: null, isExpanded: expansionMap[resource.id] ?? true));
+    // Insert resources with controlled expansion state (first one expanded, others collapsed)
+    for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
+      final resource = processedData.apiResponse.resourcesData[i];
+      final isExpanded = i == 0; // Only expand the first one
+
+      await _localRepository.insertOrUpdateResource(
+          LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
+
       for (final child in resource.children) {
-        await _localRepository.insertOrUpdateResource(LocalResource(
-            id: child.id, name: child.name, parentId: resource.id, isExpanded: expansionMap[child.id] ?? true));
+        // Children expansion doesn't matter much if parent is collapsed, but let's keep them expanded by default
+        await _localRepository.insertOrUpdateResource(
+            LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
       }
     }
+
+    // _seedVersion++; // Handled in _processLocalData via _pendingSeedReset
+    _pendingSeedReset = true;
+    notifyListeners();
   }
 
   Future<void> _exitLocalMode() async {
@@ -550,12 +583,17 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// Constructor initializes the locale and sets up a listener for horizontal scrolling.
-  GanttViewModel({String? initialLocale}) {
+  GanttViewModel({String? initialLocale, bool useLocalDatabase = false}) {
     if (initialLocale != null) {
       _selectedLocale = initialLocale;
     }
     _ganttHorizontalScrollController.addListener(_onGanttScroll);
-    fetchScheduleData();
+
+    if (useLocalDatabase) {
+      setUseLocalDatabase(true);
+    } else {
+      fetchScheduleData();
+    }
   }
 
   /// Attaches the vertical scroll listeners. This should be called after the

@@ -355,42 +355,43 @@ class BarsCollectionPainter extends CustomPainter {
     if (draggedTaskId != null && ghostTaskStart != null && ghostTaskEnd != null) {
       final originalTask = data.firstWhere((t) => t.id == draggedTaskId,
           orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
-      // Should not happen, but a good safeguard.
-      if (originalTask.id.isEmpty) return;
 
-      // Find the y-offset for this task's row again.
-      double ghostRowTop = 0;
-      bool foundRow = false;
-      for (var rowData in visibleRows) {
-        if (rowData.id == originalTask.rowId) {
-          foundRow = true;
-          break;
+      // Only draw if we found the valid task
+      if (originalTask.id.isNotEmpty) {
+        // Find the y-offset for this task's row again.
+        double ghostRowTop = 0;
+        bool foundRow = false;
+        for (var rowData in visibleRows) {
+          if (rowData.id == originalTask.rowId) {
+            foundRow = true;
+            break;
+          }
+          final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
+          ghostRowTop += rowHeight * stackDepth;
         }
-        final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-        ghostRowTop += rowHeight * stackDepth;
-      }
 
-      if (foundRow) {
-        final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
-        final double barHeight = rowHeight * theme.barHeightRatio;
-        final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
+        if (foundRow) {
+          final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
+          final double barHeight = rowHeight * theme.barHeightRatio;
+          final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
-        if (originalTask.isMilestone) {
-          final double milestoneX = scale(ghostTaskStart!);
-          final double milestoneY = barTop + barVerticalCenterOffset;
-          // We can reuse the _drawMilestone helper, passing `true` for isBeingDragged
-          // to get a semi-transparent effect.
-          _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
-        } else {
-          final double barStartX = scale(ghostTaskStart!);
-          final double barEndX = scale(ghostTaskEnd!);
-          final double barWidth = max(0, barEndX - barStartX);
-          final RRect barRRect = RRect.fromRectAndRadius(
-            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
-            theme.barCornerRadius,
-          );
-          final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
-          canvas.drawRRect(barRRect, barPaint);
+          if (originalTask.isMilestone) {
+            final double milestoneX = scale(ghostTaskStart!);
+            final double milestoneY = barTop + barVerticalCenterOffset;
+            // We can reuse the _drawMilestone helper, passing `true` for isBeingDragged
+            // to get a semi-transparent effect.
+            _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
+          } else {
+            final double barStartX = scale(ghostTaskStart!);
+            final double barEndX = scale(ghostTaskEnd!);
+            final double barWidth = max(0, barEndX - barStartX);
+            final RRect barRRect = RRect.fromRectAndRadius(
+              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+              theme.barCornerRadius,
+            );
+            final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
+            canvas.drawRRect(barRRect, barPaint);
+          }
         }
       }
     }

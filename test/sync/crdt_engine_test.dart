@@ -1,9 +1,32 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/sync/crdt_engine.dart';
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
 
+class MockGanttSyncClient implements GanttSyncClient {
+  final _controller = StreamController<Operation>.broadcast();
+
+  @override
+  Stream<Operation> get operationStream => _controller.stream;
+
+  @override
+  Future<void> sendOperation(Operation operation) async {
+    // In a real mock, you might add it to a list of sent operations.
+  }
+
+  @override
+  Future<List<Operation>> getInitialState() async => [];
+
+  void addOperation(Operation op) {
+    _controller.add(op);
+  }
+}
+
 void main() {
+  // Note: The tests for the 'Operation' class that were previously here
+  // are now in `test/sync/operation_test.dart` for better organization.
   group('CRDTEngine', () {
     late CRDTEngine engine;
 
@@ -93,6 +116,14 @@ void main() {
       expect(result.length, 1);
       expect(result.first.id, '2');
       expect(result.first.name, 'Task 2');
+    });
+  });
+
+  group('GanttSyncClient', () {
+    test('can be implemented', () {
+      // This test simply verifies that the abstract class can be implemented
+      // without issue.
+      expect(MockGanttSyncClient(), isA<GanttSyncClient>());
     });
   });
 }

@@ -11,8 +11,8 @@ import 'package:legacy_tree_grid/legacy_tree_grid.dart';
 import 'package:provider/provider.dart';
 import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
-import 'ui/widgets/dashboard_header.dart';
-import 'view_models/gantt_view_model.dart';
+import '../ui/widgets/dashboard_header.dart';
+import '../view_models/gantt_view_model.dart';
 import 'mock_gantt_sync_client.dart';
 
 import 'dart:io';
