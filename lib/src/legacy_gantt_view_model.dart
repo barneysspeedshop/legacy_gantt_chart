@@ -394,8 +394,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  bool _isDisposed = false;
+  bool get isDisposed => _isDisposed;
+
   @override
   void dispose() {
+    _isDisposed = true;
     scrollController?.removeListener(_onExternalScroll);
     _syncSubscription?.cancel();
     super.dispose();

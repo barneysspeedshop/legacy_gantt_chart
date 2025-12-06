@@ -827,6 +827,7 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       _ganttTasks = processedData.ganttTasks;
+      _allGanttTasks = processedData.ganttTasks;
       _conflictIndicators = processedData.conflictIndicators;
       _dependencies = newDependencies;
       _gridData = processedData.gridData;
@@ -1180,6 +1181,14 @@ class GanttViewModel extends ChangeNotifier {
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   void handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) {
+    // 1. Handle Local Database Mode
+    if (_useLocalDatabase) {
+      // Just update the repository; the stream listener will handle the UI update.
+      _localRepository.insertOrUpdateTask(task.copyWith(start: newStart, end: newEnd));
+      return;
+    }
+
+    // 2. Handle Mock Data Mode (Memory only)
     if (_apiResponse != null) {
       // Find the parent resource and child job to update the "backend" (apiResponse)
       final parentResource =
@@ -1212,12 +1221,15 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    final newTasks = List<LegacyGanttTask>.from(_allGanttTasks);
-    final index = newTasks.indexWhere((t) => t.id == task.id);
+    // Update the source of truth (_allGanttTasks)
+    final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
     if (index != -1) {
-      newTasks[index] = newTasks[index].copyWith(start: newStart, end: newEnd);
+      _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd);
+
+      // Now recalculate using the UPDATED source of truth
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+          _scheduleService.publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
     }
   }

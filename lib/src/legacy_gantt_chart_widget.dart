@@ -571,9 +571,11 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
             SchedulerBinding.instance.addPostFrameCallback((_) {
-              vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
-              vm.updateFocusedTask(widget.focusedTaskId);
-              vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
+              if (!vm.isDisposed) {
+                vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
+                vm.updateFocusedTask(widget.focusedTaskId);
+                vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
+              }
             });
 
             return LayoutBuilder(

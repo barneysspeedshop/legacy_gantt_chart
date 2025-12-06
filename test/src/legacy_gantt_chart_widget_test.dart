@@ -335,5 +335,92 @@ void main() {
 
       expect(find.text('Handle'), findsNWidgets(2)); // Start and End
     });
+
+    testWidgets('regression test: safe against update after disposal in post frame callback',
+        (WidgetTester tester) async {
+      final t1 = LegacyGanttTask(
+        id: 't1',
+        rowId: 'r1',
+        start: now,
+        end: tomorrow,
+        name: 'Task 1',
+      );
+
+      StateSetter? setState;
+      List<LegacyGanttTask> tasks = [t1];
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, s) {
+              setState = s;
+              return LegacyGanttChartWidget(
+                data: tasks,
+                visibleRows: rows,
+                rowMaxStackDepth: rowMaxStackDepth,
+                enableResize: true,
+                onTaskUpdate: (task, start, end) {
+                  // Simulate reseed/refresh which changes the key and disposes the VM
+                  // while the old VM might have pending callbacks or just finished a drag.
+                  setState!(() {
+                    tasks = [
+                      LegacyGanttTask(
+                        id: 't2',
+                        rowId: 'r1',
+                        start: now,
+                        end: tomorrow,
+                        name: 'Task 2 (New)',
+                      )
+                    ];
+                  });
+                },
+                // Use a custom builder to easily find and drag the task
+                taskBarBuilder: (task) => Container(
+                  key: ValueKey(task.id),
+                  color: Colors.blue,
+                  width: 100,
+                  height: 30,
+                ),
+              );
+            },
+          ),
+        ),
+      ));
+
+      await tester.pumpAndSettle();
+
+      // Find the task widget
+      final taskFinder = find.byKey(const ValueKey('t1'));
+      expect(taskFinder, findsOneWidget);
+
+      // Perform a drag/resize operation.
+      // We drag from the center-right to capture the end handle (resize) or body (move).
+      // Since we enabled resize, let's try to trigger a resize or move.
+      // The builder returns a container, but hit detection relies on the layout in ViewModel.
+      // With a custom builder, the hit detection usually uses the RenderBox size.
+      // Let's just drag the task body to trigger a move, which also calls onTaskUpdate.
+
+      // Note: 'enableResize: true' might interfere if we don't hit the body.
+      // But with a simple Container, it should be treated as the task body mostly?
+      // Actually, if custom builder is used, the painter doesn't draw handles?
+      // The `BarsCollectionPainter` logic says: `hasCustomTaskBuilder` skips default drawing.
+      // So handles aren't drawn by the painter.
+      // But hit testing `_getTaskPartAtPosition` checks geometry.
+      // If we drag, we trigger `onHorizontalPanUpdate`.
+
+      await tester.drag(taskFinder, const Offset(50, 0));
+
+      // This pump triggers the frame where:
+      // 1. Drag ends (onHorizontalPanEnd) -> onTaskUpdate runs -> setState called.
+      // 2. Widget rebuilds with new data -> Old VM Disposed.
+      // 3. PostFrameCallbacks run.
+      await tester.pump();
+
+      // Wait for any timers (like double tap) to expire to avoid test failure
+      await tester.pump(const Duration(seconds: 1));
+
+      // If the fix works, no exception is thrown.
+      // If not fixed, "A LegacyGanttViewModel was used after being disposed" would be thrown here.
+    });
   });
 }
