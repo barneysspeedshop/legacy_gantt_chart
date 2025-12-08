@@ -410,6 +410,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       if (!mapEquals(oldWidget.rowMaxStackDepth, widget.rowMaxStackDepth)) {
         _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
       }
+      if (oldWidget.axisHeight != widget.axisHeight) {
+        _internalViewModel!.updateAxisHeight(widget.axisHeight);
+      }
     }
   }
 
@@ -532,7 +535,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(Object.hashAll([...tasks, ...conflictIndicators, ...widget.visibleRows])),
+        key: ValueKey(Object.hashAll([...tasks, ...conflictIndicators, ...widget.visibleRows, widget.syncClient])),
         create: (context) {
           // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(
@@ -565,6 +568,14 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             resizeHandleWidth: widget.resizeHandleWidth,
             syncClient: widget.syncClient,
             taskGrouper: widget.taskGrouper,
+            onVisibleRangeChanged: (start, end) {
+              if (widget.controller != null) {
+                // Avoid infinite loop if controller update is immediate and triggers rebuild
+                if (widget.controller!.visibleStartDate != start || widget.controller!.visibleEndDate != end) {
+                  widget.controller!.setVisibleRange(start, end);
+                }
+              }
+            },
           );
           return _internalViewModel!;
         },
@@ -633,7 +644,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                     gestures: {
                       _AllowMultipleHorizontalDragGestureRecognizer:
                           GestureRecognizerFactoryWithHandlers<_AllowMultipleHorizontalDragGestureRecognizer>(
-                        () => _AllowMultipleHorizontalDragGestureRecognizer(),
+                        () => _AllowMultipleHorizontalDragGestureRecognizer(
+                          supportedDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch},
+                        ),
                         (instance) {
                           instance.onStart = vm.onHorizontalPanStart;
                           instance.onUpdate = vm.onHorizontalPanUpdate;
@@ -664,109 +677,116 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                         },
                       ),
                     },
-                    child: Container(
-                      color: effectiveTheme.backgroundColor,
-                      height: chartHeight,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: AxisPainter(
-                                x: 0,
-                                y: vm.timeAxisHeight,
-                                width: totalContentWidth,
-                                height: contentHeight,
-                                scale: vm.totalScale,
-                                domain: vm.totalDomain,
-                                visibleDomain: vm.visibleExtent,
-                                theme:
-                                    effectiveTheme.copyWith(axisTextStyle: const TextStyle(color: Colors.transparent)),
-                                weekendColor: effectiveTheme.weekendColor,
-                                weekendDays: widget.weekendDays,
+                    child: Listener(
+                      onPointerSignal: (event) {
+                        if (event is PointerScrollEvent && event.scrollDelta.dx != 0) {
+                          vm.onHorizontalScroll(event.scrollDelta.dx);
+                        }
+                      },
+                      child: Container(
+                        color: effectiveTheme.backgroundColor,
+                        height: chartHeight,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: AxisPainter(
+                                  x: 0,
+                                  y: vm.timeAxisHeight,
+                                  width: totalContentWidth,
+                                  height: contentHeight,
+                                  scale: vm.totalScale,
+                                  domain: vm.totalDomain,
+                                  visibleDomain: vm.visibleExtent,
+                                  theme: effectiveTheme.copyWith(
+                                      axisTextStyle: const TextStyle(color: Colors.transparent)),
+                                  weekendColor: effectiveTheme.weekendColor,
+                                  weekendDays: widget.weekendDays,
+                                ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: vm.timeAxisHeight,
-                            left: 0,
-                            width: constraints.maxWidth,
-                            height: contentHeight,
-                            child: ClipRect(
-                              child: Stack(
-                                children: [
-                                  CustomPaint(
-                                    painter: BarsCollectionPainter(
-                                      conflictIndicators: conflictIndicators,
-                                      dependencies: vm.dependencies,
-                                      data: vm.data,
-                                      domain: vm.totalDomain,
-                                      visibleRows: widget.visibleRows,
-                                      rowMaxStackDepth: widget.rowMaxStackDepth,
-                                      scale: vm.totalScale,
-                                      rowHeight: widget.rowHeight,
-                                      draggedTaskId: vm.draggedTask?.id,
-                                      ghostTaskStart: vm.ghostTaskStart,
-                                      ghostTaskEnd: vm.ghostTaskEnd,
-                                      theme: effectiveTheme,
-                                      hoveredRowId: vm.hoveredRowId,
-                                      hoveredDate: vm.hoveredDate,
-                                      hasCustomTaskBuilder: widget.taskBarBuilder != null,
-                                      hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
-                                      translateY: vm.translateY,
-                                    ),
-                                    size: Size(totalContentWidth, totalContentHeight),
-                                  ),
-                                  ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
-                                  ..._buildCustomCellWidgets(vm, vm.data),
-                                  ..._buildFocusedTaskWidgets(vm, vm.data, effectiveTheme,
-                                      widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            width: totalContentWidth,
-                            height: vm.timeAxisHeight,
-                            child: ClipRect(
-                              child: Container(
-                                color: effectiveTheme.backgroundColor,
-                                child: widget.timelineAxisHeaderBuilder != null
-                                    ? widget.timelineAxisHeaderBuilder!(
-                                        context,
-                                        vm.totalScale,
-                                        vm.visibleExtent,
-                                        vm.totalDomain,
-                                        effectiveTheme,
-                                        totalContentWidth,
-                                      )
-                                    : CustomPaint(
-                                        size: Size(totalContentWidth, vm.timeAxisHeight),
-                                        painter: AxisPainter(
-                                          x: 0,
-                                          y: vm.timeAxisHeight / 2,
-                                          width: totalContentWidth,
-                                          height: 0,
-                                          scale: vm.totalScale,
-                                          domain: vm.totalDomain,
-                                          visibleDomain: vm.visibleExtent,
-                                          theme: effectiveTheme,
-                                          timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
-                                          weekendColor: effectiveTheme.weekendColor,
-                                          weekendDays: widget.weekendDays,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ),
-                          if (vm.showResizeTooltip)
                             Positioned(
-                              left: vm.resizeTooltipPosition.dx + 15,
-                              top: vm.resizeTooltipPosition.dy + 15,
-                              child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
+                              top: vm.timeAxisHeight,
+                              left: 0,
+                              width: constraints.maxWidth,
+                              height: contentHeight,
+                              child: ClipRect(
+                                child: Stack(
+                                  children: [
+                                    CustomPaint(
+                                      painter: BarsCollectionPainter(
+                                        conflictIndicators: conflictIndicators,
+                                        dependencies: vm.dependencies,
+                                        data: vm.data,
+                                        domain: vm.totalDomain,
+                                        visibleRows: widget.visibleRows,
+                                        rowMaxStackDepth: widget.rowMaxStackDepth,
+                                        scale: vm.totalScale,
+                                        rowHeight: widget.rowHeight,
+                                        draggedTaskId: vm.draggedTask?.id,
+                                        ghostTaskStart: vm.ghostTaskStart,
+                                        ghostTaskEnd: vm.ghostTaskEnd,
+                                        theme: effectiveTheme,
+                                        hoveredRowId: vm.hoveredRowId,
+                                        hoveredDate: vm.hoveredDate,
+                                        hasCustomTaskBuilder: widget.taskBarBuilder != null,
+                                        hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
+                                        translateY: vm.translateY,
+                                      ),
+                                      size: Size(totalContentWidth, totalContentHeight),
+                                    ),
+                                    ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
+                                    ..._buildCustomCellWidgets(vm, vm.data),
+                                    ..._buildFocusedTaskWidgets(vm, vm.data, effectiveTheme,
+                                        widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
+                                  ],
+                                ),
+                              ),
                             ),
-                        ],
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              width: totalContentWidth,
+                              height: vm.timeAxisHeight,
+                              child: ClipRect(
+                                child: Container(
+                                  color: effectiveTheme.backgroundColor,
+                                  child: widget.timelineAxisHeaderBuilder != null
+                                      ? widget.timelineAxisHeaderBuilder!(
+                                          context,
+                                          vm.totalScale,
+                                          vm.visibleExtent,
+                                          vm.totalDomain,
+                                          effectiveTheme,
+                                          totalContentWidth,
+                                        )
+                                      : CustomPaint(
+                                          size: Size(totalContentWidth, vm.timeAxisHeight),
+                                          painter: AxisPainter(
+                                            x: 0,
+                                            y: vm.timeAxisHeight / 2,
+                                            width: totalContentWidth,
+                                            height: 0,
+                                            scale: vm.totalScale,
+                                            domain: vm.totalDomain,
+                                            visibleDomain: vm.visibleExtent,
+                                            theme: effectiveTheme,
+                                            timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                            weekendColor: effectiveTheme.weekendColor,
+                                            weekendDays: widget.weekendDays,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                            if (vm.showResizeTooltip)
+                              Positioned(
+                                left: vm.resizeTooltipPosition.dx + 15,
+                                top: vm.resizeTooltipPosition.dy + 15,
+                                child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1032,6 +1052,8 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
 /// both the inner Gantt chart's task drag/resize and the outer `SingleChildScrollView`'s
 /// scroll to be recognized.
 class _AllowMultipleHorizontalDragGestureRecognizer extends HorizontalDragGestureRecognizer {
+  _AllowMultipleHorizontalDragGestureRecognizer({super.supportedDevices});
+
   @override
   void rejectGesture(int pointer) => acceptGesture(pointer);
 }

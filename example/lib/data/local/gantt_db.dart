@@ -21,7 +21,7 @@ class GanttDb {
       path = join(dir.path, 'gantt_local.db');
     }
 
-    return await SqliteCrdt.open(
+    final db = await SqliteCrdt.open(
       path,
       onCreate: (db, version) async {
         // Tasks table
@@ -75,16 +75,6 @@ class GanttDb {
           ''');
         }
         if (oldVersion < 3) {
-          // If resources table exists (ver 2), alter it. If it was just created in ver < 2 block, we have to check or just create it with column.
-          // Since we are upgrading sequentially:
-          // If oldVersion was 1, we executed createtable just now.
-          // Wait, CREATE TABLE in block < 2 does NOT have is_expanded.
-          // So we can alter table here repeatedly or check if column exists.
-          // Safer to just use ALTER TABLE if it exists.
-
-          // However, if we just created it in <2 block, it's fresh.
-          // But simpler approach: in <2 block create with ALL columns? No, strict versioning.
-
           try {
             await db.execute('ALTER TABLE resources ADD COLUMN is_expanded INTEGER DEFAULT 1');
           } catch (e) {
@@ -93,8 +83,18 @@ class GanttDb {
             // But if we just created it above...
           }
         }
+        // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
+        // on open, so we don't need manual migration for is_deleted.
       },
-      version: 3,
+      version: 4,
     );
+
+    // Enable WAL mode for better concurrency (allows concurrent reads and writes)
+    if (!kIsWeb) {
+      await db.execute('PRAGMA journal_mode=WAL');
+      await db.execute('PRAGMA busy_timeout=5000'); // Wait up to 5 seconds for locks
+    }
+
+    return db;
   }
 }

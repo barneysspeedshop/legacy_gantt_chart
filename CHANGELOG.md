@@ -1,3 +1,9 @@
+
+## 4.0.0-CRDT.alpha.4
+
+* **FIX**: Fix horizontal scroll
+* **FEATURE**: Implemented backend connection in UI example
+
 ## 4.0.0-CRDT.alpha.3
 
 * **FIX**: Fix changelog

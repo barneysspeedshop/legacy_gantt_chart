@@ -49,7 +49,15 @@ class LegacyGanttViewModel extends ChangeNotifier {
   final double rowHeight;
 
   /// The height of the time axis header.
-  final double? axisHeight;
+  double? _axisHeight;
+  double? get axisHeight => _axisHeight;
+
+  void updateAxisHeight(double? newHeight) {
+    if (_axisHeight != newHeight) {
+      _axisHeight = newHeight;
+      notifyListeners();
+    }
+  }
 
   /// The start of the visible time range in milliseconds since epoch.
   double? gridMin;
@@ -123,6 +131,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   StreamSubscription<Operation>? _syncSubscription;
 
+  /// A callback invoked when the visible date range changes.
+  final Function(DateTime start, DateTime end)? onVisibleRangeChanged;
+
   /// Creates an instance of [LegacyGanttViewModel].
   ///
   /// This constructor takes all the relevant properties from the
@@ -135,7 +146,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     required this.visibleRows,
     required this.rowMaxStackDepth,
     required this.rowHeight,
-    this.axisHeight,
+    double? axisHeight,
     this.gridMin,
     this.gridMax,
     this.totalGridMin,
@@ -155,10 +166,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onRowRequestVisible,
     this.initialFocusedTaskId,
     this.onFocusChange,
+    this.onVisibleRangeChanged,
     this.resizeHandleWidth = 10.0,
     this.syncClient,
     this.taskGrouper,
-  }) : _tasks = List.from(data) {
+  })  : _tasks = List.from(data),
+        _axisHeight = axisHeight {
     // 1. Pre-calculate row offsets immediately
     _focusedTaskId = initialFocusedTaskId;
     _calculateRowOffsets();
@@ -170,18 +183,60 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (syncClient != null) {
       _syncSubscription = syncClient!.operationStream.listen((op) {
-        _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
-        if (taskGrouper != null) {
-          final conflicts = LegacyGanttConflictDetector().run(
-            tasks: _tasks,
-            taskGrouper: taskGrouper!,
+        if (op.type == 'INSERT_DEPENDENCY') {
+          final data = op.data;
+          final typeStr = data['type'] as String? ?? 'finishToStart';
+          final depType =
+              DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
+          final newDep = LegacyGanttTaskDependency(
+            predecessorTaskId: data['predecessorTaskId'],
+            successorTaskId: data['successorTaskId'],
+            type: depType,
           );
-          // Remove old conflict indicators first (assuming they are marked isOverlapIndicator)
-          _tasks.removeWhere((t) => t.isOverlapIndicator);
-          _tasks.addAll(conflicts);
+          if (!dependencies.contains(newDep)) {
+            dependencies = List.from(dependencies)..add(newDep);
+            notifyListeners();
+          }
+        } else if (op.type == 'DELETE_DEPENDENCY') {
+          final data = op.data;
+          final pred = data['predecessorTaskId'];
+          final succ = data['successorTaskId'];
+          final initialLen = dependencies.length;
+          dependencies =
+              dependencies.where((d) => !(d.predecessorTaskId == pred && d.successorTaskId == succ)).toList();
+          if (dependencies.length != initialLen) {
+            notifyListeners();
+          }
+        } else if (op.type == 'CLEAR_DEPENDENCIES') {
+          final taskId = op.data['taskId'];
+          if (taskId != null) {
+            final initialLen = dependencies.length;
+            dependencies =
+                dependencies.where((d) => d.predecessorTaskId != taskId && d.successorTaskId != taskId).toList();
+            if (dependencies.length != initialLen) {
+              notifyListeners();
+            }
+          }
+        } else if (op.type == 'RESET_DATA') {
+          _tasks.clear();
+          dependencies = [];
+          // Force repaint/recalculate
+          _calculateDomains();
+          notifyListeners();
+        } else {
+          _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
+          if (taskGrouper != null) {
+            final conflicts = LegacyGanttConflictDetector().run(
+              tasks: _tasks,
+              taskGrouper: taskGrouper!,
+            );
+            // Remove old conflict indicators first (assuming they are marked isOverlapIndicator)
+            _tasks.removeWhere((t) => t.isOverlapIndicator);
+            _tasks.addAll(conflicts);
+          }
+          _calculateDomains(); // Recalculate domains as data changed
+          notifyListeners();
         }
-        _calculateDomains(); // Recalculate domains as data changed
-        notifyListeners();
       });
     }
   }
@@ -226,9 +281,79 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateDependencies(List<LegacyGanttTaskDependency> newDependencies) {
     if (!listEquals(dependencies, newDependencies)) {
+      if (syncClient != null) {
+        final oldSet = dependencies.toSet();
+        final newSet = newDependencies.toSet();
+        final added = newSet.difference(oldSet);
+        final removed = oldSet.difference(newSet);
+
+        for (final dep in added) {
+          _sendDependencyOp('INSERT_DEPENDENCY', dep);
+        }
+        for (final dep in removed) {
+          _sendDependencyOp('DELETE_DEPENDENCY', dep);
+        }
+      }
       dependencies = newDependencies;
       notifyListeners();
     }
+  }
+
+  void addDependency(LegacyGanttTaskDependency dependency) {
+    if (!dependencies.contains(dependency)) {
+      dependencies = List.from(dependencies)..add(dependency);
+      _sendDependencyOp('INSERT_DEPENDENCY', dependency);
+      notifyListeners();
+    }
+  }
+
+  void removeDependency(LegacyGanttTaskDependency dependency) {
+    if (dependencies.contains(dependency)) {
+      dependencies = List.from(dependencies)..remove(dependency);
+      _sendDependencyOp('DELETE_DEPENDENCY', dependency);
+      notifyListeners();
+    }
+  }
+
+  /// Removes all dependencies associated with a given task.
+  /// Sends a single CLEAR_DEPENDENCIES operation if a sync client is connected.
+  void clearDependenciesForTask(LegacyGanttTask task) {
+    bool changed = false;
+    final dependenciesToRemove =
+        dependencies.where((d) => d.predecessorTaskId == task.id || d.successorTaskId == task.id).toList();
+
+    if (dependenciesToRemove.isNotEmpty) {
+      dependencies = List.from(dependencies)..removeWhere((d) => dependenciesToRemove.contains(d));
+      changed = true;
+    }
+
+    if (syncClient != null) {
+      // Send single operation
+      syncClient!.sendOperation(Operation(
+        type: 'CLEAR_DEPENDENCIES',
+        data: {'taskId': task.id},
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'user',
+      ));
+    }
+
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
+  void _sendDependencyOp(String type, LegacyGanttTaskDependency dep) {
+    if (syncClient == null) return;
+    syncClient!.sendOperation(Operation(
+      type: type,
+      data: {
+        'predecessorTaskId': dep.predecessorTaskId,
+        'successorTaskId': dep.successorTaskId,
+        'type': dep.type.name,
+      },
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      actorId: 'user',
+    ));
   }
 
   void updateFocusedTask(String? newFocusedTaskId) {
@@ -546,18 +671,39 @@ class LegacyGanttViewModel extends ChangeNotifier {
           break;
       }
       notifyListeners();
+    } else {
+      // If we didn't hit a task, we can still pan the chart horizontally
+      _panType = PanType.horizontal;
+      _initialTranslateY = _translateY;
+      _initialTouchY = details.globalPosition.dy;
+      _dragStartGlobalX = details.globalPosition.dx;
+      _dragMode = DragMode.none;
+      // We don't sent _draggedTask, so we know it's a pan operation
+      notifyListeners();
     }
   }
 
   void onHorizontalPanUpdate(DragUpdateDetails details) {
     if (_panType == PanType.vertical) return;
-    // If we haven't locked yet (e.g. somehow skipped start), try to lock if we have a task
-    if (_panType == PanType.none && _draggedTask != null) {
+    // If we haven't locked yet (e.g. somehow skipped start), try to lock if we have a task or just pan
+    if (_panType == PanType.none) {
       _panType = PanType.horizontal;
+      _dragStartGlobalX = details.globalPosition.dx; // Re-sync start
     }
 
-    if (_panType == PanType.horizontal && _draggedTask != null) {
-      _handleHorizontalPan(details);
+    if (_panType == PanType.horizontal) {
+      if (_draggedTask != null) {
+        _handleHorizontalPan(details);
+      } else {
+        // Panning the view (scrolling)
+        // Delta is purely from the update event for smoother scrolling if we accumulate,
+        // but here we are using delta from start.
+        // Better to use details.delta for incremental updates to avoid state management issues
+        // with "start position". OR strictly use the diff from drag start.
+        // Existing logic for tasks uses start position. Let's stick to details.delta for panning view
+        // as it is more continuous.
+        _handleHorizontalScroll(-details.delta.dx);
+      }
     }
   }
 
@@ -1079,5 +1225,60 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void deleteTask(LegacyGanttTask task) {
     onTaskDelete?.call(task);
     notifyListeners();
+  }
+
+  void _handleHorizontalScroll(double deltaPixels) {
+    // If delta is positive (drag left / wheel right), we move forward in time.
+    // If delta is negative (drag right / wheel left), we move backward in time.
+
+    if (totalDomain.isEmpty || _width <= 0) return;
+
+    final durationDelta = _pixelToDuration(deltaPixels);
+
+    // If we update gridMin/gridMax, we effectively scroll.
+    // gridMin/Max are the start/end of the visible range.
+
+    if (gridMin == null || gridMax == null) {
+      // If we are in "fit fit" mode or auto-mode (nulls), setting them
+      // switches to manual control.
+      gridMin = _visibleExtent.first.millisecondsSinceEpoch.toDouble();
+      gridMax = _visibleExtent.last.millisecondsSinceEpoch.toDouble();
+    }
+
+    double newGridMin = gridMin! + durationDelta.inMilliseconds;
+    double newGridMax = gridMax! + durationDelta.inMilliseconds;
+
+    // Optional: Clamp to totalDomain if desired, or allow infinite scroll.
+    // Usually infinite scroll or clamped to totalGridMin/Max if they are strict bounds.
+    // Let's clamp if totalGridMin/Max are provided.
+
+    if (totalGridMin != null && newGridMin < totalGridMin!) {
+      final diff = totalGridMin! - newGridMin;
+      newGridMin += diff;
+      newGridMax += diff;
+    }
+
+    if (totalGridMax != null && newGridMax > totalGridMax!) {
+      final diff = newGridMax - totalGridMax!;
+      newGridMin -= diff;
+      newGridMax -= diff;
+    }
+
+    gridMin = newGridMin;
+    gridMax = newGridMax;
+
+    _calculateDomains();
+    _calculateRowOffsets();
+
+    if (onVisibleRangeChanged != null && _visibleExtent.isNotEmpty) {
+      onVisibleRangeChanged!(_visibleExtent.first, _visibleExtent.last);
+    }
+
+    notifyListeners();
+  }
+
+  /// Handles horizontal scroll events, e.g., from a mouse wheel or trackpad.
+  void onHorizontalScroll(double delta) {
+    _handleHorizontalScroll(delta);
   }
 }

@@ -11,6 +11,7 @@ import '../data/local/local_gantt_repository.dart';
 import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
+import '../sync/websocket_gantt_sync_client.dart';
 
 /// An enum to manage the different theme presets demonstrated in the example.
 enum ThemePreset {
@@ -198,6 +199,7 @@ class GanttViewModel extends ChangeNotifier {
 
     // Listen to dependencies
     _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
+      _dependencies = deps;
       notifyListeners();
     });
 
@@ -376,6 +378,61 @@ class GanttViewModel extends ChangeNotifier {
       await _localRepository.insertOrUpdateDependency(dep);
     }
 
+    // Sync Client Notification (Broadcast re-seed)
+    if (_syncClient != null && _isSyncConnected) {
+      // 1. Send RESET_DATA
+      _syncClient!.sendOperation(Operation(
+        type: 'RESET_DATA',
+        data: {},
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+
+      // 2. Send INSERT_TASK for all new tasks
+      for (final task in tasks) {
+        String ganttType = 'task';
+        if (task.isMilestone) {
+          ganttType = 'milestone';
+        } else if (task.isSummary) {
+          ganttType = 'summary';
+        }
+
+        _syncClient!.sendOperation(Operation(
+          type: 'INSERT_TASK',
+          data: {
+            'gantt_type': ganttType,
+            'data': {
+              'id': task.id,
+              'rowId': task.rowId,
+              'name': task.name,
+              'start_date': task.start.millisecondsSinceEpoch,
+              'end_date': task.end.millisecondsSinceEpoch,
+              'is_summary': task.isSummary,
+              'color': task.color?.toARGB32().toRadixString(16),
+              'textColor': task.textColor?.toARGB32().toRadixString(16),
+              // Add other fields if necessary
+            }
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+
+      // 3. Send INSERT_DEPENDENCY for all new dependencies
+      for (final dep in dependencies) {
+        _syncClient!.sendOperation(Operation(
+          type: 'INSERT_DEPENDENCY',
+          data: {
+            'predecessorTaskId': dep.predecessorTaskId,
+            'successorTaskId': dep.successorTaskId,
+            'dependency_type': dep.type.name,
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+    }
+
     // Insert resources
     final expansionMap = <String, bool>{};
     void fillExpansion(List<GanttGridData> nodes) {
@@ -399,6 +456,48 @@ class GanttViewModel extends ChangeNotifier {
         // Children expansion doesn't matter much if parent is collapsed, but let's keep them expanded by default
         await _localRepository.insertOrUpdateResource(
             LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
+      }
+    }
+
+    // 4. Send INSERT_RESOURCE for all new resources (Broadcast re-seed)
+    if (_syncClient != null && _isSyncConnected) {
+      for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
+        final resource = processedData.apiResponse.resourcesData[i];
+        final isExpanded = i == 0; // Only expand the first one
+
+        // Send parent resource
+        _syncClient!.sendOperation(Operation(
+          type: 'INSERT_RESOURCE',
+          data: {
+            'gantt_type': 'person',
+            'data': {
+              'id': resource.id,
+              'name': resource.name,
+              'parentId': null,
+              'isExpanded': isExpanded,
+            }
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+
+        for (final child in resource.children) {
+          // Send child resource
+          _syncClient!.sendOperation(Operation(
+            type: 'INSERT_RESOURCE',
+            data: {
+              'gantt_type': 'job',
+              'data': {
+                'id': child.id,
+                'name': child.name,
+                'parentId': resource.id,
+                'isExpanded': true,
+              }
+            },
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+            actorId: 'local-user',
+          ));
+        }
       }
     }
 
@@ -1178,9 +1277,285 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Sync Client State ---
+  WebSocketGanttSyncClient? _syncClient;
+  StreamSubscription<Operation>? _syncOperationsSubscription;
+  StreamSubscription<bool>? _connectionStateSubscription;
+
+  /// Factory for creating the sync client. Can be overridden for testing.
+  WebSocketGanttSyncClient Function({required Uri uri, required String authToken})? syncClientFactory;
+
+  bool _isSyncConnected = false;
+  bool get isSyncConnected => _isSyncConnected;
+
+  /// Function for logging in. Can be overridden for testing.
+  Future<String> Function({required Uri uri, required String username, required String password})? loginFunction;
+
+  Future<void> connectSync({
+    required String uri,
+    required String tenantId,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final parsedUri = Uri.parse(uri);
+      final loginCall = loginFunction ?? WebSocketGanttSyncClient.login;
+      final token = await loginCall(
+        uri: parsedUri,
+        username: username,
+        password: password,
+      );
+
+      final wsUri = parsedUri.replace(scheme: parsedUri.scheme == 'https' ? 'wss' : 'ws', path: '/ws');
+      if (syncClientFactory != null) {
+        _syncClient = syncClientFactory!(uri: wsUri, authToken: token);
+      } else {
+        _syncClient = WebSocketGanttSyncClient(
+          uri: wsUri,
+          authToken: token,
+        );
+      }
+
+      _syncClient!.connect(tenantId);
+
+      _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
+        _handleIncomingOperation(op);
+      });
+
+      _connectionStateSubscription = _syncClient!.connectionStateStream.listen((isConnected) {
+        _isSyncConnected = isConnected;
+        notifyListeners();
+      });
+
+      _isSyncConnected = true;
+      notifyListeners();
+    } catch (e) {
+      print('Sync connection error: $e');
+      rethrow;
+    }
+  }
+
+  void disconnectSync() {
+    _syncOperationsSubscription?.cancel();
+    _connectionStateSubscription?.cancel();
+    _syncClient?.dispose();
+    _syncClient = null;
+    _isSyncConnected = false;
+    notifyListeners();
+  }
+
+  Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
+
+  Future<void> _handleIncomingOperation(Operation op) async {
+    final data = op.data;
+    // Task data is directly in data
+    final taskData = data;
+
+    if (op.type == 'UPDATE_TASK') {
+      final taskId = taskData['id'];
+      if (taskId == null) return;
+
+      // In local database mode, only write to DB and let the stream listener handle the update
+      if (_useLocalDatabase) {
+        // Find existing task to get the full task data
+        final index = _ganttTasks.indexWhere((t) => t.id == taskId);
+        if (index != -1) {
+          final existingTask = _ganttTasks[index];
+          final updatedTask = existingTask.copyWith(
+            name: taskData['name'] ?? existingTask.name,
+            start: taskData['start_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(taskData['start_date'] as int)
+                : existingTask.start,
+            end: taskData['end_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(taskData['end_date'] as int)
+                : existingTask.end,
+          );
+
+          // Write to database - the stream listener will handle the UI update
+          await _localRepository.insertOrUpdateTask(updatedTask);
+        }
+      } else {
+        // Non-local mode: update in-memory lists and notify
+        final index = _ganttTasks.indexWhere((t) => t.id == taskId);
+        if (index != -1) {
+          final existingTask = _ganttTasks[index];
+          final updatedTask = existingTask.copyWith(
+            name: taskData['name'] ?? existingTask.name,
+            start: taskData['start_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(taskData['start_date'] as int)
+                : existingTask.start,
+            end: taskData['end_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(taskData['end_date'] as int)
+                : existingTask.end,
+          );
+
+          _ganttTasks[index] = updatedTask;
+
+          // Update source list
+          final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
+          if (sourceIndex != -1) {
+            _allGanttTasks[sourceIndex] = updatedTask;
+          }
+
+          notifyListeners();
+        }
+      }
+    } else if (op.type == 'INSERT_TASK') {
+      var data = op.data;
+      String? ganttType;
+
+      // Unwrap if nested (gantt_type present)
+      if (data.containsKey('data') && data['data'] is Map) {
+        ganttType = data['gantt_type'] as String?;
+        data = data['data'] as Map<String, dynamic>;
+      }
+
+      final newTask = LegacyGanttTask(
+        id: data['id'],
+        rowId: data['rowId'],
+        name: data['name'],
+        start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
+        end: DateTime.fromMillisecondsSinceEpoch(data['end_date']),
+        isSummary: ganttType == 'summary' || data['is_summary'] == true,
+        isMilestone: ganttType == 'milestone',
+        color: _parseColor(data['color']),
+        textColor: _parseColor(data['textColor']),
+      );
+
+      if (_useLocalDatabase) {
+        await _localRepository.insertOrUpdateTask(newTask);
+      } else {
+        _allGanttTasks.add(newTask);
+        _recalculateStackingAndNotify();
+      }
+    } else if (op.type == 'DELETE_TASK') {
+      // Handle DELETE_TASK
+      final taskId = taskData['id'];
+      if (taskId == null) return;
+
+      if (_useLocalDatabase) {
+        await _localRepository.deleteTask(taskId);
+      } else {
+        _ganttTasks.removeWhere((t) => t.id == taskId);
+        _allGanttTasks.removeWhere((t) => t.id == taskId);
+        // Also remove dependencies involving this task
+        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
+        _recalculateStackingAndNotify();
+      }
+    } else if (op.type == 'INSERT_DEPENDENCY') {
+      final data = op.data;
+      final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String; // Handle both keys
+      final dependencyType = DependencyType.values.firstWhere(
+        (e) => e.name == dependencyTypeString,
+        orElse: () => DependencyType.finishToStart,
+      );
+      final newDep = LegacyGanttTaskDependency(
+        predecessorTaskId: data['predecessorTaskId'],
+        successorTaskId: data['successorTaskId'],
+        type: dependencyType,
+      );
+
+      if (_useLocalDatabase) {
+        await _localRepository.insertOrUpdateDependency(newDep);
+        notifyListeners(); // Force UI update
+      } else {
+        if (!_dependencies.contains(newDep)) {
+          _dependencies.add(newDep);
+          notifyListeners();
+        }
+      }
+    } else if (op.type == 'DELETE_DEPENDENCY') {
+      final data = op.data;
+      final pred = data['predecessorTaskId'];
+      final succ = data['successorTaskId'];
+      print('DEBUG: Received DELETE_DEPENDENCY: pred=$pred, succ=$succ'); // DEBUG LOG
+
+      if (_useLocalDatabase) {
+        await _localRepository.deleteDependency(pred, succ);
+        notifyListeners(); // Force UI update
+      } else {
+        _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
+        notifyListeners();
+      }
+    } else if (op.type == 'CLEAR_DEPENDENCIES') {
+      final taskId = op.data['taskId'];
+      if (taskId == null) return;
+
+      if (_useLocalDatabase) {
+        await _localRepository.deleteDependenciesForTask(taskId);
+        notifyListeners();
+      } else {
+        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
+        notifyListeners();
+      }
+    } else if (op.type == 'RESET_DATA') {
+      // Unconditionally clear local DB
+      await _localRepository.deleteAllTasks();
+      await _localRepository.deleteAllDependencies();
+      await _localRepository.deleteAllResources();
+
+      // Unconditionally clear in-memory state
+      _ganttTasks.clear();
+      _allGanttTasks.clear();
+      _dependencies.clear();
+      _gridData.clear();
+      _cachedFlatGridData = null;
+      _conflictIndicators.clear();
+
+      notifyListeners();
+    } else if (op.type == 'INSERT_RESOURCE') {
+      var data = op.data;
+      // Unwrap if nested
+      if (data.containsKey('data') && data['data'] is Map) {
+        data = data['data'] as Map<String, dynamic>;
+      }
+
+      final newResource = LocalResource(
+        id: data['id'],
+        name: data['name'],
+        parentId: data['parentId'],
+        isExpanded: data['isExpanded'] == true,
+      );
+
+      if (_useLocalDatabase) {
+        await _localRepository.insertOrUpdateResource(newResource);
+        // Stream listener will update the UI
+      } else {
+        // Not fully supported in non-local mode for this example yet,
+        // as _gridData is derived. But could be added if needed.
+        // For now, assuming local DB mode is the primary sync target.
+      }
+    }
+  }
+
+  Color? _parseColor(String? hex) {
+    if (hex == null) return null;
+    try {
+      return Color(int.parse(hex, radix: 16));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   void handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) {
+    // Sync Client Notification (Common)
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'UPDATE',
+        data: {
+          'id': task.id,
+          'name': task.name,
+          'start_date': newStart.millisecondsSinceEpoch,
+          'end_date': newEnd.millisecondsSinceEpoch,
+          'parent_id': task.rowId,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
+
     // 1. Handle Local Database Mode
     if (_useLocalDatabase) {
       // Just update the repository; the stream listener will handle the UI update.
@@ -1199,9 +1574,6 @@ class GanttViewModel extends ChangeNotifier {
           // Determine which event corresponds to this task.
           // In this simple model, we assume 1:1, but the task might be from an assignment.
           // For simplicity in this demo, we update the event in the events list if found.
-
-          // Actually, we must update the EVENT, not the job, because tasks are derived from Assignments -> Events.
-          // Find assignment for this task ID.
           final assignment = _apiResponse?.assignmentsData.firstWhereOrNull((a) => a.id == task.id);
           if (assignment != null) {
             final eventIndex = _apiResponse!.eventsData.indexWhere((e) => e.id == assignment.event);
@@ -1438,8 +1810,28 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Adds a new task to the list and recalculates stacking.
   void _addNewTask(LegacyGanttTask newTask) {
-    _allGanttTasks.add(newTask);
-    _recalculateStackingAndNotify();
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'INSERT',
+        data: {
+          'id': newTask.id,
+          'name': newTask.name,
+          'start_date': newTask.start.millisecondsSinceEpoch,
+          'end_date': newTask.end.millisecondsSinceEpoch,
+          'rowId': newTask.rowId,
+          'is_summary': newTask.isSummary,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
+
+    if (_useLocalDatabase) {
+      _localRepository.insertOrUpdateTask(newTask);
+    } else {
+      _allGanttTasks.add(newTask);
+      _recalculateStackingAndNotify();
+    }
   }
 
   /// Calculates the total width of the Gantt chart's content area based on the
@@ -1594,27 +1986,64 @@ class GanttViewModel extends ChangeNotifier {
       end: task.end.add(const Duration(days: 1)),
     );
 
-    final newTasks = [..._ganttTasks, newTask];
-    // Recalculate stacking with the new task.
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-        _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'INSERT',
+        data: {
+          'id': newTask.id,
+          'name': newTask.name,
+          'start_date': newTask.start.millisecondsSinceEpoch,
+          'end_date': newTask.end.millisecondsSinceEpoch,
+          'rowId': newTask.rowId,
+          'is_summary': newTask.isSummary,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
+
+    if (_useLocalDatabase) {
+      // Persist to local DB, stream will update UI
+      _localRepository.insertOrUpdateTask(newTask);
+    } else {
+      final newTasks = [..._ganttTasks, newTask];
+      // Recalculate stacking with the new task.
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
   }
 
   /// Handles the "Delete Task" action from the context menu.
   void handleDeleteTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
 
-    // Create new lists by filtering out the deleted task and its dependencies.
-    final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
-    final newDependencies =
-        _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'DELETE',
+        data: {
+          'id': task.id,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
 
-    // After removing the task, recalculate stacking with the new list.
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-        _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-    _dependencies = newDependencies;
-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    if (_useLocalDatabase) {
+      // Remove from local DB
+      _localRepository.deleteTask(task.id);
+    } else {
+      // Create new lists by filtering out the deleted task and its dependencies.
+      final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
+      final newDependencies =
+          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+
+      // After removing the task, recalculate stacking with the new list.
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+      _dependencies = newDependencies;
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
   }
 
   /// Shows a dialog to edit all parent summary tasks at once.
@@ -1901,9 +2330,28 @@ class GanttViewModel extends ChangeNotifier {
     // Avoid adding duplicate dependencies
     if (!_dependencies.any((d) =>
         d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
-      // Create a new list to ensure change notification is triggered.
-      _dependencies = List.from(_dependencies)..add(newDependency);
-      notifyListeners();
+      // Sync Client Notification
+      if (_syncClient != null && _isSyncConnected) {
+        _syncClient!.sendOperation(Operation(
+          type: 'INSERT_DEPENDENCY',
+          data: {
+            'predecessorTaskId': newDependency.predecessorTaskId,
+            'successorTaskId': newDependency.successorTaskId,
+            'type': newDependency.type.name,
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+
+      if (_useLocalDatabase) {
+        _localRepository.insertOrUpdateDependency(newDependency).then((_) => notifyListeners());
+        // The stream listener from local repo will update the UI list
+      } else {
+        // Create a new list to ensure change notification is triggered.
+        _dependencies = List.from(_dependencies)..add(newDependency);
+        notifyListeners();
+      }
     }
   }
 
@@ -1917,19 +2365,53 @@ class GanttViewModel extends ChangeNotifier {
     final newList = _dependencies.where((d) => d != dependency).toList();
 
     if (newList.length < initialCount) {
-      _dependencies = newList;
-      notifyListeners();
+      // Sync Client Notification
+      if (_syncClient != null && _isSyncConnected) {
+        _syncClient!.sendOperation(Operation(
+          type: 'DELETE_DEPENDENCY',
+          data: {
+            'predecessorTaskId': dependency.predecessorTaskId,
+            'successorTaskId': dependency.successorTaskId,
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+
+      if (_useLocalDatabase) {
+        _localRepository
+            .deleteDependency(dependency.predecessorTaskId, dependency.successorTaskId)
+            .then((_) => notifyListeners());
+        // Stream listener updates UI
+      } else {
+        _dependencies = newList;
+        notifyListeners();
+      }
     }
   }
 
   /// Removes all dependencies associated with a given task.
   void clearDependenciesForTask(LegacyGanttTask task) {
-    final initialCount = _dependencies.length;
-    final newList = _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'CLEAR_DEPENDENCIES',
+        data: {'taskId': task.id},
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
 
-    if (newList.length < initialCount) {
-      _dependencies = newList;
-      notifyListeners();
+    if (_useLocalDatabase) {
+      _localRepository.deleteDependenciesForTask(task.id).then((_) => notifyListeners());
+    } else {
+      final initialCount = _dependencies.length;
+      final newList =
+          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+
+      if (newList.length < initialCount) {
+        _dependencies = newList;
+        notifyListeners();
+      }
     }
   }
 

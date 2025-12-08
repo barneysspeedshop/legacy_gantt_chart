@@ -45,6 +45,7 @@ class CRDTEngine {
     // Here we assume the operation carries the essential data.
 
     final data = op.data;
+
     return LegacyGanttTask(
       id: data['id'],
       rowId: data['rowId'] ?? existing?.rowId ?? '',

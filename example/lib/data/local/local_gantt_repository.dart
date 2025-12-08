@@ -1,9 +1,12 @@
 import 'dart:ui';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+import 'package:synchronized/synchronized.dart';
 
 import 'gantt_db.dart';
 
 class LocalGanttRepository {
+  final _lock = Lock();
+
   Future<void> init() async {
     await GanttDb.db;
   }
@@ -23,9 +26,11 @@ class LocalGanttRepository {
   }
 
   Future<void> insertOrUpdateTask(LegacyGanttTask task) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      '''
+    // Use lock to prevent concurrent writes that cause "database is locked" errors
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        '''
       INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, is_deleted)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0)
       ON CONFLICT(id) DO UPDATE SET
@@ -41,34 +46,38 @@ class LocalGanttRepository {
         resource_id = ?11,
         is_deleted = 0
       ''',
-      [
-        task.id,
-        task.rowId,
-        task.start.toIso8601String(),
-        task.end.toIso8601String(),
-        task.name,
-        task.color?.toARGB32().toRadixString(16),
-        task.textColor?.toARGB32().toRadixString(16),
-        task.stackIndex,
-        task.isSummary ? 1 : 0,
-        task.isMilestone ? 1 : 0,
-        task.originalId, // Storing originalId/resourceId here for now
-      ],
-    );
+        [
+          task.id,
+          task.rowId,
+          task.start.toIso8601String(),
+          task.end.toIso8601String(),
+          task.name,
+          task.color?.toARGB32().toRadixString(16),
+          task.textColor?.toARGB32().toRadixString(16),
+          task.stackIndex,
+          task.isSummary ? 1 : 0,
+          task.isMilestone ? 1 : 0,
+          task.originalId, // Storing originalId/resourceId here for now
+        ],
+      );
+    });
   }
 
   Future<void> deleteTask(String taskId) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      'UPDATE tasks SET is_deleted = 1 WHERE id = ?',
-      [taskId],
-    );
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        'UPDATE tasks SET is_deleted = 1 WHERE id = ?',
+        [taskId],
+      );
+    });
   }
 
   Future<void> insertOrUpdateDependency(LegacyGanttTaskDependency dependency) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      '''
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        '''
       INSERT INTO dependencies (from_id, to_id, type, lag_ms, is_deleted)
       VALUES (?1, ?2, ?3, ?4, 0)
       ON CONFLICT(from_id, to_id) DO UPDATE SET
@@ -76,31 +85,48 @@ class LocalGanttRepository {
         lag_ms = ?4,
         is_deleted = 0
       ''',
-      [
-        dependency.predecessorTaskId,
-        dependency.successorTaskId,
-        dependency.type.index,
-        dependency.lag?.inMilliseconds,
-      ],
-    );
+        [
+          dependency.predecessorTaskId,
+          dependency.successorTaskId,
+          dependency.type.index,
+          dependency.lag?.inMilliseconds,
+        ],
+      );
+    });
   }
 
   Future<void> deleteDependency(String fromId, String toId) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      'UPDATE dependencies SET is_deleted = 1 WHERE from_id = ? AND to_id = ?',
-      [fromId, toId],
-    );
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        'UPDATE dependencies SET is_deleted = 1 WHERE from_id = ? AND to_id = ?',
+        [fromId, toId],
+      );
+    });
+  }
+
+  Future<void> deleteDependenciesForTask(String taskId) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        'UPDATE dependencies SET is_deleted = 1 WHERE from_id = ? OR to_id = ?',
+        [taskId, taskId],
+      );
+    });
   }
 
   Future<void> deleteAllTasks() async {
-    final db = await GanttDb.db;
-    await db.execute('DELETE FROM tasks');
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute('DELETE FROM tasks');
+    });
   }
 
   Future<void> deleteAllDependencies() async {
-    final db = await GanttDb.db;
-    await db.execute('DELETE FROM dependencies');
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute('DELETE FROM dependencies');
+    });
   }
 
   // Helper to convert DB row to LegacyGanttTask
@@ -141,9 +167,10 @@ class LocalGanttRepository {
   }
 
   Future<void> insertOrUpdateResource(LocalResource resource) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      '''
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        '''
       INSERT INTO resources (id, name, parent_id, is_expanded)
       VALUES (?1, ?2, ?3, ?4)
       ON CONFLICT(id) DO UPDATE SET
@@ -151,21 +178,26 @@ class LocalGanttRepository {
         parent_id = ?3,
         is_expanded = ?4
       ''',
-      [resource.id, resource.name, resource.parentId, resource.isExpanded ? 1 : 0],
-    );
+        [resource.id, resource.name, resource.parentId, resource.isExpanded ? 1 : 0],
+      );
+    });
   }
 
   Future<void> updateResourceExpansion(String id, bool isExpanded) async {
-    final db = await GanttDb.db;
-    await db.execute(
-      'UPDATE resources SET is_expanded = ? WHERE id = ?',
-      [isExpanded ? 1 : 0, id],
-    );
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        'UPDATE resources SET is_expanded = ? WHERE id = ?',
+        [isExpanded ? 1 : 0, id],
+      );
+    });
   }
 
   Future<void> deleteAllResources() async {
-    final db = await GanttDb.db;
-    await db.execute('DELETE FROM resources');
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute('DELETE FROM resources');
+    });
   }
 
   LocalResource _rowToResource(Map<String, Object?> row) => LocalResource(

@@ -185,5 +185,116 @@ void main() {
 
       viewModel.onPanEnd(DragEndDetails());
     });
+
+    test('onHorizontalPanUpdate on empty space scrolls the chart', () {
+      // Zoom in first so we have room to scroll
+      viewModel.updateVisibleRange(viewModel.totalDomain[0].millisecondsSinceEpoch.toDouble(),
+          viewModel.totalDomain[0].millisecondsSinceEpoch.toDouble() + 1000 * 60 * 60 * 24 * 5 // 5 days
+          );
+
+      // simulate drag on empty space
+      final emptyY = viewModel.timeAxisHeight + viewModel.rowHeight * 3 + 10;
+      viewModel.onHorizontalPanStart(DragStartDetails(
+        globalPosition: Offset(100, emptyY),
+        localPosition: Offset(100, emptyY),
+      ));
+
+      expect(viewModel.draggedTask, isNull);
+
+      final initialGridMin = viewModel.visibleExtent[0].millisecondsSinceEpoch.toDouble();
+      final initialGridMax = viewModel.visibleExtent[1].millisecondsSinceEpoch.toDouble();
+
+      // Drag left (-10px) -> scroll right (time increases)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: Offset(90, emptyY),
+        delta: const Offset(-10, 0),
+      ));
+
+      // Calculate expected delta
+      final totalDomainDurationMs =
+          viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
+      final durationMs = (-10 / 1000).abs() * totalDomainDurationMs;
+
+      // Since we drag left (negative), we move "forward" in time, so min/max should increase.
+      expect(viewModel.gridMin, greaterThan(initialGridMin));
+      expect(viewModel.gridMax, greaterThan(initialGridMax));
+
+      // Verify approximate value
+      expect(viewModel.gridMin, closeTo(initialGridMin + durationMs, 1.0));
+    });
+
+    test('onHorizontalScroll scrolls the chart', () {
+      // Zoom in first so we have room to scroll
+      viewModel.updateVisibleRange(viewModel.totalDomain[0].millisecondsSinceEpoch.toDouble(),
+          viewModel.totalDomain[0].millisecondsSinceEpoch.toDouble() + 1000 * 60 * 60 * 24 * 5 // 5 days
+          );
+
+      final initialGridMin = viewModel.gridMin!;
+
+      // Scroll positive (wheel right/down) -> move forward in time
+      viewModel.onHorizontalScroll(50);
+
+      final totalDomainDurationMs =
+          viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
+      final durationMs = (50 / 1000) * totalDomainDurationMs;
+
+      expect(viewModel.gridMin, closeTo(initialGridMin + durationMs, 1.0));
+    });
+
+    test('onHorizontalScroll triggers onVisibleRangeChanged', () {
+      DateTime? callbackStart;
+      DateTime? callbackEnd;
+
+      final callbackViewModel = LegacyGanttViewModel(
+        data: tasks,
+        conflictIndicators: const [],
+        dependencies: [],
+        visibleRows: rows,
+        rowMaxStackDepth: rowMaxStackDepth,
+        rowHeight: 30,
+        gridMin: DateTime(2023, 1, 1).millisecondsSinceEpoch.toDouble(),
+        gridMax: DateTime(2023, 1, 31).millisecondsSinceEpoch.toDouble(),
+        totalGridMin: DateTime(2023, 1, 1).millisecondsSinceEpoch.toDouble(),
+        totalGridMax: DateTime(2023, 1, 31).millisecondsSinceEpoch.toDouble(),
+        enableDragAndDrop: true,
+        enableResize: true,
+        resizeHandleWidth: 10.0,
+        onVisibleRangeChanged: (start, end) {
+          callbackStart = start;
+          callbackEnd = end;
+        },
+      );
+      callbackViewModel.updateLayout(1000, 600);
+
+      // Zoom in first so we have room to scroll
+      callbackViewModel.updateVisibleRange(callbackViewModel.totalDomain[0].millisecondsSinceEpoch.toDouble(),
+          callbackViewModel.totalDomain[0].millisecondsSinceEpoch.toDouble() + 1000 * 60 * 60 * 24 * 5 // 5 days
+          );
+
+      // Clear callback values from initialization/update
+      callbackStart = null;
+      callbackEnd = null;
+
+      // Scroll positive (wheel right/down) -> move forward in time
+      callbackViewModel.onHorizontalScroll(50);
+
+      expect(callbackStart, isNotNull);
+      expect(callbackEnd, isNotNull);
+      // We expect the range to have shifted forward
+      expect(callbackStart!.isAfter(DateTime(2023, 1, 1)), isTrue);
+    });
+
+    test('updateAxisHeight updates the axis height and notifies listeners', () {
+      // Update with a new height
+      viewModel.updateAxisHeight(100.0);
+
+      expect(viewModel.axisHeight, 100.0);
+      expect(viewModel.timeAxisHeight, 100.0);
+
+      // Update back to null (should use default calculation or similar if logic allows,
+      // but here we just check it sets to null)
+      viewModel.updateAxisHeight(null);
+      expect(viewModel.axisHeight, isNull);
+    });
   });
 }

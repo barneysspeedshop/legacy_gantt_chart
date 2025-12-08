@@ -81,15 +81,31 @@ class _GanttViewState extends State<GanttView> {
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
 
+  // Sync Client Controllers
+  late final TextEditingController _uriController;
+  late final TextEditingController _tenantIdController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+
   @override
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
+
+    // Initialize Sync Controllers with default values
+    _uriController = TextEditingController(text: 'http://localhost:8080');
+    _tenantIdController = TextEditingController(text: 'debug');
+    _usernameController = TextEditingController(text: 'debug  ');
+    _passwordController = TextEditingController(text: 'debug');
   }
 
   @override
   void dispose() {
     _viewModel.dispose();
+    _uriController.dispose();
+    _tenantIdController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -362,6 +378,86 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+            const Divider(height: 24),
+            Text('Server Sync', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (vm.isSyncConnected)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  border: Border.all(color: Colors.green),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Column(
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green, size: 16),
+                        SizedBox(width: 8),
+                        Text('Connected', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      onPressed: () => vm.disconnectSync(),
+                      child: const Text('Disconnect'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _uriController,
+                    decoration: const InputDecoration(labelText: 'Server URI', isDense: true),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _tenantIdController,
+                    decoration: const InputDecoration(labelText: 'Tenant ID', isDense: true),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _usernameController,
+                          decoration: const InputDecoration(labelText: 'User', isDense: true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _passwordController,
+                          decoration: const InputDecoration(labelText: 'Pass', isDense: true),
+                          obscureText: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      try {
+                        await vm.connectSync(
+                          uri: _uriController.text,
+                          tenantId: _tenantIdController.text,
+                          username: _usernameController.text,
+                          password: _passwordController.text,
+                        );
+                        _showSnackbar('Connected to Sync Server');
+                      } catch (e) {
+                        _showSnackbar('Connection Failed: $e');
+                      }
+                    },
+                    child: const Text('Connect'),
+                  ),
+                ],
+              ),
             const Divider(height: 24),
             DashboardHeader(
               selectedDate: vm.startDate,
