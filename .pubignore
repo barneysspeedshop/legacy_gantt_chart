@@ -16,3 +16,12 @@ example/devtools_options.yaml
 example/test/
 example/build/
 assets/usage.gif
+# Logs and Test Output
+*.log
+test_output.txt
+test_failure.log
+test_failure_click.log
+
+# Large Web Assets (Example)
+example/web/sqflite_sw.js
+example/web/sqlite3.wasm
