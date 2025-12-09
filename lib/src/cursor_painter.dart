@@ -100,12 +100,10 @@ class CursorPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CursorPainter oldDelegate) {
-    // Ideally compare maps deeply, but for now simple check or optimization
-    return oldDelegate.translateY != translateY ||
-        oldDelegate.totalScale != totalScale ||
-        oldDelegate.remoteCursors != remoteCursors; // Map ref check (VM creates new map?)
-    // VM uses simple map, mutation might not trigger.
-    // We need to ensure VM calls notifyListeners when cursors change.
-  }
+  bool shouldRepaint(covariant CursorPainter oldDelegate) =>
+      oldDelegate.translateY != translateY ||
+      oldDelegate.totalScale != totalScale ||
+      oldDelegate.remoteCursors != remoteCursors; // Map ref check (VM creates new map?)
+  // VM uses simple map, mutation might not trigger.
+  // We need to ensure VM calls notifyListeners when cursors change.
 }
