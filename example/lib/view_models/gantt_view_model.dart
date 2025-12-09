@@ -205,9 +205,7 @@ class GanttViewModel extends ChangeNotifier {
     });
 
     // Initialize Sync Client for Offline Queuing if not already present
-    if (_syncClient == null) {
-      _syncClient = OfflineGanttSyncClient();
-    }
+    _syncClient ??= OfflineGanttSyncClient();
 
     // Trigger reset on first load
     _pendingSeedReset = true;
