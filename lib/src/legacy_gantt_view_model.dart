@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
+import 'models/remote_cursor.dart';
 import 'sync/gantt_sync_client.dart';
 import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
@@ -131,6 +132,56 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   StreamSubscription<Operation>? _syncSubscription;
 
+  // --- Remote Cursor State ---
+  final Map<String, RemoteCursor> _remoteCursors = {};
+  Map<String, RemoteCursor> get remoteCursors => Map.unmodifiable(_remoteCursors);
+
+  bool _showRemoteCursors = true;
+  bool get showRemoteCursors => _showRemoteCursors;
+  set showRemoteCursors(bool value) {
+    if (_showRemoteCursors != value) {
+      _showRemoteCursors = value;
+      notifyListeners();
+    }
+  }
+
+  Timer? _cursorUpdateThrottle;
+  static const Duration _cursorThrottleDuration = Duration(milliseconds: 50);
+
+  void _sendCursorMove(DateTime time, String rowId) {
+    if (_cursorUpdateThrottle?.isActive ?? false) return;
+
+    _cursorUpdateThrottle = Timer(_cursorThrottleDuration, () {
+      syncClient?.sendOperation(Operation(
+        type: 'CURSOR_MOVE',
+        data: {
+          'time': time.millisecondsSinceEpoch,
+          'rowId': rowId,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'me',
+      ));
+    });
+  }
+
+  void _handleRemoteCursorMove(Map<String, dynamic> data, String actorId) {
+    final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
+    final timeMs = actualData['time'] as int?;
+    final rowId = actualData['rowId'] as String?;
+
+    if (timeMs != null && rowId != null) {
+      final time = DateTime.fromMillisecondsSinceEpoch(timeMs);
+      _remoteCursors[actorId] = RemoteCursor(
+        userId: actorId,
+        time: time,
+        rowId: rowId,
+        color: Colors.primaries[actorId.hashCode % Colors.primaries.length],
+        lastUpdated: DateTime.now(),
+      );
+      notifyListeners();
+    }
+  }
+
   /// A callback invoked when the visible date range changes.
   final Function(DateTime start, DateTime end)? onVisibleRangeChanged;
 
@@ -223,6 +274,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
           // Force repaint/recalculate
           _calculateDomains();
           notifyListeners();
+        } else if (op.type == 'CURSOR_MOVE') {
+          _handleRemoteCursorMove(op.data, op.actorId);
         } else {
           _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
           if (taskGrouper != null) {
@@ -881,6 +934,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Mouse hover handler. Updates the cursor, manages tooltips, and detects
   /// hovering over empty space for task creation.
   void onHover(PointerHoverEvent details) {
+    // Sync cursor position
+    if (syncClient != null && _showRemoteCursors) {
+      final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
+      if (rowId != null && time != null) {
+        _sendCursorMove(time, rowId);
+      }
+    }
+
     final hit = _getTaskPartAtPosition(details.localPosition);
     final hoveredTask = hit?.task;
 

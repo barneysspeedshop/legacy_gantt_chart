@@ -13,6 +13,7 @@ import 'legacy_gantt_controller.dart';
 import 'legacy_gantt_view_model.dart';
 import 'bars_collection_painter.dart';
 import 'sync/gantt_sync_client.dart';
+import 'cursor_painter.dart';
 
 /// Defines the type of progress indicator to display during loading.
 enum GanttLoadingIndicatorType {
@@ -315,6 +316,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// This value is passed to the [focusedTaskResizeHandleBuilder]. Defaults to `24.0`.
   final double focusedTaskResizeHandleWidth;
 
+  /// Whether to show cursors from other users when connected via [syncClient].
+  final bool showCursors;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -366,6 +370,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.focusedTaskResizeHandleWidth = 24.0,
     this.syncClient,
     this.taskGrouper,
+    this.showCursors = true,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -396,6 +401,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     if (_internalViewModel != null) {
       if (!listEquals(oldWidget.dependencies, widget.dependencies)) {
         _internalViewModel!.updateDependencies(widget.dependencies ?? []);
+      }
+      if (oldWidget.showCursors != widget.showCursors) {
+        _internalViewModel!.showRemoteCursors = widget.showCursors;
       }
       if (!listEquals(oldWidget.data, widget.data) || !listEquals(oldWidget.holidays, widget.holidays)) {
         final List<LegacyGanttTask> allItems = [...(widget.data ?? []), ...(widget.holidays ?? [])];
@@ -576,7 +584,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 }
               }
             },
-          );
+          )..showRemoteCursors = widget.showCursors;
           return _internalViewModel!;
         },
         child: Consumer<LegacyGanttViewModel>(
@@ -734,6 +742,19 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                         translateY: vm.translateY,
                                       ),
                                       size: Size(totalContentWidth, totalContentHeight),
+                                    ),
+                                    IgnorePointer(
+                                      child: CustomPaint(
+                                        painter: CursorPainter(
+                                          remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
+                                          totalScale: vm.totalScale,
+                                          visibleRows: widget.visibleRows,
+                                          rowMaxStackDepth: widget.rowMaxStackDepth,
+                                          rowHeight: widget.rowHeight,
+                                          translateY: vm.translateY,
+                                        ),
+                                        size: Size(totalContentWidth, totalContentHeight),
+                                      ),
                                     ),
                                     ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
                                     ..._buildCustomCellWidgets(vm, vm.data),

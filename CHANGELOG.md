@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.5
+
+* **FEATURE**: Cursor sync
+* **FEATURE**: Ghost sync (currently broken)
 
 ## 4.0.0-CRDT.alpha.4
 

@@ -200,6 +200,13 @@ class LocalGanttRepository {
     });
   }
 
+  Future<void> deleteResource(String id) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute('DELETE FROM resources WHERE id = ?', [id]);
+    });
+  }
+
   LocalResource _rowToResource(Map<String, Object?> row) => LocalResource(
         id: row['id'] as String,
         name: row['name'] as String?,

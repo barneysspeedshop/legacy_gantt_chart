@@ -12,6 +12,7 @@ import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
 import '../sync/websocket_gantt_sync_client.dart';
+import '../sync/offline_gantt_sync_client.dart';
 
 /// An enum to manage the different theme presets demonstrated in the example.
 enum ThemePreset {
@@ -203,6 +204,11 @@ class GanttViewModel extends ChangeNotifier {
       notifyListeners();
     });
 
+    // Initialize Sync Client for Offline Queuing if not already present
+    if (_syncClient == null) {
+      _syncClient = OfflineGanttSyncClient();
+    }
+
     // Trigger reset on first load
     _pendingSeedReset = true;
     notifyListeners();
@@ -379,7 +385,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     // Sync Client Notification (Broadcast re-seed)
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       // 1. Send RESET_DATA
       _syncClient!.sendOperation(Operation(
         type: 'RESET_DATA',
@@ -460,7 +466,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     // 4. Send INSERT_RESOURCE for all new resources (Broadcast re-seed)
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
         final resource = processedData.apiResponse.resourcesData[i];
         final isExpanded = i == 0; // Only expand the first one
@@ -792,7 +798,11 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> setShowEmptyParentRows(bool value) async {
     if (_showEmptyParentRows == value) return;
     _showEmptyParentRows = value;
-    await _reprocessDataFromApiResponse();
+    if (_useLocalDatabase) {
+      await _processLocalData();
+    } else {
+      await _reprocessDataFromApiResponse();
+    }
   }
 
   void setResizeHandleWidth(double value) {
@@ -1278,13 +1288,14 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   // --- Sync Client State ---
-  WebSocketGanttSyncClient? _syncClient;
+  GanttSyncClient? _syncClient;
   StreamSubscription<Operation>? _syncOperationsSubscription;
   StreamSubscription<bool>? _connectionStateSubscription;
 
   /// Factory for creating the sync client. Can be overridden for testing.
-  WebSocketGanttSyncClient Function({required Uri uri, required String authToken})? syncClientFactory;
+  GanttSyncClient Function({required Uri uri, required String authToken})? syncClientFactory;
 
+  GanttSyncClient? get syncClient => _syncClient;
   bool _isSyncConnected = false;
   bool get isSyncConnected => _isSyncConnected;
 
@@ -1310,21 +1321,52 @@ class GanttViewModel extends ChangeNotifier {
       if (syncClientFactory != null) {
         _syncClient = syncClientFactory!(uri: wsUri, authToken: token);
       } else {
-        _syncClient = WebSocketGanttSyncClient(
+        // Initialize WebSocket Client
+        final wsClient = WebSocketGanttSyncClient(
           uri: wsUri,
           authToken: token,
         );
+        wsClient.connect(tenantId);
+
+        if (_syncClient is OfflineGanttSyncClient) {
+          await (_syncClient as OfflineGanttSyncClient).setInnerClient(wsClient);
+        } else {
+          // If we had a different client type or null
+          if (_syncClient is WebSocketGanttSyncClient) {
+            await (_syncClient as WebSocketGanttSyncClient).dispose();
+          }
+          final offlineClient = OfflineGanttSyncClient();
+          await offlineClient.setInnerClient(wsClient);
+          _syncClient = offlineClient;
+        }
       }
 
-      _syncClient!.connect(tenantId);
+      // Login and Connect handled above by setInnerClient or factory
+      // If factory was used, we might need to connect it?
+      if (_syncClient is WebSocketGanttSyncClient && syncClientFactory != null) {
+        (_syncClient as WebSocketGanttSyncClient).connect(tenantId);
+      }
+
+      // Listen to connection state
+      _connectionStateSubscription?.cancel();
+      Stream<bool>? connectionStream;
+      if (_syncClient is OfflineGanttSyncClient) {
+        connectionStream = (_syncClient as OfflineGanttSyncClient).connectionStateStream;
+      } else if (_syncClient is WebSocketGanttSyncClient) {
+        connectionStream = (_syncClient as WebSocketGanttSyncClient).connectionStateStream;
+      }
+
+      if (connectionStream != null) {
+        _connectionStateSubscription = connectionStream.listen((isConnected) {
+          if (_isSyncConnected != isConnected) {
+            _isSyncConnected = isConnected;
+            notifyListeners();
+          }
+        });
+      }
 
       _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
         _handleIncomingOperation(op);
-      });
-
-      _connectionStateSubscription = _syncClient!.connectionStateStream.listen((isConnected) {
-        _isSyncConnected = isConnected;
-        notifyListeners();
       });
 
       _isSyncConnected = true;
@@ -1335,11 +1377,22 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  void disconnectSync() {
+  Future<void> disconnectSync() async {
     _syncOperationsSubscription?.cancel();
     _connectionStateSubscription?.cancel();
-    _syncClient?.dispose();
-    _syncClient = null;
+
+    if (_syncClient is OfflineGanttSyncClient) {
+      await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
+      // Only dispose if we are NOT using local database, otherwise keep it for queuing
+      if (!_useLocalDatabase) {
+        await (_syncClient as OfflineGanttSyncClient).dispose();
+        _syncClient = null;
+      }
+    } else if (_syncClient is WebSocketGanttSyncClient) {
+      await (_syncClient as WebSocketGanttSyncClient).dispose();
+      _syncClient = null;
+    }
+
     _isSyncConnected = false;
     notifyListeners();
   }
@@ -1541,7 +1594,7 @@ class GanttViewModel extends ChangeNotifier {
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   void handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) {
     // Sync Client Notification (Common)
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'UPDATE',
         data: {
@@ -1810,7 +1863,7 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Adds a new task to the list and recalculates stacking.
   void _addNewTask(LegacyGanttTask newTask) {
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'INSERT',
         data: {
@@ -1896,6 +1949,14 @@ class GanttViewModel extends ChangeNotifier {
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded);
         }
+        if (_syncClient != null) {
+          _syncClient!.sendOperation(Operation(
+            type: 'INSERT_RESOURCE',
+            data: {'id': item.id, 'is_expanded': item.isExpanded},
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+            actorId: 'local-user',
+          ));
+        }
         _recalculateStackingAndNotify(); // Rebuild UI
         return; // Exit early
       }
@@ -1908,6 +1969,14 @@ class GanttViewModel extends ChangeNotifier {
 
     if (_useLocalDatabase) {
       _localRepository.updateResourceExpansion(item.id, item.isExpanded);
+    }
+    if (_syncClient != null) {
+      _syncClient!.sendOperation(Operation(
+        type: 'INSERT_RESOURCE',
+        data: {'id': item.id, 'is_expanded': item.isExpanded},
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
     }
 
     if (_apiResponse != null) {
@@ -1986,7 +2055,7 @@ class GanttViewModel extends ChangeNotifier {
       end: task.end.add(const Duration(days: 1)),
     );
 
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'INSERT',
         data: {
@@ -2018,7 +2087,7 @@ class GanttViewModel extends ChangeNotifier {
   void handleDeleteTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
 
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'DELETE',
         data: {
@@ -2027,6 +2096,22 @@ class GanttViewModel extends ChangeNotifier {
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
       ));
+    }
+
+    // Check if we need to delete the resource row (if empty parents/rows are hidden)
+    final remainingTasksInRow = _allGanttTasks.where((t) => t.rowId == task.rowId && t.id != task.id).length;
+    if (remainingTasksInRow == 0 && !_showEmptyParentRows) {
+      if (_syncClient != null) {
+        _syncClient!.sendOperation(Operation(
+          type: 'DELETE_RESOURCE',
+          data: {'id': task.rowId},
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+      if (_useLocalDatabase) {
+        _localRepository.deleteResource(task.rowId);
+      }
     }
 
     if (_useLocalDatabase) {
@@ -2182,42 +2267,88 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// Deletes a row from the grid and all associated tasks from the Gantt chart.
+  /// Deletes a row from the grid and all associated tasks from the Gantt chart.
   void deleteRow(String rowId) {
     if (_apiResponse == null) return;
 
-    // Find the parent data to check if we are deleting a parent or a child.
+    // 1. Identify Resources to Delete
+    final resourcesToDelete = <String>{};
     final parentData = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
 
-    List<LegacyGanttTask> nextTasks;
-
     if (parentData != null) {
-      // This is a child row (a job).
-      parentData.children.removeWhere((child) => child.id == rowId);
-      final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
-      parentResource?.children.removeWhere((job) => job.id == rowId);
-      // Deleting a child row is simple
-      nextTasks = _allGanttTasks.where((task) => task.rowId != rowId).toList();
+      // Deleting a child row (Job)
+      resourcesToDelete.add(rowId);
     } else {
-      // This is a parent row (a person).
+      // Deleting a parent row (Person) - Cascades to children
       final parentToDelete = _gridData.firstWhereOrNull((p) => p.id == rowId);
       if (parentToDelete != null) {
-        final childIds = parentToDelete.children.map((c) => c.id).toSet();
-        // Remove tasks associated with the parent and all its children.
-        nextTasks = _allGanttTasks.where((task) => task.rowId != rowId && !childIds.contains(task.rowId)).toList();
-
-        // Remove from data sources
-        _gridData.removeWhere((parent) => parent.id == rowId);
-        _cachedFlatGridData = null;
-        _apiResponse?.resourcesData.removeWhere((resource) => resource.id == rowId);
-      } else {
-        nextTasks = List.from(_allGanttTasks);
+        resourcesToDelete.add(rowId);
+        resourcesToDelete.addAll(parentToDelete.children.map((c) => c.id));
       }
     }
 
-    // After removing the row and its tasks, recalculate stacking.
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-        _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
-    _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    if (resourcesToDelete.isEmpty) return; // Should not happen if rowId is valid
+
+    // 2. Identify Tasks to Delete
+    final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
+
+    // 3. Sync & Persist
+    // Send operations for Tasks
+    for (final task in tasksToDelete) {
+      if (_syncClient != null) {
+        _syncClient!.sendOperation(Operation(
+          type: 'DELETE',
+          data: {'id': task.id},
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+      if (_useLocalDatabase) {
+        _localRepository.deleteTask(task.id);
+      }
+    }
+
+    // Send operations for Resources
+    for (final resId in resourcesToDelete) {
+      if (_syncClient != null) {
+        _syncClient!.sendOperation(Operation(
+          type: 'DELETE_RESOURCE',
+          data: {'id': resId},
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'local-user',
+        ));
+      }
+      if (_useLocalDatabase) {
+        _localRepository.deleteResource(resId);
+      }
+    }
+
+    // 4. Update In-Memory State (Client-side view update)
+    if (!_useLocalDatabase) {
+      // Only manually update in-memory state if we are NOT using the DB stream.
+      // If we ARE using DB, the stream usage in _processLocalData will eventually handle this,
+      // but waiting for stream might cause UI lag.
+      // Ideally, simple deletion reflects via stream.
+      // But let's mirror the old logic for non-DB mode:
+
+      final nextTasks = _allGanttTasks.where((task) => !tasksToDelete.contains(task)).toList();
+
+      if (parentData != null) {
+        // Child row removed
+        parentData.children.removeWhere((child) => child.id == rowId);
+        final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
+        parentResource?.children.removeWhere((job) => job.id == rowId);
+      } else {
+        // Parent row removed
+        _gridData.removeWhere((p) => p.id == rowId);
+        _apiResponse?.resourcesData.removeWhere((r) => r.id == rowId);
+      }
+      _cachedFlatGridData = null;
+
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
   }
 
   /// A helper to find the parent ID for any given row ID (child or parent).
@@ -2331,7 +2462,7 @@ class GanttViewModel extends ChangeNotifier {
     if (!_dependencies.any((d) =>
         d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
       // Sync Client Notification
-      if (_syncClient != null && _isSyncConnected) {
+      if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'INSERT_DEPENDENCY',
           data: {
@@ -2366,7 +2497,7 @@ class GanttViewModel extends ChangeNotifier {
 
     if (newList.length < initialCount) {
       // Sync Client Notification
-      if (_syncClient != null && _isSyncConnected) {
+      if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_DEPENDENCY',
           data: {
@@ -2392,7 +2523,7 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Removes all dependencies associated with a given task.
   void clearDependenciesForTask(LegacyGanttTask task) {
-    if (_syncClient != null && _isSyncConnected) {
+    if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': task.id},

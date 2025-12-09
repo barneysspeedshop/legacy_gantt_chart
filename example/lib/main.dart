@@ -80,6 +80,7 @@ class _GanttViewState extends State<GanttView> {
   bool _isPanelVisible = true;
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
+  bool _showCursors = true;
 
   // Sync Client Controllers
   late final TextEditingController _uriController;
@@ -95,7 +96,7 @@ class _GanttViewState extends State<GanttView> {
     // Initialize Sync Controllers with default values
     _uriController = TextEditingController(text: 'http://localhost:8080');
     _tenantIdController = TextEditingController(text: 'debug');
-    _usernameController = TextEditingController(text: 'debug  ');
+    _usernameController = TextEditingController(text: 'debug');
     _passwordController = TextEditingController(text: 'debug');
   }
 
@@ -588,6 +589,16 @@ class _GanttViewState extends State<GanttView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('Show Cursors'),
+                Switch(
+                  value: _showCursors,
+                  onChanged: (val) => setState(() => _showCursors = val),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 const Text('Show Empty Parents'),
                 Switch(
                   value: vm.showEmptyParentRows,
@@ -1030,7 +1041,8 @@ class _GanttViewState extends State<GanttView> {
                                               child: LegacyGanttChartWidget(
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                                // syncClient: _mockSyncClient, // Removed for local db mode
+                                                syncClient: vm.syncClient,
+                                                showCursors: _showCursors,
                                                 taskGrouper: (task) => task.rowId,
                                                 // --- Custom Builders ---
                                                 timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),

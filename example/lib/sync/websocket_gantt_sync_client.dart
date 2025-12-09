@@ -52,7 +52,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     try {
       _channel = _channelFactory(finalUri);
-      _connectionStateController.add(true); // Connected
+      // _connectionStateController.add(true); // Don't allow send until subscribed
 
       // Send subscribe message immediately upon connection
       _channel!.sink.add(jsonEncode({
@@ -65,17 +65,32 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
           try {
             final envelope = jsonDecode(message as String) as Map<String, dynamic>;
             final type = envelope['type'] as String;
+            final dataMap = envelope['data'];
+
+            final timestamp = envelope['timestamp'];
+            final actorId = envelope['actorId'];
+
+            if (timestamp == null || actorId == null) {
+              if (type == 'SUBSCRIBE_SUCCESS') {
+                print('Subscription confirmed: ${envelope['channel']}');
+                _connectionStateController.add(true); // Now we are ready
+              } else {
+                print('Skipping message without timestamp/actorId: $type');
+              }
+              return;
+            }
 
             // Construct Operation from envelope fields
             final op = Operation(
               type: type,
-              data: envelope['data'] as Map<String, dynamic>,
-              timestamp: envelope['timestamp'] as int,
-              actorId: envelope['actorId'] as String,
+              data: dataMap != null ? dataMap as Map<String, dynamic> : <String, dynamic>{},
+              timestamp: timestamp as int,
+              actorId: actorId as String,
             );
             _operationController.add(op);
           } catch (e) {
             print('Error parsing operation: $e');
+            print('Raw message was: $message');
           }
         },
         onDone: () {
@@ -132,7 +147,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       'actorId': operation.actorId,
     };
 
-    _channel!.sink.add(jsonEncode(envelope));
+    final encodedEnvelope = jsonEncode(envelope);
+    print('WebSocketClient Sending: $encodedEnvelope');
+    _channel!.sink.add(encodedEnvelope);
   }
 
   Future<void> dispose() async {
