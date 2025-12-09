@@ -1,4 +1,4 @@
-## 4.0.0-CRDT.alpha.5
+## 4.0.0-CRDT.alpha.6
 
 * **FIX**: Fix lint
 
