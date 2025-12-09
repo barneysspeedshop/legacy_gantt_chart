@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.8
+
+* **EXAMPLE FIX**: Fix grid row expand/collapse state
+
 ## 4.0.0-CRDT.alpha.7
 
 * **FIX**: Fix ghost bar sync

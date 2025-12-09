@@ -173,6 +173,16 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _queueOperation(Operation operation) async {
+    // Ephemeral operations (cursor/ghost) should NOT be stored if we are offline.
+    // They are only useful in real-time.
+    const duplicateOps = {'CURSOR_MOVE', 'GHOST_UPDATE'};
+    if (duplicateOps.contains(operation.type)) {
+      if (!_isConnected || _innerClient == null) {
+        print('OfflineClient: Dropping ephemeral operation ${operation.type} because offline');
+        return;
+      }
+    }
+
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing operation ${operation.type}');
     await _lock.synchronized(() async {

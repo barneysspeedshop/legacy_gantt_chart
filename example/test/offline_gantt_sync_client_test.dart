@@ -187,5 +187,26 @@ void main() {
       expect(mockInner.sentOperations.length, 52);
       expect(mockInner.sentOperations.last.type, isNotNull);
     });
+    test('Drops ephemeral operations when offline', () async {
+      mockInner.shouldFailSend = true;
+
+      // Send ephemeral operations
+      await client.sendOperation(Operation(type: 'CURSOR_MOVE', data: {}, timestamp: 1, actorId: 'A'));
+      await client.sendOperation(Operation(type: 'GHOST_UPDATE', data: {}, timestamp: 2, actorId: 'A'));
+
+      // Send a normal operation
+      await client.sendOperation(Operation(type: 'NORMAL_OP', data: {}, timestamp: 3, actorId: 'A'));
+
+      // Reconnect
+      mockInner.shouldFailSend = false;
+      mockInner.connectionController.add(true);
+
+      // Wait for flush
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Should only see the normal operation
+      expect(mockInner.sentOperations, hasLength(1));
+      expect(mockInner.sentOperations.first.type, 'NORMAL_OP');
+    });
   });
 }
