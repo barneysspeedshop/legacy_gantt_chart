@@ -1,3 +1,8 @@
+## 4.0.0-CRDT.alpha.7
+
+* **FIX**: Fix ghost bar sync
+* **FIX**: Fix conflict visualization on clients receiving updates
+
 ## 4.0.0-CRDT.alpha.6
 
 * **FIX**: Fix lint
