@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
+import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
@@ -195,7 +196,7 @@ void main() {
 
       // So it should work!
       expect(mockSyncClient.sentOperations, isNotEmpty);
-      expect(mockSyncClient.sentOperations.first.type, 'UPDATE_TASK');
+      expect(mockSyncClient.sentOperations.any((op) => op.type == 'UPDATE_TASK'), isTrue);
     });
   });
 
@@ -472,6 +473,62 @@ void main() {
 
       // 0 + (100 - 200) = -100.
       expect(viewModel.translateY, -100.0);
+    });
+
+    test('disposal safety check', () {
+      final task = LegacyGanttTask(
+          id: 't1',
+          name: 'Task 1',
+          start: DateTime.now(),
+          end: DateTime.now().add(const Duration(days: 1)),
+          rowId: 'r1');
+      viewModel.dispose();
+
+      // Call various update methods. They should NOT throw "A LegacyGanttViewModel was used after being disposed"
+      // because we guarded them. If they were valid calls, they would notify listeners, which throws if disposed.
+
+      // 1. updateData
+      viewModel.updateData([]);
+
+      // 2. setFocusedTask
+      viewModel.setFocusedTask('t1');
+
+      // 3. updateLayout
+      viewModel.updateLayout(100, 100);
+
+      // 4. deleteTask
+      viewModel.deleteTask(task);
+
+      // 5. updateResizeTooltipDateFormat
+      viewModel.updateResizeTooltipDateFormat((d) => '');
+
+      // If we got here without error, we are good.
+      expect(true, isTrue);
+    });
+
+    test('updateDependencies does NOT sync changes from external source', () {
+      final mockSyncClient = MockGanttSyncClient();
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [task1],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+      );
+
+      const dep1 = LegacyGanttTaskDependency(
+        predecessorTaskId: 't1',
+        successorTaskId: 't2',
+      );
+
+      // Simulate parent widget updating dependencies (e.g. from local DB)
+      viewModel.updateDependencies([dep1]);
+
+      // Expectation: NO operations sent.
+      // Current behavior (bug): INSERT_DEPENDENCY sent.
+      expect(mockSyncClient.sentOperations, isEmpty);
     });
   });
 }

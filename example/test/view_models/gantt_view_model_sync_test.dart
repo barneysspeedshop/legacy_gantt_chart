@@ -161,7 +161,7 @@ void main() {
       // if (_syncClient != null && _isSyncConnected) { _syncClient!.sendOperation(...) }
       // So it should send it.
 
-      viewModel.handleTaskUpdate(
+      await viewModel.handleTaskUpdate(
         task,
         DateTime(2023, 1, 3), // new start
         DateTime(2023, 1, 4), // new end
@@ -169,7 +169,7 @@ void main() {
 
       expect(fakeClient.sentOperations, hasLength(1));
       final op = fakeClient.sentOperations.first;
-      expect(op.type, 'UPDATE');
+      expect(op.type, 'UPDATE_TASK');
       expect(op.data['id'], 'task1');
       expect(op.data['start_date'], DateTime(2023, 1, 3).millisecondsSinceEpoch);
     });

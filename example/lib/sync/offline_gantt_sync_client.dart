@@ -97,56 +97,57 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     // Only flush if we think we are connected.
     if (!_isConnected || _innerClient == null) return;
 
-    await _lock.synchronized(() async {
-      while (_isConnected && _innerClient != null) {
-        if (!_isDbReady) {
-          print('OfflineClient: DB not ready, waiting...');
-          await _dbInitFuture;
-        }
+    while (_isConnected && _innerClient != null) {
+      if (!_isDbReady) {
+        print('OfflineClient: DB not ready, waiting...');
+        await _dbInitFuture;
+      }
 
-        final rows = await _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC');
-        if (rows.isEmpty) break;
+      // Read next batch (with lock)
+      final rows = await _lock
+          .synchronized(() => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 50'));
 
-        print('Flushing ${rows.length} offline operations...');
+      if (rows.isEmpty) break;
 
-        for (final row in rows) {
-          // Double check connection before each send to allow abort
-          if (!_isConnected || _innerClient == null) break;
+      print('Flushing ${rows.length} offline operations...');
 
-          final id = row['id'] as int;
-          try {
-            final dataDynamic = jsonDecode(row['data'] as String);
-            if (dataDynamic == null) {
-              print('Skipping queued op with null data: $id');
-              await _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]);
-              continue;
-            }
-            final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
+      for (final row in rows) {
+        // Double check connection before each send to allow abort
+        if (!_isConnected || _innerClient == null) break;
 
-            final op = Operation(
-              type: row['type'] as String,
-              data: dataMap,
-              timestamp: row['timestamp'] as int,
-              actorId: row['actor_id'] as String,
-            );
+        final id = row['id'] as int;
+        try {
+          final dataDynamic = jsonDecode(row['data'] as String);
+          if (dataDynamic == null) {
+            print('Skipping queued op with null data: $id');
+            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
+            continue;
+          }
+          final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
 
-            print('Flushing OP: ${op.type}, Timestamp: ${op.timestamp}');
-            if (_innerClient != null) {
-              await _innerClient!.sendOperation(op);
-              await _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]);
-            }
-          } catch (e) {
-            print('Failed to convert/send queued op id $id: $e');
-            if (e.toString().contains('FormatException') || e.toString().contains('subtype')) {
-              print('Deleting malformed op $id');
-              await _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]);
-            } else {
-              break;
-            }
+          final op = Operation(
+            type: row['type'] as String,
+            data: dataMap,
+            timestamp: row['timestamp'] as int,
+            actorId: row['actor_id'] as String,
+          );
+
+          print('Flushing OP: ${op.type}, Timestamp: ${op.timestamp}');
+          if (_innerClient != null) {
+            await _innerClient!.sendOperation(op);
+            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
+          }
+        } catch (e) {
+          print('Failed to convert/send queued op id $id: $e');
+          if (e.toString().contains('FormatException') || e.toString().contains('subtype')) {
+            print('Deleting malformed op $id');
+            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
+          } else {
+            break;
           }
         }
       }
-    });
+    }
   }
 
   @override
@@ -174,15 +175,17 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void> _queueOperation(Operation operation) async {
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing operation ${operation.type}');
-    await _db.execute(
-      'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-      [
-        operation.type,
-        jsonEncode(operation.data),
-        operation.timestamp,
-        operation.actorId,
-      ],
-    );
+    await _lock.synchronized(() async {
+      await _db.execute(
+        'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
+        [
+          operation.type,
+          jsonEncode(operation.data),
+          operation.timestamp,
+          operation.actorId,
+        ],
+      );
+    });
   }
 
   Future<void> dispose() async {

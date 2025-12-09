@@ -6,6 +6,7 @@ import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_theme.dart';
+import 'models/remote_ghost.dart';
 
 /// A [CustomPainter] responsible for drawing all the task bars, dependency lines,
 /// and other visual elements onto the main Gantt chart grid area.
@@ -45,6 +46,9 @@ class BarsCollectionPainter extends CustomPainter {
 
   /// The projected end date of the task being dragged.
   final DateTime? ghostTaskEnd;
+
+  /// Map of remote ghosts from other users (keyed by user ID).
+  final Map<String, RemoteGhost> remoteGhosts;
 
   /// The theme data that defines the colors and styles for the chart elements.
   final LegacyGanttTheme theme;
@@ -93,6 +97,7 @@ class BarsCollectionPainter extends CustomPainter {
     this.draggedTaskId,
     this.ghostTaskStart,
     this.ghostTaskEnd,
+    this.remoteGhosts = const {},
     required this.theme,
     this.hoveredRowId,
     this.hoveredDate,
@@ -392,6 +397,52 @@ class BarsCollectionPainter extends CustomPainter {
             final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
             canvas.drawRRect(barRRect, barPaint);
           }
+        }
+      }
+    }
+
+    // 5. Draw remote ghosts
+    for (final ghost in remoteGhosts.values) {
+      if (ghost.taskId.isEmpty) continue;
+
+      // Find the task definition to get row and color info
+      // We might fallback to just finding by ID in the data list
+      final originalTask = data.firstWhere((t) => t.id == ghost.taskId,
+          orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+
+      if (originalTask.id.isNotEmpty) {
+        double ghostRowTop = 0;
+        bool foundRow = false;
+        for (var rowData in visibleRows) {
+          if (rowData.id == originalTask.rowId) {
+            foundRow = true;
+            break;
+          }
+          final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
+          ghostRowTop += rowHeight * stackDepth;
+        }
+
+        if (foundRow) {
+          final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
+          final double barHeight = rowHeight * theme.barHeightRatio;
+          final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
+
+          final double barStartX = scale(ghost.start);
+          final double barEndX = scale(ghost.end);
+          final double barWidth = max(0, barEndX - barStartX);
+
+          final RRect barRRect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+            theme.barCornerRadius,
+          );
+
+          // Generate a color for the user if possible, or use ghost color with unique opacity/shade
+          final userColor = Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
+          final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
+
+          canvas.drawRRect(barRRect, barPaint);
+
+          // Optional: Draw user name or Label? For now, just the bar.
         }
       }
     }

@@ -11,8 +11,17 @@ class CRDTEngine {
     final taskMap = {for (var t in currentTasks) t.id: t};
 
     for (var op in operations) {
-      if (op.type == 'UPDATE_TASK') {
-        final taskId = op.data['id'] as String;
+      final opData = op.data;
+      // Handle both 'id' and 'taskId' for robustness
+      final String? taskId = opData['id'] as String? ?? opData['taskId'] as String?;
+
+      if (taskId == null) {
+        // Skip operations without a valid task ID
+        print('CRDTEngine Warning: Operation ${op.type} missing id. Data: $opData');
+        continue;
+      }
+
+      if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
         final existingTask = taskMap[taskId];
 
         // LWW check
@@ -23,12 +32,13 @@ class CRDTEngine {
           // For simplicity, let's assume it contains the fields that changed or the full task
 
           // If it's a full replacement (simplest for now):
-          if (op.data.containsKey('start') && op.data.containsKey('end')) {
+          // UPDATE: Also checking for name or rowId as partial updates might not have start/end
+          // but _createTaskFromOp handles basic merging.
+          if (op.data.containsKey('start') || op.data.containsKey('end') || op.data.containsKey('name')) {
             taskMap[taskId] = _createTaskFromOp(op, existingTask);
           }
         }
       } else if (op.type == 'DELETE_TASK') {
-        final taskId = op.data['id'] as String;
         final existingTask = taskMap[taskId];
         if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
           taskMap.remove(taskId);
@@ -49,8 +59,10 @@ class CRDTEngine {
     return LegacyGanttTask(
       id: data['id'],
       rowId: data['rowId'] ?? existing?.rowId ?? '',
-      start: DateTime.parse(data['start']),
-      end: DateTime.parse(data['end']),
+      start: data['start'] != null ? DateTime.parse(data['start']) : (existing?.start ?? DateTime.now()),
+      end: data['end'] != null
+          ? DateTime.parse(data['end'])
+          : (existing?.end ?? DateTime.now().add(const Duration(days: 1))),
       name: data['name'] ?? existing?.name,
       color: existing?.color, // Color serialization is tricky, skipping for brevity
       textColor: existing?.textColor,

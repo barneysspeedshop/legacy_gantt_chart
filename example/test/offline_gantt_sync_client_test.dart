@@ -159,5 +159,33 @@ void main() {
       expect(mockInner.sentOperations[0].type, 'OFFLINE_OP');
       expect(mockInner.sentOperations[1].type, 'ONLINE_OP');
     });
+
+    test('Handles concurrent flushing and queuing without locking DB', () async {
+      // 1. Queue many items
+      mockInner.shouldFailSend = true;
+      for (int i = 0; i < 50; i++) {
+        await client.sendOperation(Operation(type: 'MSG_$i', data: {}, timestamp: i, actorId: 'A'));
+      }
+
+      // 2. Go online. Flush starts.
+      // We simulate a slow network send in the mock to keep the flush active.
+      mockInner.shouldFailSend = false;
+      // We need to subclass MockInner to add delay or modify it.
+      // For now, let's just hammer 'sendOperation' while it's flushing.
+
+      mockInner.connectionController.add(true);
+
+      // 3. Immediately queue more items concurrently
+      final future1 = client.sendOperation(Operation(type: 'CONCURRENT_1', data: {}, timestamp: 100, actorId: 'A'));
+      final future2 = client.sendOperation(Operation(type: 'CONCURRENT_2', data: {}, timestamp: 101, actorId: 'A'));
+
+      await Future.wait<void>([future1, future2]);
+
+      // Wait for everything to flush
+      await Future.delayed(const Duration(seconds: 1));
+
+      expect(mockInner.sentOperations.length, 52);
+      expect(mockInner.sentOperations.last.type, isNotNull);
+    });
   });
 }

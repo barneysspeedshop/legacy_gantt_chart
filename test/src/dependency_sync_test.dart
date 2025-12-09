@@ -118,6 +118,9 @@ void main() {
       expect(op.data['successorTaskId'], 't2');
     });
 
+    // Test disabled: updateDependencies no longer sends operations to prevent feedback loops.
+    // See LegacyGanttViewModel.updateDependencies implementation.
+    /*
     test('updateDependencies diffs and sends operations', () {
       const dep1 = LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2');
       const dep2 = LegacyGanttTaskDependency(predecessorTaskId: 't3', successorTaskId: 't4');
@@ -141,6 +144,7 @@ void main() {
       final insertOp = mockSyncClient.sentOperations.firstWhere((o) => o.type == 'INSERT_DEPENDENCY');
       expect(insertOp.data['predecessorTaskId'], 't3');
     });
+    */
 
     test('Incoming sync does NOT cause echo in updateDependencies', () async {
       const dep = LegacyGanttTaskDependency(predecessorTaskId: 't1', successorTaskId: 't2');

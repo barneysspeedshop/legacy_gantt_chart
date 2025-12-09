@@ -7,6 +7,7 @@ import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/remote_cursor.dart';
+import 'models/remote_ghost.dart';
 import 'sync/gantt_sync_client.dart';
 import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
@@ -55,6 +56,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateAxisHeight(double? newHeight) {
     if (_axisHeight != newHeight) {
+      if (isDisposed) return;
       _axisHeight = newHeight;
       notifyListeners();
     }
@@ -140,8 +142,75 @@ class LegacyGanttViewModel extends ChangeNotifier {
   bool get showRemoteCursors => _showRemoteCursors;
   set showRemoteCursors(bool value) {
     if (_showRemoteCursors != value) {
+      if (isDisposed) return;
       _showRemoteCursors = value;
       notifyListeners();
+    }
+  }
+
+  // --- Remote Ghost State ---
+  final Map<String, RemoteGhost> _remoteGhosts = {};
+  Map<String, RemoteGhost> get remoteGhosts => Map.unmodifiable(_remoteGhosts);
+
+  Timer? _ghostUpdateThrottle;
+  static const Duration _ghostThrottleDuration = Duration(milliseconds: 50);
+
+  void _sendGhostUpdate(String taskId, DateTime start, DateTime end) {
+    if (syncClient == null) return;
+    if (_ghostUpdateThrottle?.isActive ?? false) return;
+
+    _ghostUpdateThrottle = Timer(_ghostThrottleDuration, () {
+      syncClient!.sendOperation(Operation(
+        type: 'GHOST_UPDATE',
+        data: {
+          'taskId': taskId,
+          'start': start.millisecondsSinceEpoch,
+          'end': end.millisecondsSinceEpoch,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'me', // SyncClient will likely overwrite this, but good to have
+      ));
+    });
+  }
+
+  void _clearGhostUpdate(String taskId) {
+    _ghostUpdateThrottle?.cancel();
+    if (syncClient != null) {
+      syncClient!.sendOperation(Operation(
+        type: 'GHOST_UPDATE',
+        data: {
+          'taskId': taskId,
+          'start': null,
+          'end': null,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'me',
+      ));
+    }
+  }
+
+  void _handleRemoteGhostUpdate(Map<String, dynamic> data, String actorId) {
+    final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
+    final taskId = actualData['taskId'] as String?;
+    final startMs = actualData['start'] as int?;
+    final endMs = actualData['end'] as int?;
+
+    if (taskId != null) {
+      if (startMs == null || endMs == null) {
+        // Clear ghost
+        _remoteGhosts.remove(actorId);
+      } else {
+        // Update ghost
+        _remoteGhosts[actorId] = RemoteGhost(
+          userId: actorId,
+          taskId: taskId,
+          start: DateTime.fromMillisecondsSinceEpoch(startMs),
+          end: DateTime.fromMillisecondsSinceEpoch(endMs),
+          lastUpdated: DateTime.now(),
+        );
+      }
+
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -178,7 +247,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
         color: Colors.primaries[actorId.hashCode % Colors.primaries.length],
         lastUpdated: DateTime.now(),
       );
-      notifyListeners();
+
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -234,6 +304,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (syncClient != null) {
       _syncSubscription = syncClient!.operationStream.listen((op) {
+        if (isDisposed) return;
         if (op.type == 'INSERT_DEPENDENCY') {
           final data = op.data;
           final typeStr = data['type'] as String? ?? 'finishToStart';
@@ -276,6 +347,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
           notifyListeners();
         } else if (op.type == 'CURSOR_MOVE') {
           _handleRemoteCursorMove(op.data, op.actorId);
+        } else if (op.type == 'GHOST_UPDATE') {
+          _handleRemoteGhostUpdate(op.data, op.actorId);
         } else {
           _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
           if (taskGrouper != null) {
@@ -283,9 +356,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
               tasks: _tasks,
               taskGrouper: taskGrouper!,
             );
-            // Remove old conflict indicators first (assuming they are marked isOverlapIndicator)
-            _tasks.removeWhere((t) => t.isOverlapIndicator);
-            _tasks.addAll(conflicts);
+            conflictIndicators = conflicts;
           }
           _calculateDomains(); // Recalculate domains as data changed
           notifyListeners();
@@ -299,13 +370,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
     if (resizeTooltipDateFormat != newFormat) {
       resizeTooltipDateFormat = newFormat;
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
   /// Updates the list of dependencies and notifies listeners to trigger a repaint.
   void updateData(List<LegacyGanttTask> data) {
     if (!listEquals(_tasks, data)) {
+      if (isDisposed) return;
       _tasks = data;
       notifyListeners();
     }
@@ -313,6 +385,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateConflictIndicators(List<LegacyGanttTask> conflictIndicators) {
     if (!listEquals(this.conflictIndicators, conflictIndicators)) {
+      if (isDisposed) return;
       this.conflictIndicators = conflictIndicators;
       notifyListeners();
     }
@@ -320,6 +393,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateVisibleRows(List<LegacyGanttRow> visibleRows) {
     if (!listEquals(this.visibleRows, visibleRows)) {
+      if (isDisposed) return;
       this.visibleRows = visibleRows;
       notifyListeners();
     }
@@ -327,6 +401,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateRowMaxStackDepth(Map<String, int> rowMaxStackDepth) {
     if (!mapEquals(this.rowMaxStackDepth, rowMaxStackDepth)) {
+      if (isDisposed) return;
       this.rowMaxStackDepth = rowMaxStackDepth;
       notifyListeners();
     }
@@ -334,21 +409,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateDependencies(List<LegacyGanttTaskDependency> newDependencies) {
     if (!listEquals(dependencies, newDependencies)) {
-      if (syncClient != null) {
-        final oldSet = dependencies.toSet();
-        final newSet = newDependencies.toSet();
-        final added = newSet.difference(oldSet);
-        final removed = oldSet.difference(newSet);
+      // updateDependencies is intended to reflect external state changes (e.g. from DB)
+      // It should NOT automatically generate sync operations, as that leads to feedback loops.
+      // Operations are generated by explicit user actions (addDependency, removeDependency).
 
-        for (final dep in added) {
-          _sendDependencyOp('INSERT_DEPENDENCY', dep);
-        }
-        for (final dep in removed) {
-          _sendDependencyOp('DELETE_DEPENDENCY', dep);
-        }
-      }
       dependencies = newDependencies;
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -364,7 +430,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (dependencies.contains(dependency)) {
       dependencies = List.from(dependencies)..remove(dependency);
       _sendDependencyOp('DELETE_DEPENDENCY', dependency);
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -411,6 +477,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateFocusedTask(String? newFocusedTaskId) {
     if (_focusedTaskId != newFocusedTaskId) {
+      if (isDisposed) return;
       _focusedTaskId = newFocusedTaskId;
       notifyListeners();
     }
@@ -554,6 +621,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Manually sets the vertical scroll offset.
   void setTranslateY(double newTranslateY) {
     if (_translateY != newTranslateY) {
+      if (isDisposed) return;
       _translateY = newTranslateY;
       notifyListeners();
     }
@@ -568,7 +636,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       // Recalculate domains and scales based on the new visible range.
       _calculateDomains();
       _calculateRowOffsets(); // Recalculate if visible rows could have changed
-      notifyListeners();
+      _calculateDomains();
+      _calculateRowOffsets(); // Recalculate if visible rows could have changed
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -723,7 +793,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           _dragMode = DragMode.move;
           break;
       }
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     } else {
       // If we didn't hit a task, we can still pan the chart horizontally
       _panType = PanType.horizontal;
@@ -732,7 +802,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _dragStartGlobalX = details.globalPosition.dx;
       _dragMode = DragMode.none;
       // We don't sent _draggedTask, so we know it's a pan operation
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -747,6 +817,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_panType == PanType.horizontal) {
       if (_draggedTask != null) {
         _handleHorizontalPan(details);
+        if (_ghostTaskStart != null && _ghostTaskEnd != null) {
+          _sendGhostUpdate(_draggedTask!.id, _ghostTaskStart!, _ghostTaskEnd!);
+        }
       } else {
         // Panning the view (scrolling)
         // Delta is purely from the update event for smoother scrolling if we accumulate,
@@ -763,6 +836,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void onHorizontalPanEnd(DragEndDetails details) {
     if (_panType == PanType.horizontal) {
       // Execute existing finish logic
+      if (_draggedTask != null) {
+        _clearGhostUpdate(_draggedTask!.id);
+      }
       if (_draggedTask != null && _ghostTaskStart != null && _ghostTaskEnd != null) {
         if (syncClient != null) {
           final op = Operation(
@@ -775,9 +851,46 @@ class LegacyGanttViewModel extends ChangeNotifier {
             timestamp: DateTime.now().millisecondsSinceEpoch,
             actorId: 'user',
           );
+
           syncClient!.sendOperation(op);
           _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
+
+          if (taskGrouper != null) {
+            final conflicts = LegacyGanttConflictDetector().run(
+              tasks: _tasks,
+              taskGrouper: taskGrouper!,
+            );
+            conflictIndicators = conflicts;
+            if (!isDisposed) notifyListeners();
+          }
+
+          // Always notify parent app of updates, even in sync mode.
+          // This allows for local persistence or other side effects.
+          onTaskUpdate?.call(_draggedTask!, _ghostTaskStart!, _ghostTaskEnd!);
         } else {
+          // Local mode: Optimistically update internal state to prevent "snap back"
+          final updatedTask = _draggedTask!.copyWith(
+            start: _ghostTaskStart,
+            end: _ghostTaskEnd,
+          );
+
+          final index = _tasks.indexWhere((t) => t.id == updatedTask.id);
+          if (index != -1) {
+            _tasks[index] = updatedTask;
+
+            // Recalculate conflicts locally if needed
+            if (taskGrouper != null) {
+              final conflicts = LegacyGanttConflictDetector().run(
+                tasks: _tasks,
+                taskGrouper: taskGrouper!,
+              );
+              conflictIndicators = conflicts;
+            }
+            // Notify listeners to show the change immediately
+            notifyListeners();
+          }
+
+          // Then persist the change via callback
           onTaskUpdate?.call(_draggedTask!, _ghostTaskStart!, _ghostTaskEnd!);
         }
       }
@@ -786,6 +899,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void onHorizontalPanCancel() {
+    if (_draggedTask != null) {
+      _clearGhostUpdate(_draggedTask!.id);
+    }
     _resetDragState();
   }
 
@@ -842,7 +958,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _originalTaskEnd = overrideTask.end;
       // Assuming move for override default
       _dragMode = DragMode.move;
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
       return;
     }
 
@@ -967,7 +1083,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           _hoveredRowId = rowId;
           _hoveredDate = day;
           newCursor = SystemMouseCursors.click;
-          notifyListeners();
+          if (!isDisposed) notifyListeners();
         }
       } else {
         // Hovering over dead space or feature is disabled
@@ -979,7 +1095,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (_cursor != newCursor) {
       _cursor = newCursor;
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
 
     if (onTaskHover != null) {
@@ -1009,7 +1125,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_hoveredRowId != null || _hoveredDate != null) {
       _hoveredRowId = null;
       _hoveredDate = null;
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -1019,7 +1135,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _focusedTaskId = taskId;
       onFocusChange?.call(taskId);
       _scrollToFocusedTask();
-      notifyListeners();
+      if (!isDisposed) notifyListeners();
     }
   }
 
@@ -1269,7 +1385,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _resizeTooltipPosition = details.localPosition.translate(0, -40);
       }
     }
-    notifyListeners();
+    if (!isDisposed) notifyListeners();
   }
 
   Duration _pixelToDuration(double pixels) {
@@ -1285,7 +1401,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void deleteTask(LegacyGanttTask task) {
     onTaskDelete?.call(task);
-    notifyListeners();
+    if (!isDisposed) notifyListeners();
   }
 
   void _handleHorizontalScroll(double deltaPixels) {
@@ -1335,7 +1451,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       onVisibleRangeChanged!(_visibleExtent.first, _visibleExtent.last);
     }
 
-    notifyListeners();
+    if (!isDisposed) notifyListeners();
   }
 
   /// Handles horizontal scroll events, e.g., from a mouse wheel or trackpad.

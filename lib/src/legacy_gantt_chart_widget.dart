@@ -543,7 +543,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(Object.hashAll([...tasks, ...conflictIndicators, ...widget.visibleRows, widget.syncClient])),
+        // Use a stable key to prevent re-creating the ViewModel on every data change.
+        // Data updates are handled by didUpdateWidget -> updateData.
+        key: ValueKey(widget.syncClient),
         create: (context) {
           // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(
@@ -723,7 +725,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                   children: [
                                     CustomPaint(
                                       painter: BarsCollectionPainter(
-                                        conflictIndicators: conflictIndicators,
+                                        conflictIndicators: vm.conflictIndicators,
                                         dependencies: vm.dependencies,
                                         data: vm.data,
                                         domain: vm.totalDomain,
@@ -734,6 +736,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                         draggedTaskId: vm.draggedTask?.id,
                                         ghostTaskStart: vm.ghostTaskStart,
                                         ghostTaskEnd: vm.ghostTaskEnd,
+                                        remoteGhosts: vm.remoteGhosts,
                                         theme: effectiveTheme,
                                         hoveredRowId: vm.hoveredRowId,
                                         hoveredDate: vm.hoveredDate,
