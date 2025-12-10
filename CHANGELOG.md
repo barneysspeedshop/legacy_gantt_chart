@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.12
+
+* **FIX**: Fix dependencies
+
 ## 4.0.0-CRDT.alpha.11
 
 * **FIX**: Fix platform support
