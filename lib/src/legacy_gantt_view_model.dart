@@ -197,21 +197,65 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (taskId != null) {
       if (startMs == null || endMs == null) {
-        // Clear ghost
-        _remoteGhosts.remove(actorId);
+        // Clear task drag part of ghost, but keep presence
+        if (_remoteGhosts.containsKey(actorId)) {
+          final existing = _remoteGhosts[actorId]!;
+          _remoteGhosts[actorId] = RemoteGhost(
+            userId: actorId,
+            taskId: '',
+            lastUpdated: DateTime.now(),
+            viewportStart: existing.viewportStart,
+            viewportEnd: existing.viewportEnd,
+            verticalScrollOffset: existing.verticalScrollOffset,
+            userName: existing.userName,
+            userColor: existing.userColor,
+          );
+        }
       } else {
-        // Update ghost
+        // Update ghost with drag info
+        final existing = _remoteGhosts[actorId];
         _remoteGhosts[actorId] = RemoteGhost(
           userId: actorId,
           taskId: taskId,
           start: DateTime.fromMillisecondsSinceEpoch(startMs),
           end: DateTime.fromMillisecondsSinceEpoch(endMs),
           lastUpdated: DateTime.now(),
+          viewportStart: existing?.viewportStart,
+          viewportEnd: existing?.viewportEnd,
+          verticalScrollOffset: existing?.verticalScrollOffset,
+          userName: existing?.userName,
+          userColor: existing?.userColor,
         );
       }
 
       if (!isDisposed) notifyListeners();
     }
+  }
+
+  void _handlePresenceUpdate(Map<String, dynamic> data, String actorId) {
+    if (isDisposed) return;
+    final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
+    final viewportStartMs = actualData['viewportStart'] as int?;
+    final viewportEndMs = actualData['viewportEnd'] as int?;
+    final scrollOffset = (actualData['verticalScrollOffset'] as num?)?.toDouble();
+    final name = actualData['userName'] as String?;
+    final color = actualData['userColor'] as String?;
+
+    final existing = _remoteGhosts[actorId];
+    _remoteGhosts[actorId] = RemoteGhost(
+      userId: actorId,
+      taskId: existing?.taskId ?? '',
+      start: existing?.start,
+      end: existing?.end,
+      lastUpdated: DateTime.now(),
+      viewportStart:
+          viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : existing?.viewportStart,
+      viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : existing?.viewportEnd,
+      verticalScrollOffset: scrollOffset ?? existing?.verticalScrollOffset,
+      userName: name ?? existing?.userName,
+      userColor: color ?? existing?.userColor,
+    );
+    notifyListeners();
   }
 
   Timer? _cursorUpdateThrottle;
@@ -350,6 +394,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
           _handleRemoteCursorMove(op.data, op.actorId);
         } else if (op.type == 'GHOST_UPDATE') {
           _handleRemoteGhostUpdate(op.data, op.actorId);
+        } else if (op.type == 'PRESENCE_UPDATE') {
+          _handlePresenceUpdate(op.data, op.actorId);
         } else {
           _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
           if (taskGrouper != null) {

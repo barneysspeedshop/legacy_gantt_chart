@@ -205,6 +205,20 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperation(Operation operation) async {
+    // Ephemeral operations should bypass persistence if possible to avoid DB contention.
+    // They are only useful in real-time.
+    const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
+    if (transientOps.contains(operation.type)) {
+      if (_innerClient != null && _isConnected) {
+        // Send directly, skip queue
+        await _innerClient!.sendOperation(operation);
+        return;
+      }
+      // If offline, we just drop them, as they are real-time only.
+      print('OfflineClient: Dropping transient operation ${operation.type} because offline');
+      return;
+    }
+
     // Outbox pattern: Always queue first to ensure persistence against crashes/network loss
     await _queueOperation(operation);
 
@@ -213,16 +227,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _queueOperation(Operation operation) async {
-    // Ephemeral operations (cursor/ghost) should NOT be stored if we are offline.
-    // They are only useful in real-time.
-    const duplicateOps = {'CURSOR_MOVE', 'GHOST_UPDATE'};
-    if (duplicateOps.contains(operation.type)) {
-      if (!_isConnected || _innerClient == null) {
-        print('OfflineClient: Dropping ephemeral operation ${operation.type} because offline');
-        return;
-      }
-    }
-
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing operation ${operation.type}');
     await _lock.synchronized(() async {

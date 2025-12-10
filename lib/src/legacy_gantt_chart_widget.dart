@@ -668,8 +668,19 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                     },
                     child: Listener(
                       onPointerSignal: (event) {
-                        if (event is PointerScrollEvent && event.scrollDelta.dx != 0) {
-                          vm.onHorizontalScroll(event.scrollDelta.dx);
+                        if (event is PointerScrollEvent) {
+                          if (event.scrollDelta.dx != 0) {
+                            vm.onHorizontalScroll(event.scrollDelta.dx);
+                          }
+                          if (event.scrollDelta.dy != 0) {
+                            // forward vertical scroll to the controller if attached
+                            if (vm.scrollController != null && vm.scrollController!.hasClients) {
+                              final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
+                              // We rely on jumpTo/animateTo to respect bounds
+                              vm.scrollController!.jumpTo(newOffset.clamp(vm.scrollController!.position.minScrollExtent,
+                                  vm.scrollController!.position.maxScrollExtent));
+                            }
+                          }
                         }
                       },
                       child: Container(

@@ -427,8 +427,10 @@ class BarsCollectionPainter extends CustomPainter {
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
-          final double barStartX = scale(ghost.start);
-          final double barEndX = scale(ghost.end);
+          if (ghost.start == null || ghost.end == null) continue;
+
+          final double barStartX = scale(ghost.start!);
+          final double barEndX = scale(ghost.end!);
           final double barWidth = max(0, barEndX - barStartX);
 
           final RRect barRRect = RRect.fromRectAndRadius(

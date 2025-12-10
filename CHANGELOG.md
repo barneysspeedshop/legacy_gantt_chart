@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.10
+
+* **FEATURE**: Follow me! (follow a user's cursor/pan/scroll/zoom)
+
 ## 4.0.0-CRDT.alpha.9
 
 * **FEATURE**: Move sync operations from example to library

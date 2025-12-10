@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:legacy_gantt_chart/src/models/remote_ghost.dart';
+// other imports...
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -751,6 +754,10 @@ class GanttViewModel extends ChangeNotifier {
     if (_areScrollListenersAttached) return;
     _gridScrollController.addListener(_syncGanttScroll);
     _ganttScrollController.addListener(_syncGridScroll);
+
+    // Ensure presence is broadcast even if the other controller is detached
+    _gridScrollController.addListener(_broadcastPresence);
+
     _areScrollListenersAttached = true;
   }
 
@@ -763,6 +770,7 @@ class GanttViewModel extends ChangeNotifier {
       _gridScrollController.jumpTo(_ganttScrollController.offset);
     }
     _isSyncingGridScroll = false;
+    _broadcastPresence(); // Broadcast vertical scroll change
   }
 
   void _syncGridScroll() {
@@ -774,6 +782,7 @@ class GanttViewModel extends ChangeNotifier {
       _ganttScrollController.jumpTo(_gridScrollController.offset);
     }
     _isSyncingGanttScroll = false;
+    _broadcastPresence(); // Broadcast vertical scroll change
   }
 
   @override
@@ -1123,6 +1132,7 @@ class GanttViewModel extends ChangeNotifier {
       _visibleEndDate = newEnd;
     }
 
+    _broadcastPresence();
     notifyListeners();
 
     // After the UI has rebuilt with the new dimensions, programmatically
@@ -1186,6 +1196,7 @@ class GanttViewModel extends ChangeNotifier {
     if (newVisibleStart != _visibleStartDate || newVisibleEnd != _visibleEndDate) {
       _visibleStartDate = newVisibleStart;
       _visibleEndDate = newVisibleEnd;
+      _broadcastPresence();
       notifyListeners();
     }
   }
@@ -1331,7 +1342,130 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Presence & Follow Mode ---
+  final Map<String, RemoteGhost> _connectedUsers = {};
+  Map<String, RemoteGhost> get connectedUsers => Map.unmodifiable(_connectedUsers);
+
+  String? _followedUserId;
+  String? get followedUserId => _followedUserId;
+
+  Timer? _presenceThrottle;
+
+  void setFollowedUser(String? userId) {
+    _followedUserId = userId;
+    notifyListeners();
+    if (userId != null && _connectedUsers.containsKey(userId)) {
+      _applyFollowedUserView(_connectedUsers[userId]!);
+    }
+  }
+
+  void setVisibleRange(DateTime start, DateTime end) {
+    _visibleStartDate = start;
+    _visibleEndDate = end;
+    notifyListeners();
+    // Programmatically scroll the chart to match
+    // Reuse the logic from onScrubberWindowChanged but simplified
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (effectiveTotalStartDate != null &&
+          _ganttHorizontalScrollController.hasClients &&
+          effectiveTotalEndDate != null) {
+        final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
+        if (totalDataDuration <= 0) return;
+
+        final position = _ganttHorizontalScrollController.position;
+        final totalGanttWidth = position.maxScrollExtent + position.viewportDimension;
+        if (totalGanttWidth > 0) {
+          final startOffsetMs = start.difference(effectiveTotalStartDate!).inMilliseconds;
+          final newScrollOffset = (startOffsetMs / totalDataDuration) * totalGanttWidth;
+          _ganttHorizontalScrollController.jumpTo(newScrollOffset.clamp(0.0, position.maxScrollExtent));
+        }
+      }
+    });
+  }
+
+  void _broadcastPresence() {
+    if (_syncClient == null) return;
+    if (_presenceThrottle?.isActive ?? false) return;
+
+    _presenceThrottle = Timer(const Duration(milliseconds: 100), () {
+      if (visibleStartDate != null && visibleEndDate != null) {
+        print('Broadcasting Presence: User ${_syncClient?.hashCode}');
+
+        // Manually show "Me" in the UI immediately
+        if (_currentUsername != null) {
+          const localId = 'me';
+          _connectedUsers[localId] = RemoteGhost(
+            userId: localId,
+            lastUpdated: DateTime.now(),
+            viewportStart: visibleStartDate,
+            viewportEnd: visibleEndDate,
+            userName: _currentUsername,
+            userColor: '#00FF00', // Green for self
+          );
+          // notifyListeners() is called below or by other events
+          notifyListeners();
+        }
+
+        // Use gridScrollController as the source of truth for vertical scroll
+        // because in the current wiring, the Gantt chart uses the grid's controller.
+        // ganttScrollController might be detached (no clients).
+        double verticalScroll = 0.0;
+        if (_gridScrollController.hasClients) {
+          verticalScroll = _gridScrollController.offset;
+          print(
+              'DEBUG: gridScrollController has clients. Offset: $verticalScroll. Max: ${_gridScrollController.position.maxScrollExtent}');
+        } else if (_ganttScrollController.hasClients) {
+          verticalScroll = _ganttScrollController.offset;
+          print('DEBUG: ganttScrollController has clients. Offset: $verticalScroll');
+        } else {
+          print('DEBUG: NO CLIENTS attached to scroll controllers!');
+        }
+
+        _syncClient?.sendOperation(Operation(
+          type: 'PRESENCE_UPDATE',
+          data: {
+            'viewportStart': visibleStartDate!.millisecondsSinceEpoch,
+            'viewportEnd': visibleEndDate!.millisecondsSinceEpoch,
+            'verticalScrollOffset': verticalScroll,
+            'userName': _currentUsername ?? 'User ${_syncClient?.hashCode ?? "Me"}',
+            'userColor': '#FF0000', // Placeholder color for remote view of me
+          },
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          actorId: 'me', // Sync client usually overrides this
+        ));
+      }
+    });
+  }
+
+  void _applyFollowedUserView(RemoteGhost ghost) {
+    if (ghost.viewportStart != null && ghost.viewportEnd != null) {
+      setVisibleRange(ghost.viewportStart!, ghost.viewportEnd!);
+    }
+    if (ghost.verticalScrollOffset != null) {
+      ScrollController? targetController;
+      if (_gridScrollController.hasClients) {
+        targetController = _gridScrollController;
+      } else if (_ganttScrollController.hasClients) {
+        targetController = _ganttScrollController;
+      }
+
+      if (targetController != null) {
+        // Clamp to avoid errors if the remote scroll is larger than local content
+        final maxScroll = targetController.position.maxScrollExtent;
+        final targetScroll = ghost.verticalScrollOffset!.clamp(0.0, maxScroll);
+        print(
+            'DEBUG: Applying Follow View. Target: $targetScroll (Raw: ${ghost.verticalScrollOffset}, Max: $maxScroll)');
+
+        if ((targetController.offset - targetScroll).abs() > 1.0) {
+          targetController.jumpTo(targetScroll);
+        }
+      }
+    }
+  }
+
   // --- Sync Client State ---
+  String? _currentUsername;
+
   GanttSyncClient? _syncClient;
   StreamSubscription<Operation>? _syncOperationsSubscription;
   StreamSubscription<bool>? _connectionStateSubscription;
@@ -1353,6 +1487,7 @@ class GanttViewModel extends ChangeNotifier {
     required String password,
   }) async {
     try {
+      _currentUsername = username;
       final parsedUri = Uri.parse(uri);
       final loginCall = loginFunction ?? WebSocketGanttSyncClient.login;
       final token = await loginCall(
@@ -1414,6 +1549,7 @@ class GanttViewModel extends ChangeNotifier {
       });
 
       _isSyncConnected = true;
+      _broadcastPresence();
       notifyListeners();
     } catch (e) {
       print('Sync connection error: $e');
@@ -1527,6 +1663,28 @@ class GanttViewModel extends ChangeNotifier {
         // Also remove dependencies involving this task
         _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
         _recalculateStackingAndNotify();
+      }
+    } else if (op.type == 'PRESENCE_UPDATE') {
+      final data = op.data;
+      final userId = op.actorId;
+      print('Received Presence Update from $userId');
+
+      final viewportStartMs = data['viewportStart'] as int?;
+      final viewportEndMs = data['viewportEnd'] as int?;
+
+      _connectedUsers[userId] = RemoteGhost(
+        userId: userId,
+        lastUpdated: DateTime.now(),
+        viewportStart: viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : null,
+        viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : null,
+        verticalScrollOffset: (data['verticalScrollOffset'] as num?)?.toDouble(),
+        userName: data['userName'] as String?,
+        userColor: data['userColor'] as String?,
+      );
+      notifyListeners();
+
+      if (followedUserId == userId) {
+        _applyFollowedUserView(_connectedUsers[userId]!);
       }
     } else if (op.type == 'INSERT_DEPENDENCY') {
       final data = op.data;
@@ -1646,28 +1804,13 @@ class GanttViewModel extends ChangeNotifier {
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   Future<void> handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) async {
-    // Sync Client Notification (Common)
-    if (_syncClient != null && _isSyncConnected) {
-      await _syncClient!.sendOperation(Operation(
-        type: 'UPDATE_TASK',
-        data: {
-          'id': task.id,
-          'start_date': newStart.millisecondsSinceEpoch,
-          'end_date': newEnd.millisecondsSinceEpoch,
-          'name': task.name,
-        },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-        actorId: 'local-user', // Should be replaced by real user ID in prod
-      ));
-    }
-
     // 1. Handle Local Database Mode - Persist change
     if (_useLocalDatabase) {
       // Write to database asynchronously.
       // We do NOT return here anymore. We proceed to update the in-memory state optimistically
       // so that the UI remains consistent if the user interacts (e.g. expands a row)
       // before the DB stream emits the new data.
-      _localRepository.insertOrUpdateTask(task.copyWith(start: newStart, end: newEnd));
+      await _localRepository.insertOrUpdateTask(task.copyWith(start: newStart, end: newEnd));
     } else if (_apiResponse != null) {
       // 2. Handle Mock Data Mode (Memory only) - only if NOT using local DB
       // Find the parent resource and child job to update the "backend" (apiResponse)
@@ -1696,6 +1839,22 @@ class GanttViewModel extends ChangeNotifier {
           }
         }
       }
+    }
+
+    // Sync Client Notification (Common)
+    // Moved after local persistence to ensure optimistic update applies locally first
+    if (_syncClient != null && _isSyncConnected) {
+      _syncClient!.sendOperation(Operation(
+        type: 'UPDATE_TASK',
+        data: {
+          'id': task.id,
+          'start_date': newStart.millisecondsSinceEpoch,
+          'end_date': newEnd.millisecondsSinceEpoch,
+          'name': task.name,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user', // Should be replaced by real user ID in prod
+      ));
     }
 
     // Common: Update the source of truth (_allGanttTasks) optimistically
@@ -2138,6 +2297,17 @@ class GanttViewModel extends ChangeNotifier {
       end: task.end.add(const Duration(days: 1)),
     );
 
+    if (_useLocalDatabase) {
+      // Persist to local DB, stream will update UI
+      _localRepository.insertOrUpdateTask(newTask);
+    } else {
+      final newTasks = [..._ganttTasks, newTask];
+      // Recalculate stacking with the new task.
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
+
     if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
         type: 'INSERT',
@@ -2153,22 +2323,27 @@ class GanttViewModel extends ChangeNotifier {
         actorId: 'local-user',
       ));
     }
-
-    if (_useLocalDatabase) {
-      // Persist to local DB, stream will update UI
-      _localRepository.insertOrUpdateTask(newTask);
-    } else {
-      final newTasks = [..._ganttTasks, newTask];
-      // Recalculate stacking with the new task.
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-    }
   }
 
   /// Handles the "Delete Task" action from the context menu.
   void handleDeleteTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
+
+    if (_useLocalDatabase) {
+      // Remove from local DB
+      _localRepository.deleteTask(task.id);
+    } else {
+      // Create new lists by filtering out the deleted task and its dependencies.
+      final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
+      final newDependencies =
+          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
+
+      // After removing the task, recalculate stacking with the new list.
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
+      _dependencies = newDependencies;
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
 
     if (_syncClient != null) {
       _syncClient!.sendOperation(Operation(
@@ -2184,6 +2359,9 @@ class GanttViewModel extends ChangeNotifier {
     // Check if we need to delete the resource row (if empty parents/rows are hidden)
     final remainingTasksInRow = _allGanttTasks.where((t) => t.rowId == task.rowId && t.id != task.id).length;
     if (remainingTasksInRow == 0 && !_showEmptyParentRows) {
+      if (_useLocalDatabase) {
+        _localRepository.deleteResource(task.rowId);
+      }
       if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_RESOURCE',
@@ -2211,6 +2389,17 @@ class GanttViewModel extends ChangeNotifier {
           _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
       _dependencies = newDependencies;
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
+
+    if (_syncClient != null) {
+      _syncClient!.sendOperation(Operation(
+        type: 'DELETE',
+        data: {
+          'id': task.id,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
     }
   }
 
@@ -2375,10 +2564,19 @@ class GanttViewModel extends ChangeNotifier {
     // 2. Identify Tasks to Delete
     final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
 
-    // 3. Sync & Persist
-    // Send operations for Tasks
-    for (final task in tasksToDelete) {
-      if (_syncClient != null) {
+    // 3. Persist Locally First
+    if (_useLocalDatabase) {
+      for (final task in tasksToDelete) {
+        _localRepository.deleteTask(task.id);
+      }
+      for (final resId in resourcesToDelete) {
+        _localRepository.deleteResource(resId);
+      }
+    }
+
+    // 4. Sync Client Notification
+    if (_syncClient != null) {
+      for (final task in tasksToDelete) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE',
           data: {'id': task.id},
@@ -2386,23 +2584,13 @@ class GanttViewModel extends ChangeNotifier {
           actorId: 'local-user',
         ));
       }
-      if (_useLocalDatabase) {
-        _localRepository.deleteTask(task.id);
-      }
-    }
-
-    // Send operations for Resources
-    for (final resId in resourcesToDelete) {
-      if (_syncClient != null) {
+      for (final resId in resourcesToDelete) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_RESOURCE',
           data: {'id': resId},
           timestamp: DateTime.now().millisecondsSinceEpoch,
           actorId: 'local-user',
         ));
-      }
-      if (_useLocalDatabase) {
-        _localRepository.deleteResource(resId);
       }
     }
 

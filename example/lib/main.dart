@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -57,15 +58,12 @@ class MyApp extends StatelessWidget {
       );
 }
 
-// The main view for the Gantt chart example application.
 class GanttView extends StatefulWidget {
   const GanttView({super.key});
 
   @override
   State<GanttView> createState() => _GanttViewState();
 }
-
-// An enum to manage the different timeline label formats demonstrated in the example.
 
 class _GanttViewState extends State<GanttView> {
   late final GanttViewModel _viewModel;
@@ -74,7 +72,6 @@ class _GanttViewState extends State<GanttView> {
   String _selectedLocale = 'en_US';
   bool _showCursors = true;
 
-  // Sync Client Controllers
   late final TextEditingController _uriController;
   late final TextEditingController _tenantIdController;
   late final TextEditingController _usernameController;
@@ -84,8 +81,6 @@ class _GanttViewState extends State<GanttView> {
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
-
-    // Initialize Sync Controllers with default values
     _uriController = TextEditingController(text: 'http://localhost:8080');
     _tenantIdController = TextEditingController(text: 'debug');
     _usernameController = TextEditingController(text: 'debug');
@@ -296,6 +291,68 @@ class _GanttViewState extends State<GanttView> {
           onTap: () => _handleClearDependencies(task),
         ),
     ];
+  }
+
+  // --- User Presence UI ---
+  List<Widget> _buildUserChips(BuildContext context, GanttViewModel vm) => vm.connectedUsers.entries.map((entry) {
+        final userId = entry.key;
+        final ghost = entry.value;
+        final isFollowed = vm.followedUserId == userId;
+        final color = _parseColor(ghost.userColor);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: GestureDetector(
+            onTapDown: (details) => _showUserContextMenu(context, userId, details.globalPosition),
+            child: Chip(
+              avatar: CircleAvatar(
+                backgroundColor: color,
+                radius: 10,
+                child: Text(
+                  (ghost.userName ?? userId).substring(0, 1).toUpperCase(),
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+              label: Text(
+                ghost.userName ?? userId.substring(0, math.min(4, userId.length)),
+                style: TextStyle(color: isFollowed ? color : null, fontWeight: isFollowed ? FontWeight.bold : null),
+              ),
+              backgroundColor: isFollowed ? color.withValues(alpha: 0.1) : null,
+              side: isFollowed ? BorderSide(color: color, width: 2) : BorderSide.none,
+              padding: EdgeInsets.zero,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        );
+      }).toList();
+
+  void _showUserContextMenu(BuildContext context, String userId, Offset position) {
+    showContextMenu(
+      context: context,
+      tapPosition: position,
+      menuItems: [
+        if (_viewModel.followedUserId == userId)
+          ContextMenuItem(
+            caption: 'Stop Following',
+            onTap: () => _viewModel.setFollowedUser(null),
+          )
+        else
+          ContextMenuItem(
+            caption: 'Follow Cursor',
+            onTap: () => _viewModel.setFollowedUser(userId),
+          ),
+      ],
+    );
+  }
+
+  Color _parseColor(String? hexString) {
+    if (hexString == null) return Colors.grey;
+    try {
+      return Color(int.parse(hexString.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
   }
 
   // --- Gantt Chart Customization Builders ---
@@ -781,6 +838,13 @@ class _GanttViewState extends State<GanttView> {
               tooltip: 'Toggle Controls',
               onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
             ),
+            actions: [
+              Consumer<GanttViewModel>(
+                builder: (context, vm, child) =>
+                    Row(mainAxisSize: MainAxisSize.min, children: _buildUserChips(context, vm)),
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
           body: SafeArea(
             child: Consumer<GanttViewModel>(
@@ -1015,21 +1079,18 @@ class _GanttViewState extends State<GanttView> {
 
                                           final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
 
-                                          // Calculate the total height required for the Gantt chart content.
-                                          // This is essential when the chart is in a vertically scrolling view.
+                                          // The axis height is adjusted based on whether we are using the
+                                          // default single-line header or the custom two-line header.
                                           final double axisHeight =
                                               _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
-                                          final double ganttContentHeight = vm.visibleGanttRows.fold<double>(
-                                            0.0,
-                                            (prev, row) => prev + (vm.rowMaxStackDepth[row.id] ?? 1) * vm.rowHeight,
-                                          ); // Use vm.rowHeight
 
                                           return SingleChildScrollView(
                                             scrollDirection: Axis.horizontal,
                                             controller: vm.ganttHorizontalScrollController,
                                             child: SizedBox(
                                               width: ganttWidth,
-                                              height: axisHeight + ganttContentHeight,
+                                              height: chartConstraints
+                                                  .maxHeight, // Fix: Constrain height to viewport so internal scroll works
                                               child: LegacyGanttChartWidget(
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
