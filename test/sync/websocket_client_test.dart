@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 // ignore: implementation_imports
-import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
 
@@ -30,9 +29,7 @@ void main() {
         TestWebSocketChannel(incomingController.stream, outgoingController.sink);
 
     test('login success returns token', () async {
-      final mockClient = MockHttpClient((request) async {
-        return http.Response('{"accessToken": "fake-token"}', 200);
-      });
+      final mockClient = MockHttpClient((request) async => http.Response('{"accessToken": "fake-token"}', 200));
 
       final token = await WebSocketGanttSyncClient.login(
         uri: Uri.parse('http://localhost'),
@@ -45,9 +42,7 @@ void main() {
     });
 
     test('login failure throws exception', () async {
-      final mockClient = MockHttpClient((request) async {
-        return http.Response('Unauthorized', 401);
-      });
+      final mockClient = MockHttpClient((request) async => http.Response('Unauthorized', 401));
 
       expect(
         () => WebSocketGanttSyncClient.login(
