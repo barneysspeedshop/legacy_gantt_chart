@@ -342,6 +342,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         } else if (op.type == 'RESET_DATA') {
           _tasks.clear();
           dependencies = [];
+          conflictIndicators = [];
           // Force repaint/recalculate
           _calculateDomains();
           notifyListeners();
@@ -379,6 +380,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (!listEquals(_tasks, data)) {
       if (isDisposed) return;
       _tasks = data;
+      // Recalculate domains as data changed
+      _calculateDomains();
       notifyListeners();
     }
   }

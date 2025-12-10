@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:example/sync/websocket_gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+// ignore: implementation_imports
+import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
 

@@ -66,14 +66,6 @@ class GanttView extends StatefulWidget {
 }
 
 // An enum to manage the different timeline label formats demonstrated in the example.
-enum TimelineAxisFormat {
-  auto,
-  dayOfMonth,
-  dayAndMonth,
-  monthAndYear,
-  dayOfWeek,
-  custom,
-}
 
 class _GanttViewState extends State<GanttView> {
   late final GanttViewModel _viewModel;

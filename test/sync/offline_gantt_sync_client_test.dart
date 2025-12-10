@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'dart:io';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:example/sync/offline_gantt_sync_client.dart';
-import 'package:example/sync/websocket_gantt_sync_client.dart';
-import 'package:example/data/local/gantt_db.dart';
+import 'package:sqlite_crdt/sqlite_crdt.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
-import 'package:path/path.dart' as p;
+// ignore: implementation_imports
+import 'package:legacy_gantt_chart/src/sync/offline_gantt_sync_client.dart';
+// ignore: implementation_imports
+import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 
 class MockInnerClient implements WebSocketGanttSyncClient {
   final connectionController = StreamController<bool>.broadcast();
@@ -54,36 +55,22 @@ void main() {
     late MockInnerClient mockInner;
     late OfflineGanttSyncClient client;
 
-    late String testDbPath;
-
     setUp(() async {
       mockInner = MockInnerClient();
-      await GanttDb.reset();
 
-      final tempDir = Directory.systemTemp.createTempSync();
-      // Use microseconds and extra randomness to prevent collision in fast tests
-      final uniqueId = '${DateTime.now().microsecondsSinceEpoch}_${identityHashCode(mockInner)}';
-      testDbPath = p.join(tempDir.path, 'test_gantt_$uniqueId.db');
-      GanttDb.overridePath = testDbPath;
+      // Use in-memory DB
+      final dbFuture = SqliteCrdt.openInMemory(
+        version: 1,
+        onCreate: (db, version) async {},
+      );
 
-      // Ensure DB is created and empty (though new file should be empty)
-      await GanttDb.db;
-
-      client = OfflineGanttSyncClient(mockInner);
+      client = OfflineGanttSyncClient(dbFuture, mockInner);
       // Wait for db init in the client
       await Future.delayed(const Duration(milliseconds: 50));
     });
 
     tearDown(() async {
       await client.dispose();
-      await GanttDb.reset(); // Close DB connection
-      try {
-        if (File(testDbPath).existsSync()) {
-          File(testDbPath).deleteSync();
-        }
-      } catch (e) {
-        print('Error deleting test db: $e');
-      }
     });
 
     test('Passes operations through when online', () async {

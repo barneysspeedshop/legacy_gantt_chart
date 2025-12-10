@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'gantt_sync_client.dart';
 
 class WebSocketGanttSyncClient implements GanttSyncClient {
   final Uri uri;
@@ -19,8 +19,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri));
 
   final WebSocketChannel Function(Uri) _channelFactory;
-
-  // ... login method stays same ...
 
   static Future<String> login({
     required Uri uri,

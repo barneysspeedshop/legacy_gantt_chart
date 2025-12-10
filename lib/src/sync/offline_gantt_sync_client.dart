@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:synchronized/synchronized.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart';
-import '../data/local/gantt_db.dart';
+import 'gantt_sync_client.dart';
 import 'websocket_gantt_sync_client.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
@@ -19,8 +18,9 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void>? _activeFlushFuture;
 
   late Future<void> _dbInitFuture;
+  final Future<SqliteCrdt> _dbFuture;
 
-  OfflineGanttSyncClient([this._innerClient]) {
+  OfflineGanttSyncClient(this._dbFuture, [this._innerClient]) {
     _dbInitFuture = _initDb();
     if (_innerClient != null) {
       _attachInnerClient(_innerClient!);
@@ -72,8 +72,19 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> _initDb() async {
     try {
-      final db = await GanttDb.db;
-      _db = db;
+      _db = await _dbFuture; // Wait for the passed future
+
+      // Ensure the offline queue table exists
+      await _db.execute('''
+          CREATE TABLE IF NOT EXISTS offline_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            data TEXT,
+            timestamp INTEGER,
+            actor_id TEXT
+          )
+        ''');
+
       print('OfflineClient: GanttDb initialized');
       _isDbReady = true;
     } catch (e) {
@@ -104,8 +115,37 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       }
 
       // Read next batch (with lock)
-      final rows = await _lock
-          .synchronized(() => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 50'));
+
+      // WAIT. If I create the table here, SqliteCrdt might not have picked it up if it was opened BEFORE this execute?
+      // No, SqliteCrdt hooks `onCreate` and `onUpgrade`. If _db is already open, and I run `execute`, does it hook it?
+      // SqliteCrdt wraps the db. `execute` calls `_db.execute`.
+      // The CRDT logic (triggers) are usually set up on creation.
+      // If I add a table dynamically, I might need to ensure triggers are added.
+      // However, `offline_queue` is LOCAL ONLY. We don't want to sync the queue itself. We want to sync constraints.
+      // Actually, we probably DON'T want `offline_queue` to be a CRDT table because we don't sync IT.
+      // But if `SqliteCrdt` wrapper keeps it that way, we have to live with it.
+      // If `SqliteCrdt` adds overhead, we might want to avoid it.
+      // But we are passing `SqliteCrdt` object.
+      // Ideally, we should check if `is_deleted` column exists or just select all.
+      // Since it's a queue, we delete rows after sending.
+      // If it's a CRDT, `DELETE` sets `is_deleted=1`. So we MUST filter.
+      // If it's NOT a CRDT, `DELETE` removes the row. `is_deleted` column won't exist.
+      // Strategy: Try catching the query error, or check table info.
+      // BETTER: Just try query with `is_deleted = 0`. If it fails, fallback to `SELECT *`.
+
+      // OR: Since this is specific to `OfflineGanttSyncClient`, maybe we assume the user sets up the table correctly?
+      // My `_initDb` tries to create it.
+      // If I use `SqliteCrdt`, any table created via `execute` MIGHT be instrumented.
+      // Let's stick to the code from example which used `is_deleted = 0`. It implies it WAS instrumented.
+
+      List<Map<String, Object?>> rows;
+      try {
+        rows = await _lock
+            .synchronized(() => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 50'));
+      } catch (e) {
+        // Fallback if is_deleted doesn't exist (not a CRDT table)
+        rows = await _lock.synchronized(() => _db.query('SELECT * FROM offline_queue ORDER BY id ASC LIMIT 50'));
+      }
 
       if (rows.isEmpty) break;
 

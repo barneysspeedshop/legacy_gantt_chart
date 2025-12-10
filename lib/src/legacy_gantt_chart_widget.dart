@@ -396,8 +396,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   void didUpdateWidget(covariant LegacyGanttChartWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // If the dependencies list has changed, push the update to the internal view model.
-    // This is crucial for seeing new dependencies appear without a full rebuild.
     if (_internalViewModel != null) {
       if (!listEquals(oldWidget.dependencies, widget.dependencies)) {
         _internalViewModel!.updateDependencies(widget.dependencies ?? []);
@@ -409,8 +407,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         final List<LegacyGanttTask> allItems = [...(widget.data ?? []), ...(widget.holidays ?? [])];
         _internalViewModel!.updateData(allItems);
       }
-      if (!listEquals(oldWidget.conflictIndicators, widget.conflictIndicators)) {
-        _internalViewModel!.updateConflictIndicators(widget.conflictIndicators ?? []);
+      if (widget.conflictIndicators != null) {
+        _internalViewModel!.updateConflictIndicators(widget.conflictIndicators!);
       }
       if (!listEquals(oldWidget.visibleRows, widget.visibleRows)) {
         _internalViewModel!.updateVisibleRows(widget.visibleRows);
@@ -543,11 +541,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
           {double? gridMin, double? gridMax}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
-        // Use a stable key to prevent re-creating the ViewModel on every data change.
-        // Data updates are handled by didUpdateWidget -> updateData.
         key: ValueKey(widget.syncClient),
         create: (context) {
-          // Create the view model and store a reference to it.
           _internalViewModel = LegacyGanttViewModel(
             data: tasks,
             conflictIndicators: conflictIndicators,
@@ -580,7 +575,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             taskGrouper: widget.taskGrouper,
             onVisibleRangeChanged: (start, end) {
               if (widget.controller != null) {
-                // Avoid infinite loop if controller update is immediate and triggers rebuild
                 if (widget.controller!.visibleStartDate != start || widget.controller!.visibleEndDate != end) {
                   widget.controller!.setVisibleRange(start, end);
                 }
@@ -591,11 +585,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         },
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
+            if (vm.conflictIndicators.isNotEmpty) {}
             SchedulerBinding.instance.addPostFrameCallback((_) {
               if (!vm.isDisposed) {
                 vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
                 vm.updateFocusedTask(widget.focusedTaskId);
-                vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat); // Call the new method here
+                vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat);
               }
             });
 
@@ -610,8 +605,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 final double totalContentWidth =
                     vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
 
-                // This is the intrinsically calculated height of the content, excluding the timeline axis.
-
                 final double totalContentHeight =
                     (widget.showEmptyRows ? widget.visibleRows.map((r) => r.id) : vm.data.map((t) => t.rowId))
                         .toSet()
@@ -621,29 +614,15 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                         );
 
                 final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
-
-                // Determine the final height of the chart widget.
-
                 final double chartHeight;
 
                 if (widget.height != null) {
-                  // 1. If an explicit height is provided, always use it.
-
                   chartHeight = widget.height!;
                 } else if (useIntrinsicHeight) {
-                  // 2. If in an unconstrained environment (like a SingleChildScrollView),
-
-                  //    calculate the intrinsic height.
-
                   chartHeight = vm.timeAxisHeight + totalContentHeight;
                 } else {
-                  // 3. Otherwise, expand to fill the available constrained space.
-
                   chartHeight = constraints.maxHeight;
                 }
-
-                // The height of the actual bar area (excluding the timeline axis).
-
                 final double contentHeight = chartHeight - vm.timeAxisHeight;
 
                 return MouseRegion(
@@ -1107,7 +1086,6 @@ class _OverlapPainter extends CustomPainter {
     final barVerticalCenterOffset = (size.height - barHeight) / 2;
     final fullRect = Rect.fromLTWH(0, barVerticalCenterOffset, size.width, barHeight);
 
-    // Deflate the indicator to only show on the bottom 30% of the bar
     final indicatorHeight = fullRect.height * 0.4;
     final indicatorRect = Rect.fromLTWH(
       fullRect.left,
@@ -1117,15 +1095,11 @@ class _OverlapPainter extends CustomPainter {
     );
     final indicatorRRect = RRect.fromRectAndRadius(indicatorRect, theme.barCornerRadius);
 
-    // To ensure the conflict pattern is clear and not blended with underlying bars,
-    // we first "erase" the area by drawing a solid block of the chart's background color.
     canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
 
-    // Next, draw the semi-transparent red background for the conflict area.
     final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
     canvas.drawRRect(indicatorRRect, backgroundPaint);
 
-    // Then, draw the angled lines on top of that new background.
     _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
   }
 

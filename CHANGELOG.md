@@ -1,3 +1,9 @@
+## 4.0.0-CRDT.alpha.9
+
+* **FEATURE**: Move sync operations from example to library
+* **EXAMPLE FIX**: Stablize conflict indicators when connecting
+* **EXAMPLE**: MVE for gantt sync
+
 ## 4.0.0-CRDT.alpha.8
 
 * **EXAMPLE FIX**: Fix grid row expand/collapse state

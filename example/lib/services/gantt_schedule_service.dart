@@ -342,7 +342,6 @@ class GanttScheduleService {
       // the conflict detector needs to see child tasks to generate summary indicators
       // on the parent row.
       final tasksForConflictDetection = stackedTasks;
-      print('DEBUG: Running Conflict Detection on ${tasksForConflictDetection.length} tasks');
       conflictIndicators = conflictDetector.run<String>(
         tasks: tasksForConflictDetection,
         taskGrouper: (task) {
@@ -350,11 +349,9 @@ class GanttScheduleService {
           final group =
               lineItemToContactMap[resourceId] ?? (parentResourceIds.contains(resourceId) ? resourceId : null);
           final finalGroup = group ?? resourceId;
-          // print('DEBUG: Task ${task.name} (${task.rowId}) -> Group: $finalGroup');
           return finalGroup;
         },
       );
-      print('DEBUG: Found ${conflictIndicators.length} conflict indicators');
     }
 
     var finalTasks = [...stackedTasks, ...nonStackableTasks];

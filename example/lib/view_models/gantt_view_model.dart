@@ -4,21 +4,28 @@ import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
-import '../main.dart';
 
 import '../data/models.dart';
 import '../data/local/local_gantt_repository.dart';
 import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
-import '../sync/websocket_gantt_sync_client.dart';
-import '../sync/offline_gantt_sync_client.dart';
+import '../data/local/gantt_db.dart';
 
 /// An enum to manage the different theme presets demonstrated in the example.
 enum ThemePreset {
   standard,
   forest,
   midnight,
+}
+
+enum TimelineAxisFormat {
+  auto,
+  dayOfMonth,
+  dayAndMonth,
+  monthAndYear,
+  dayOfWeek,
+  custom,
 }
 
 class GanttViewModel extends ChangeNotifier {
@@ -234,7 +241,7 @@ class GanttViewModel extends ChangeNotifier {
     });
 
     // Initialize Sync Client for Offline Queuing if not already present
-    _syncClient ??= OfflineGanttSyncClient();
+    _syncClient ??= OfflineGanttSyncClient(GanttDb.db);
 
     // Trigger reset on first load
     _pendingSeedReset = true;
@@ -1372,7 +1379,7 @@ class GanttViewModel extends ChangeNotifier {
           if (_syncClient is WebSocketGanttSyncClient) {
             await (_syncClient as WebSocketGanttSyncClient).dispose();
           }
-          final offlineClient = OfflineGanttSyncClient();
+          final offlineClient = OfflineGanttSyncClient(GanttDb.db);
           await offlineClient.setInnerClient(wsClient);
           _syncClient = offlineClient;
         }
@@ -1547,7 +1554,6 @@ class GanttViewModel extends ChangeNotifier {
       final data = op.data;
       final pred = data['predecessorTaskId'];
       final succ = data['successorTaskId'];
-      print('DEBUG: Received DELETE_DEPENDENCY: pred=$pred, succ=$succ'); // DEBUG LOG
 
       if (_useLocalDatabase) {
         await _localRepository.deleteDependency(pred, succ);
