@@ -24,18 +24,26 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     required Uri uri,
     required String username,
     required String password,
+    http.Client? client,
   }) async {
-    final response = await http.post(
-      uri.replace(path: '/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
-    );
+    final httpClient = client ?? http.Client();
+    try {
+      final response = await httpClient.post(
+        uri.replace(path: '/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return data['accessToken'] as String;
-    } else {
-      throw Exception('Login failed: ${response.statusCode} - ${response.body}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['accessToken'] as String;
+      } else {
+        throw Exception('Login failed: ${response.statusCode} - ${response.body}');
+      }
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 

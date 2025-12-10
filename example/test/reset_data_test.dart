@@ -35,6 +35,11 @@ class MockSyncClient extends WebSocketGanttSyncClient {
       actorId: 'test-actor',
     ));
   }
+
+  @override
+  Future<void> sendOperation(Operation operation) async {
+    // No-op for tests
+  }
 }
 
 class _MockWebSocketChannel with StreamChannelMixin implements WebSocketChannel {

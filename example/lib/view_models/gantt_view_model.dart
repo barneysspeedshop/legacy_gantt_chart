@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:legacy_gantt_chart/src/models/remote_ghost.dart';
 // other imports...
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
@@ -1412,27 +1411,27 @@ class GanttViewModel extends ChangeNotifier {
         double verticalScroll = 0.0;
         if (_gridScrollController.hasClients) {
           verticalScroll = _gridScrollController.offset;
-          print(
-              'DEBUG: gridScrollController has clients. Offset: $verticalScroll. Max: ${_gridScrollController.position.maxScrollExtent}');
         } else if (_ganttScrollController.hasClients) {
           verticalScroll = _ganttScrollController.offset;
-          print('DEBUG: ganttScrollController has clients. Offset: $verticalScroll');
-        } else {
-          print('DEBUG: NO CLIENTS attached to scroll controllers!');
         }
 
-        _syncClient?.sendOperation(Operation(
-          type: 'PRESENCE_UPDATE',
-          data: {
-            'viewportStart': visibleStartDate!.millisecondsSinceEpoch,
-            'viewportEnd': visibleEndDate!.millisecondsSinceEpoch,
-            'verticalScrollOffset': verticalScroll,
-            'userName': _currentUsername ?? 'User ${_syncClient?.hashCode ?? "Me"}',
-            'userColor': '#FF0000', // Placeholder color for remote view of me
-          },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
-          actorId: 'me', // Sync client usually overrides this
-        ));
+        try {
+          _syncClient?.sendOperation(Operation(
+            type: 'PRESENCE_UPDATE',
+            data: {
+              'viewportStart': visibleStartDate!.millisecondsSinceEpoch,
+              'viewportEnd': visibleEndDate!.millisecondsSinceEpoch,
+              'verticalScrollOffset': verticalScroll,
+              'userName': _currentUsername ?? 'User ${_syncClient?.hashCode ?? "Me"}',
+              'userColor': '#FF0000', // Placeholder color for remote view of me
+            },
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+            actorId: 'me', // Sync client usually overrides this
+          ));
+        } catch (e) {
+          // Ignore connection errors during presence broadcast
+          print('Warning: Failed to broadcast presence: $e');
+        }
       }
     });
   }
@@ -1453,8 +1452,6 @@ class GanttViewModel extends ChangeNotifier {
         // Clamp to avoid errors if the remote scroll is larger than local content
         final maxScroll = targetController.position.maxScrollExtent;
         final targetScroll = ghost.verticalScrollOffset!.clamp(0.0, maxScroll);
-        print(
-            'DEBUG: Applying Follow View. Target: $targetScroll (Raw: ${ghost.verticalScrollOffset}, Max: $maxScroll)');
 
         if ((targetController.offset - targetScroll).abs() > 1.0) {
           targetController.jumpTo(targetScroll);
@@ -2569,9 +2566,7 @@ class GanttViewModel extends ChangeNotifier {
       for (final task in tasksToDelete) {
         _localRepository.deleteTask(task.id);
       }
-      for (final resId in resourcesToDelete) {
-        _localRepository.deleteResource(resId);
-      }
+      resourcesToDelete.forEach(_localRepository.deleteResource);
     }
 
     // 4. Sync Client Notification

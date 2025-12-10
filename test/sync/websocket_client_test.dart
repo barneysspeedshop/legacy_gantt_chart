@@ -8,6 +8,8 @@ import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
 
+import 'package:http/http.dart' as http;
+
 void main() {
   group('WebSocketGanttSyncClient', () {
     late WebSocketGanttSyncClient client;
@@ -26,6 +28,37 @@ void main() {
 
     WebSocketChannel mockChannelFactory(Uri uri) =>
         TestWebSocketChannel(incomingController.stream, outgoingController.sink);
+
+    test('login success returns token', () async {
+      final mockClient = MockHttpClient((request) async {
+        return http.Response('{"accessToken": "fake-token"}', 200);
+      });
+
+      final token = await WebSocketGanttSyncClient.login(
+        uri: Uri.parse('http://localhost'),
+        username: 'user',
+        password: 'pass',
+        client: mockClient,
+      );
+
+      expect(token, equals('fake-token'));
+    });
+
+    test('login failure throws exception', () async {
+      final mockClient = MockHttpClient((request) async {
+        return http.Response('Unauthorized', 401);
+      });
+
+      expect(
+        () => WebSocketGanttSyncClient.login(
+          uri: Uri.parse('http://localhost'),
+          username: 'user',
+          password: 'pass',
+          client: mockClient,
+        ),
+        throwsException,
+      );
+    });
 
     test('connect sends subscribe message', () async {
       client = WebSocketGanttSyncClient(
@@ -67,38 +100,85 @@ void main() {
       incomingController.add(jsonEncode(envelope));
 
       final receivedOp = await client.operationStream.first;
+      expect(receivedOp.type, 'UPDATE_TASK');
       expect(receivedOp.actorId, equals('user-1'));
       expect(receivedOp.data['id'], equals('task-1'));
     });
 
-    // test('wraps outgoing operation in envelope', () async {
-    //   client = WebSocketGanttSyncClient(
-    //     uri: Uri.parse('ws://localhost'),
-    //     channelFactory: mockChannelFactory,
-    //   );
+    test('updates connection state on subscribe success', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        channelFactory: mockChannelFactory,
+      );
 
-    //   // Use take(2) because the first message is 'subscribe'
-    //   final messagesFuture = outgoingController.stream.take(2).toList();
+      expectLater(client.connectionStateStream, emitsInOrder([true]));
 
-    //   client.connect('tenant-123');
+      client.connect('tenant-123');
 
-    //   final op = Operation(
-    //     type: 'UPDATE',
-    //     data: {'foo': 'bar'},
-    //     timestamp: 12345,
-    //     actorId: 'me',
-    //   );
+      final envelope = {'type': 'SUBSCRIBE_SUCCESS', 'channel': 'tenant-123'};
+      incomingController.add(jsonEncode(envelope));
+    });
 
-    //   await client.sendOperation(op);
+    test('wraps outgoing operation in envelope', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        channelFactory: mockChannelFactory,
+      );
 
-    //   final messages = await messagesFuture;
-    //   expect(messages.length, 2);
+      // Use take(2) because the first message is 'subscribe'
+      final messagesFuture = outgoingController.stream.take(2).toList();
 
-    //   final envelopeJson = jsonDecode(messages[1] as String); // Second message
-    //   expect(envelopeJson['type'], equals('UPDATE_TASK'));
-    //   expect(envelopeJson['actorId'], equals('me'));
-    //   expect(envelopeJson['data']['type'], equals('UPDATE'));
-    // });
+      client.connect('tenant-123');
+
+      final op = Operation(
+        type: 'UPDATE',
+        data: {'foo': 'bar'},
+        timestamp: 12345,
+        actorId: 'me',
+      );
+
+      await client.sendOperation(op);
+
+      final messages = await messagesFuture;
+      expect(messages.length, 2);
+
+      final envelopeJson = jsonDecode(messages[1] as String); // Second message
+      expect(envelopeJson['type'], equals('UPDATE_TASK'));
+      expect(envelopeJson['actorId'], equals('me'));
+      expect(envelopeJson['data']['foo'], equals('bar'));
+    });
+
+    test('wraps INSERT operation correctly', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        channelFactory: mockChannelFactory,
+      );
+      final messagesFuture = outgoingController.stream.take(2).toList();
+      client.connect('tenant-123');
+
+      final op = Operation(type: 'INSERT', data: {}, timestamp: 1, actorId: 'me');
+      await client.sendOperation(op);
+
+      final messages = await messagesFuture;
+      final envelope = jsonDecode(messages[1] as String);
+      expect(envelope['type'], 'INSERT_TASK');
+    });
+
+    test('wraps DELETE operation correctly', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        channelFactory: mockChannelFactory,
+      );
+      final messagesFuture = outgoingController.stream.take(2).toList();
+      client.connect('tenant-123');
+
+      final op = Operation(type: 'DELETE', data: {}, timestamp: 1, actorId: 'me');
+      await client.sendOperation(op);
+
+      final messages = await messagesFuture;
+      final envelope = jsonDecode(messages[1] as String);
+      expect(envelope['type'], 'DELETE_TASK');
+    });
   });
 }
 
@@ -144,4 +224,27 @@ class TestWebSocketSink implements WebSocketSink {
   Future close([int? closeCode, String? closeReason]) async {}
   @override
   Future get done => Future.value();
+}
+
+class MockHttpClient extends Fake implements http.Client {
+  final Future<http.Response> Function(http.BaseRequest request) _handler;
+
+  MockHttpClient(this._handler);
+
+  @override
+  Future<http.Response> post(Uri url, {Map<String, String>? headers, Object? body, Encoding? encoding}) async {
+    final request = http.Request('POST', url);
+    if (headers != null) request.headers.addAll(headers);
+    if (body != null) {
+      if (body is String) {
+        request.body = body;
+      } else if (body is List<int>) {
+        request.bodyBytes = body;
+      }
+    }
+    return _handler(request);
+  }
+
+  @override
+  void close() {}
 }
