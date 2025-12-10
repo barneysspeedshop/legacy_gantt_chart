@@ -29,12 +29,14 @@ dependencies:
   shelf_web_socket: ^3.0.0
   web_socket_channel: ^3.0.3
   http: ^1.6.0
+  synchronized: ^3.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   stream_channel: ^2.1.4
+  sqflite_common_ffi: ^2.4.0
 
 screenshots:
   - description: 'Legacy Gantt Chart - screenshot 1'

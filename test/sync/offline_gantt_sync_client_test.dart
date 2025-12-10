@@ -5,9 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 // ignore: implementation_imports
-import 'package:legacy_gantt_chart/src/sync/offline_gantt_sync_client.dart';
 // ignore: implementation_imports
-import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 
 class MockInnerClient implements WebSocketGanttSyncClient {
   final connectionController = StreamController<bool>.broadcast();
