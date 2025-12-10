@@ -1,3 +1,8 @@
+## 4.0.0-CRDT.alpha.11
+
+* **FIX**: Fix platform support
+* **TESTS**: Implement more comprehensive testing
+
 ## 4.0.0-CRDT.alpha.10
 
 * **FEATURE**: Follow me! (follow a user's cursor/pan/scroll/zoom)
