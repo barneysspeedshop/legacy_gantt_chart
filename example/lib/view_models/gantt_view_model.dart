@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 // other imports...
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+import 'package:legacy_gantt_chart/offline_sync.dart';
 
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';

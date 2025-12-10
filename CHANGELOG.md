@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.13
+
+* **FIX**: Set offline features as optional
+
 ## 4.0.0-CRDT.alpha.12
 
 * **FIX**: Fix dependencies

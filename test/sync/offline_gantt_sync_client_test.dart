@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+import 'package:legacy_gantt_chart/offline_sync.dart';
 // ignore: implementation_imports
 // ignore: implementation_imports
 
