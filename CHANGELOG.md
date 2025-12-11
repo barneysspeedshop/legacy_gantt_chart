@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.15
+
+* **FIX**: Fix lint
+
 ## 4.0.0-CRDT.alpha.14
 
 * **FIX**: Fix missed remote update when connecting

@@ -19,10 +19,10 @@ void main() {
     });
 
     test('hashCode works', () {
-       const row1 = LegacyGanttRow(id: '1', label: 'Row A');
-       const row2 = LegacyGanttRow(id: '1', label: 'Row B');
-       
-       expect(row1.hashCode, row2.hashCode);
+      const row1 = LegacyGanttRow(id: '1', label: 'Row A');
+      const row2 = LegacyGanttRow(id: '1', label: 'Row B');
+
+      expect(row1.hashCode, row2.hashCode);
     });
   });
 }
