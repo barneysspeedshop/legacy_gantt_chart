@@ -1582,84 +1582,262 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
-    final data = op.data;
-    // Task data is directly in data
-    final taskData = data;
+    try {
+      final data = op.data;
+      // Task data is directly in data
+      final taskData = data;
 
-    if (op.type == 'UPDATE_TASK') {
-      var innerData = taskData;
-      String? ganttType;
+      if (op.type == 'SYNC_SNAPSHOT') {
+        print('Processing SYNC_SNAPSHOT...');
 
-      // Unwrap if nested (gantt_type present or just nested data)
-      if (innerData.containsKey('data') && innerData['data'] is Map) {
-        ganttType = innerData['gantt_type'] as String?;
-        innerData = innerData['data'] as Map<String, dynamic>;
-      }
+        // Use loading state to prevent "empty flash" while processing
+        _isLoading = true;
+        notifyListeners();
 
-      final taskId = innerData['id'];
-      if (taskId == null) {
-        print('Warning: UPDATE_TASK received without ID');
+        try {
+          final snapshot = data;
+
+          if (_useLocalDatabase) {
+            // Pre-load existing data for LWW checks
+            final existingTasks = await _localRepository.getTasks();
+            final existingTasksMap = {for (var t in existingTasks) t.id: t};
+
+            final existingDeps = await _localRepository.getDependencies();
+            final existingDepsMap = {for (var d in existingDeps) '${d.predecessorTaskId}_${d.successorTaskId}': d};
+
+            final existingResources = await _localRepository.getResources();
+            final existingResourcesMap = {for (var r in existingResources) r.id: r};
+
+            // 2. Load Tasks
+            final tasksList = snapshot['tasks'] as List;
+            final tasksToInsert = <LegacyGanttTask>[];
+            for (final tData in tasksList) {
+              final task = LegacyGanttTask(
+                id: tData['id'],
+                name: tData['name'],
+                start: DateTime.fromMillisecondsSinceEpoch(tData['start_date']),
+                end: DateTime.fromMillisecondsSinceEpoch(tData['end_date']),
+                rowId: tData['rowId'] ?? 'unknown_row',
+                color: _parseColor(tData['color']),
+                textColor: _parseColor(tData['textColor']),
+                completion: (tData['completion'] as num?)?.toDouble() ?? 0.0,
+                isSummary: tData['is_summary'] == true || tData['is_summary'] == 1,
+                isMilestone: tData['is_milestone'] == true || tData['is_milestone'] == 1,
+                lastUpdated: tData['lastUpdated'],
+              );
+
+              // Always add to in-memory list for immediate UI update (though we reload later)
+              // _allGanttTasks.add(task); // We reload later, so this is redundant but harmless if cleared
+
+              // LWW Check
+              final existing = existingTasksMap[task.id];
+              if (existing == null || (task.lastUpdated ?? 0) >= (existing.lastUpdated ?? 0)) {
+                tasksToInsert.add(task);
+              }
+            }
+            await _localRepository.bulkInsertOrUpdateTasks(tasksToInsert);
+
+            // 3. Load Dependencies
+            final depsList = snapshot['dependencies'] as List;
+            final depsToInsert = <LegacyGanttTaskDependency>[];
+            for (final dData in depsList) {
+              final dep = LegacyGanttTaskDependency(
+                predecessorTaskId: dData['predecessorTaskId'],
+                successorTaskId: dData['successorTaskId'],
+                type: DependencyType.values[dData['type'] as int],
+                lastUpdated: dData['lastUpdated'],
+              );
+
+              // _dependencies.add(dep); // We reload later
+
+              // LWW Check
+              final existing = existingDepsMap['${dep.predecessorTaskId}_${dep.successorTaskId}'];
+              if (existing == null || (dep.lastUpdated ?? 0) >= (existing.lastUpdated ?? 0)) {
+                depsToInsert.add(dep);
+              }
+            }
+            await _localRepository.bulkInsertOrUpdateDependencies(depsToInsert);
+
+            // 4. Load Resources
+            final resList = snapshot['resources'] as List;
+            final resourcesToInsert = <LocalResource>[];
+            for (final rData in resList) {
+              final res = LocalResource(
+                id: rData['id'],
+                name: rData['name'],
+                parentId: rData['parentId'],
+                isExpanded: rData['isExpanded'] == true || rData['isExpanded'] == 1,
+                lastUpdated: rData['lastUpdated'],
+              );
+
+              // _localResources.add(res); // We reload later
+
+              // LWW Check
+              final existing = existingResourcesMap[res.id];
+              if (existing == null || (res.lastUpdated ?? 0) >= (existing.lastUpdated ?? 0)) {
+                resourcesToInsert.add(res);
+              }
+            }
+            await _localRepository.bulkInsertOrUpdateResources(resourcesToInsert);
+
+            // 5. Reload merged state from DB
+            final newTasks = await _localRepository.getTasks();
+            final newDeps = await _localRepository.getDependencies();
+            final newRes = await _localRepository.getResources();
+
+            // Clear legacy lists only now that we have fresh data
+            _ganttTasks.clear();
+            _conflictIndicators.clear();
+            _allGanttTasks.clear();
+            _dependencies.clear();
+            _localResources.clear();
+
+            // Update with fresh data
+            _allGanttTasks.addAll(newTasks);
+            _dependencies.addAll(newDeps);
+            _localResources.addAll(newRes);
+
+            // Rebuild UI
+            await _processLocalData();
+          } else {
+            // In-Memory Mode
+            _ganttTasks.clear();
+            _allGanttTasks.clear();
+            _dependencies.clear();
+            _localResources.clear();
+            _conflictIndicators.clear();
+
+            // 2. Load Tasks
+            final tasksList = snapshot['tasks'] as List;
+            for (final tData in tasksList) {
+              _allGanttTasks.add(LegacyGanttTask(
+                id: tData['id'],
+                name: tData['name'],
+                start: DateTime.fromMillisecondsSinceEpoch(tData['start_date']),
+                end: DateTime.fromMillisecondsSinceEpoch(tData['end_date']),
+                rowId: tData['rowId'] ?? 'unknown_row',
+                color: _parseColor(tData['color']),
+                textColor: _parseColor(tData['textColor']),
+                completion: (tData['completion'] as num?)?.toDouble() ?? 0.0,
+                isSummary: tData['is_summary'] == true || tData['is_summary'] == 1,
+                isMilestone: tData['is_milestone'] == true || tData['is_milestone'] == 1,
+                lastUpdated: tData['lastUpdated'],
+              ));
+            }
+
+            // 3. Load Dependencies
+            final depsList = snapshot['dependencies'] as List;
+            for (final dData in depsList) {
+              _dependencies.add(LegacyGanttTaskDependency(
+                predecessorTaskId: dData['predecessorTaskId'],
+                successorTaskId: dData['successorTaskId'],
+                type: DependencyType.values[dData['type'] as int],
+                lastUpdated: dData['lastUpdated'],
+              ));
+            }
+
+            // 4. Load Resources
+            final resList = snapshot['resources'] as List;
+            for (final rData in resList) {
+              _localResources.add(LocalResource(
+                id: rData['id'],
+                name: rData['name'],
+                parentId: rData['parentId'],
+                isExpanded: rData['isExpanded'] == true || rData['isExpanded'] == 1,
+                lastUpdated: rData['lastUpdated'],
+              ));
+            }
+
+            _recalculateStackingAndNotify();
+          }
+        } finally {
+          _isLoading = false;
+          notifyListeners();
+        }
         return;
-      }
+      } else if (op.type == 'UPDATE_TASK') {
+        var innerData = taskData;
+        String? ganttType;
 
-      // 1. Check if task exists
-      final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
-
-      if (sourceIndex != -1) {
-        // UPDATE Existing
-        final existingTask = _allGanttTasks[sourceIndex];
-        final updatedTask = existingTask.copyWith(
-          name: innerData['name'] ?? existingTask.name,
-          start: innerData['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
-              : existingTask.start,
-          end: innerData['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
-              : existingTask.end,
-          // Update other fields if present in payload
-        );
-
-        if (_useLocalDatabase) {
-          await _localRepository.insertOrUpdateTask(updatedTask);
+        // Unwrap if nested (gantt_type present or just nested data)
+        if (innerData.containsKey('data') && innerData['data'] is Map) {
+          ganttType = innerData['gantt_type'] as String?;
+          innerData = innerData['data'] as Map<String, dynamic>;
         }
 
-        _allGanttTasks[sourceIndex] = updatedTask;
-        final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
-        if (visibleIndex != -1) {
-          _ganttTasks[visibleIndex] = updatedTask;
+        final taskId = innerData['id'];
+        if (taskId == null) {
+          print('Warning: UPDATE_TASK received without ID');
+          return;
         }
-        _recalculateStackingAndNotify();
-      } else {
-        // UPSERT (Treat as INSERT)
-        // This handles valid initial sync data sent as UPDATE_TASK
-        print('Upserting new task from UPDATE_TASK: $taskId');
 
-        final newTask = LegacyGanttTask(
-          id: taskId,
-          rowId: innerData['rowId'] ?? 'unknown_row', // Fallback if rowId missing, though important
-          name: innerData['name'] ?? 'Unnamed Task',
-          start: innerData['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
-              : DateTime.now(),
-          end: innerData['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
-              : DateTime.now().add(const Duration(days: 1)),
-          isSummary: ganttType == 'summary' || innerData['is_summary'] == true,
-          isMilestone: ganttType == 'milestone',
-          color: _parseColor(innerData['color']),
-          textColor: _parseColor(innerData['textColor']),
-        );
+        // 1. Check if task exists
+        final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
 
-        if (_useLocalDatabase) {
-          await _localRepository.insertOrUpdateTask(newTask);
-          // The repository stream usually handles the update, but for immediate feedback:
-          // _allGanttTasks.add(newTask); // Wait for stream?
-          // Actually, earlier code in INSERT_TASK says:
-          // if (_useLocalDatabase) await ... (and relies on stream?)
-          // NO, INSERT_TASK block handles both.
-          // Let's rely on stream if local DB used, BUT for Recalculate we might need it now.
-          // Existing INSERT_TASK code:
-          /*
+        if (sourceIndex != -1) {
+          // UPDATE Existing
+          final existingTask = _allGanttTasks[sourceIndex];
+          final updatedTask = existingTask.copyWith(
+            name: innerData['name'] ?? existingTask.name,
+            start: innerData['start_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
+                : existingTask.start,
+            end: innerData['end_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
+                : existingTask.end,
+            lastUpdated: innerData['lastUpdated'],
+            // Update other fields if present in payload
+          );
+
+          if (_useLocalDatabase) {
+            // For UPDATE, we might want to check LWW too, but typically UPDATE operations are applied in order.
+            // However, for robustness:
+            // final existing = await _localRepository.getTask(updatedTask.id);
+            // if (existing == null || (updatedTask.lastUpdated ?? 0) >= (existing.lastUpdated ?? 0)) ...
+            // But existingTask IS local.
+            // If we trust the operation stream order, we just apply.
+            // LWW is mainly for Snapshots/Merges.
+            await _localRepository.insertOrUpdateTask(updatedTask);
+          }
+
+          _allGanttTasks[sourceIndex] = updatedTask;
+          final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
+          if (visibleIndex != -1) {
+            _ganttTasks[visibleIndex] = updatedTask;
+          }
+          _recalculateStackingAndNotify();
+        } else {
+          // UPSERT (Treat as INSERT)
+          // This handles valid initial sync data sent as UPDATE_TASK
+          print('Upserting new task from UPDATE_TASK: $taskId');
+
+          final newTask = LegacyGanttTask(
+            id: taskId,
+            rowId: innerData['rowId'] ?? 'unknown_row', // Fallback if rowId missing, though important
+            name: innerData['name'] ?? 'Unnamed Task',
+            start: innerData['start_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
+                : DateTime.now(),
+            end: innerData['end_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
+                : DateTime.now().add(const Duration(days: 1)),
+            isSummary: ganttType == 'summary' || innerData['is_summary'] == true,
+            isMilestone: ganttType == 'milestone',
+            color: _parseColor(innerData['color']),
+            textColor: _parseColor(innerData['textColor']),
+            lastUpdated: innerData['lastUpdated'],
+          );
+
+          if (_useLocalDatabase) {
+            await _localRepository.insertOrUpdateTask(newTask);
+            // The repository stream usually handles the update, but for immediate feedback:
+            // _allGanttTasks.add(newTask); // Wait for stream?
+            // Actually, earlier code in INSERT_TASK says:
+            // if (_useLocalDatabase) await ... (and relies on stream?)
+            // NO, INSERT_TASK block handles both.
+            // Let's rely on stream if local DB used, BUT for Recalculate we might need it now.
+            // Existing INSERT_TASK code:
+            /*
             if (_useLocalDatabase) {
                await _localRepository.insertOrUpdateTask(newTask);
             } else {
@@ -1667,189 +1845,201 @@ class GanttViewModel extends ChangeNotifier {
                _recalculateStackingAndNotify();
             }
            */
-          // However, for UPDATE_TASK above, we manually updated _allGanttTasks even if using local DB.
-          // Reason: "We do this IMMEDIATELY even for local mode to ensure conflicts are recalculated."
-          // So we should do the same here.
+            // However, for UPDATE_TASK above, we manually updated _allGanttTasks even if using local DB.
+            // Reason: "We do this IMMEDIATELY even for local mode to ensure conflicts are recalculated."
+            // So we should do the same here.
+          }
+
+          // Add to in-memory list immediately
+          _allGanttTasks.add(newTask);
+          _recalculateStackingAndNotify();
+        }
+      } else if (op.type == 'INSERT_TASK') {
+        var data = op.data;
+        String? ganttType;
+
+        // Unwrap if nested (gantt_type present)
+        if (data.containsKey('data') && data['data'] is Map) {
+          ganttType = data['gantt_type'] as String?;
+          data = data['data'] as Map<String, dynamic>;
         }
 
-        // Add to in-memory list immediately
-        _allGanttTasks.add(newTask);
-        _recalculateStackingAndNotify();
-      }
-    } else if (op.type == 'INSERT_TASK') {
-      var data = op.data;
-      String? ganttType;
+        final newTask = LegacyGanttTask(
+          id: data['id'],
+          rowId: data['rowId'],
+          name: data['name'],
+          start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
+          end: DateTime.fromMillisecondsSinceEpoch(data['end_date']),
+          isSummary: ganttType == 'summary' || data['is_summary'] == true,
+          isMilestone: ganttType == 'milestone',
+          color: _parseColor(data['color']),
+          textColor: _parseColor(data['textColor']),
+          lastUpdated: data['lastUpdated'],
+        );
 
-      // Unwrap if nested (gantt_type present)
-      if (data.containsKey('data') && data['data'] is Map) {
-        ganttType = data['gantt_type'] as String?;
-        data = data['data'] as Map<String, dynamic>;
-      }
+        if (_useLocalDatabase) {
+          await _localRepository.insertOrUpdateTask(newTask);
+        } else {
+          _allGanttTasks.add(newTask);
+          _recalculateStackingAndNotify();
+        }
+      } else if (op.type == 'DELETE_TASK') {
+        // Handle DELETE_TASK
+        final taskId = taskData['id'];
+        if (taskId == null) return;
 
-      final newTask = LegacyGanttTask(
-        id: data['id'],
-        rowId: data['rowId'],
-        name: data['name'],
-        start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
-        end: DateTime.fromMillisecondsSinceEpoch(data['end_date']),
-        isSummary: ganttType == 'summary' || data['is_summary'] == true,
-        isMilestone: ganttType == 'milestone',
-        color: _parseColor(data['color']),
-        textColor: _parseColor(data['textColor']),
-      );
+        if (_useLocalDatabase) {
+          await _localRepository.deleteTask(taskId);
+        } else {
+          _ganttTasks.removeWhere((t) => t.id == taskId);
+          _allGanttTasks.removeWhere((t) => t.id == taskId);
+          // Also remove dependencies involving this task
+          _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
+          _recalculateStackingAndNotify();
+        }
+      } else if (op.type == 'PRESENCE_UPDATE') {
+        final data = op.data;
+        final userId = op.actorId;
+        print('Received Presence Update from $userId');
 
-      if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateTask(newTask);
-      } else {
-        _allGanttTasks.add(newTask);
-        _recalculateStackingAndNotify();
-      }
-    } else if (op.type == 'DELETE_TASK') {
-      // Handle DELETE_TASK
-      final taskId = taskData['id'];
-      if (taskId == null) return;
+        final viewportStartMs = data['viewportStart'] as int?;
+        final viewportEndMs = data['viewportEnd'] as int?;
 
-      if (_useLocalDatabase) {
-        await _localRepository.deleteTask(taskId);
-      } else {
-        _ganttTasks.removeWhere((t) => t.id == taskId);
-        _allGanttTasks.removeWhere((t) => t.id == taskId);
-        // Also remove dependencies involving this task
-        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-        _recalculateStackingAndNotify();
-      }
-    } else if (op.type == 'PRESENCE_UPDATE') {
-      final data = op.data;
-      final userId = op.actorId;
-      print('Received Presence Update from $userId');
+        _connectedUsers[userId] = RemoteGhost(
+          userId: userId,
+          lastUpdated: DateTime.now(),
+          viewportStart: viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : null,
+          viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : null,
+          verticalScrollOffset: (data['verticalScrollOffset'] as num?)?.toDouble(),
+          userName: data['userName'] as String?,
+          userColor: data['userColor'] as String?,
+        );
+        notifyListeners();
 
-      final viewportStartMs = data['viewportStart'] as int?;
-      final viewportEndMs = data['viewportEnd'] as int?;
+        if (followedUserId == userId) {
+          _applyFollowedUserView(_connectedUsers[userId]!);
+        }
+      } else if (op.type == 'INSERT_DEPENDENCY') {
+        final data = op.data;
+        final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String; // Handle both keys
+        final dependencyType = DependencyType.values.firstWhere(
+          (e) => e.name == dependencyTypeString,
+          orElse: () => DependencyType.finishToStart,
+        );
+        final newDep = LegacyGanttTaskDependency(
+          predecessorTaskId: data['predecessorTaskId'],
+          successorTaskId: data['successorTaskId'],
+          type: dependencyType,
+        );
 
-      _connectedUsers[userId] = RemoteGhost(
-        userId: userId,
-        lastUpdated: DateTime.now(),
-        viewportStart: viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : null,
-        viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : null,
-        verticalScrollOffset: (data['verticalScrollOffset'] as num?)?.toDouble(),
-        userName: data['userName'] as String?,
-        userColor: data['userColor'] as String?,
-      );
-      notifyListeners();
+        if (_useLocalDatabase) {
+          await _localRepository.insertOrUpdateDependency(newDep);
+          notifyListeners(); // Force UI update
+        } else {
+          if (!_dependencies.contains(newDep)) {
+            _dependencies.add(newDep);
+            notifyListeners();
+          }
+        }
+      } else if (op.type == 'DELETE_DEPENDENCY') {
+        final data = op.data;
+        final pred = data['predecessorTaskId'];
+        final succ = data['successorTaskId'];
 
-      if (followedUserId == userId) {
-        _applyFollowedUserView(_connectedUsers[userId]!);
-      }
-    } else if (op.type == 'INSERT_DEPENDENCY') {
-      final data = op.data;
-      final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String; // Handle both keys
-      final dependencyType = DependencyType.values.firstWhere(
-        (e) => e.name == dependencyTypeString,
-        orElse: () => DependencyType.finishToStart,
-      );
-      final newDep = LegacyGanttTaskDependency(
-        predecessorTaskId: data['predecessorTaskId'],
-        successorTaskId: data['successorTaskId'],
-        type: dependencyType,
-      );
-
-      if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateDependency(newDep);
-        notifyListeners(); // Force UI update
-      } else {
-        if (!_dependencies.contains(newDep)) {
-          _dependencies.add(newDep);
+        if (_useLocalDatabase) {
+          await _localRepository.deleteDependency(pred, succ);
+          notifyListeners(); // Force UI update
+        } else {
+          _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
           notifyListeners();
         }
-      }
-    } else if (op.type == 'DELETE_DEPENDENCY') {
-      final data = op.data;
-      final pred = data['predecessorTaskId'];
-      final succ = data['successorTaskId'];
+      } else if (op.type == 'CLEAR_DEPENDENCIES') {
+        final taskId = op.data['taskId'];
+        if (taskId == null) return;
 
-      if (_useLocalDatabase) {
-        await _localRepository.deleteDependency(pred, succ);
-        notifyListeners(); // Force UI update
-      } else {
-        _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
+        if (_useLocalDatabase) {
+          await _localRepository.deleteDependenciesForTask(taskId);
+          notifyListeners();
+        } else {
+          _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
+          notifyListeners();
+        }
+      } else if (op.type == 'INSERT_RESOURCE' || op.type == 'UPDATE_RESOURCE') {
+        var data = op.data;
+        if (data.containsKey('data') && data['data'] is Map) {
+          data = data['data'] as Map<String, dynamic>;
+        }
+
+        final resource = LocalResource(
+          id: data['id'],
+          name: data['name'],
+          parentId: data['parent_id'] ?? data['parentId'], // Handle both casing
+          isExpanded: data['isExpanded'] == true || data['is_expanded'] == true,
+        );
+
+        if (_useLocalDatabase) {
+          await _localRepository.insertOrUpdateResource(resource);
+        }
+      } else if (op.type == 'DELETE_RESOURCE') {
+        final id = op.data['id'];
+        if (id != null && _useLocalDatabase) {
+          await _localRepository.deleteResource(id);
+        }
+      } else if (op.type == 'RESET_DATA') {
+        // Unconditionally clear local DB
+        await _localRepository.deleteAllTasks();
+        await _localRepository.deleteAllDependencies();
+        await _localRepository.deleteAllResources();
+
+        // Unconditionally clear in-memory state
+        _ganttTasks.clear();
+        _allGanttTasks.clear();
+        _dependencies.clear();
+        _gridData.clear();
+        _cachedFlatGridData = null;
+        _conflictIndicators.clear();
+
         notifyListeners();
-      }
-    } else if (op.type == 'CLEAR_DEPENDENCIES') {
-      final taskId = op.data['taskId'];
-      if (taskId == null) return;
+      } else if (op.type == 'INSERT_RESOURCE') {
+        var data = op.data;
+        // Unwrap if nested
+        if (data.containsKey('data') && data['data'] is Map) {
+          data = data['data'] as Map<String, dynamic>;
+        }
 
-      if (_useLocalDatabase) {
-        await _localRepository.deleteDependenciesForTask(taskId);
-        notifyListeners();
-      } else {
-        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-        notifyListeners();
-      }
-    } else if (op.type == 'INSERT_RESOURCE' || op.type == 'UPDATE_RESOURCE') {
-      var data = op.data;
-      if (data.containsKey('data') && data['data'] is Map) {
-        data = data['data'] as Map<String, dynamic>;
-      }
+        final newResource = LocalResource(
+          id: data['id'],
+          name: data['name'],
+          parentId: data['parentId'],
+          isExpanded: data['isExpanded'] == true,
+        );
 
-      final resource = LocalResource(
-        id: data['id'],
-        name: data['name'],
-        parentId: data['parent_id'] ?? data['parentId'], // Handle both casing
-        isExpanded: data['isExpanded'] == true || data['is_expanded'] == true,
-      );
-
-      if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateResource(resource);
+        if (_useLocalDatabase) {
+          await _localRepository.insertOrUpdateResource(newResource);
+          // Stream listener will update the UI
+        } else {
+          // Not fully supported in non-local mode for this example yet,
+          // as _gridData is derived. But could be added if needed.
+          // For now, assuming local DB mode is the primary sync target.
+        }
       }
-    } else if (op.type == 'DELETE_RESOURCE') {
-      final id = op.data['id'];
-      if (id != null && _useLocalDatabase) {
-        await _localRepository.deleteResource(id);
-      }
-    } else if (op.type == 'RESET_DATA') {
-      // Unconditionally clear local DB
-      await _localRepository.deleteAllTasks();
-      await _localRepository.deleteAllDependencies();
-      await _localRepository.deleteAllResources();
-
-      // Unconditionally clear in-memory state
-      _ganttTasks.clear();
-      _allGanttTasks.clear();
-      _dependencies.clear();
-      _gridData.clear();
-      _cachedFlatGridData = null;
-      _conflictIndicators.clear();
-
-      notifyListeners();
-    } else if (op.type == 'INSERT_RESOURCE') {
-      var data = op.data;
-      // Unwrap if nested
-      if (data.containsKey('data') && data['data'] is Map) {
-        data = data['data'] as Map<String, dynamic>;
-      }
-
-      final newResource = LocalResource(
-        id: data['id'],
-        name: data['name'],
-        parentId: data['parentId'],
-        isExpanded: data['isExpanded'] == true,
-      );
-
-      if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateResource(newResource);
-        // Stream listener will update the UI
-      } else {
-        // Not fully supported in non-local mode for this example yet,
-        // as _gridData is derived. But could be added if needed.
-        // For now, assuming local DB mode is the primary sync target.
-      }
+    } catch (e, stack) {
+      print('Error handling incoming operation ${op.type}: $e\n$stack');
     }
   }
 
   Color? _parseColor(String? hex) {
     if (hex == null) return null;
+    var cleanHex = hex.replaceAll('#', '');
+    if (cleanHex.length == 6) {
+      cleanHex = 'FF$cleanHex';
+    }
+    if (cleanHex.length != 8) {
+      // Try parsing as is, or return null?
+      // If it's not 6 or 8, it's likely invalid for our purposes, but let's try.
+    }
     try {
-      return Color(int.parse(hex, radix: 16));
+      return Color(int.parse(cleanHex, radix: 16));
     } catch (_) {
       return null;
     }

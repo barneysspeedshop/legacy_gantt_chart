@@ -37,12 +37,14 @@ class LegacyGanttTaskDependency {
   /// For [DependencyType.finishToStart], this is the gap after the predecessor
   /// ends and before the successor can begin.
   final Duration? lag;
+  final int? lastUpdated;
 
   const LegacyGanttTaskDependency({
     required this.predecessorTaskId,
     required this.successorTaskId,
     this.type = DependencyType.finishToStart,
     this.lag,
+    this.lastUpdated,
   });
 
   @override
@@ -53,8 +55,10 @@ class LegacyGanttTaskDependency {
           predecessorTaskId == other.predecessorTaskId &&
           successorTaskId == other.successorTaskId &&
           type == other.type &&
-          lag == other.lag;
+          lag == other.lag &&
+          lastUpdated == other.lastUpdated;
 
   @override
-  int get hashCode => predecessorTaskId.hashCode ^ successorTaskId.hashCode ^ type.hashCode ^ lag.hashCode;
+  int get hashCode =>
+      predecessorTaskId.hashCode ^ successorTaskId.hashCode ^ type.hashCode ^ lag.hashCode ^ lastUpdated.hashCode;
 }

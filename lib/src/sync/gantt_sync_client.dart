@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 
 /// Represents a single operation in the CRDT system.
 class Operation {
+  final String? id; // Optional ID for tracking/deduplication (e.g. SYNC_SNAPSHOT)
   final String type;
   final Map<String, dynamic> data;
   final int timestamp;
   final String actorId;
 
   Operation({
+    this.id,
     required this.type,
     required this.data,
     required this.timestamp,
@@ -17,6 +19,7 @@ class Operation {
   });
 
   Map<String, dynamic> toJson() => {
+        if (id != null) 'id': id,
         'type': type,
         'data': data,
         'timestamp': timestamp,
@@ -24,6 +27,7 @@ class Operation {
       };
 
   factory Operation.fromJson(Map<String, dynamic> json) => Operation(
+        id: json['id'] as String?,
         type: json['type'] as String,
         data: json['data'] as Map<String, dynamic>,
         timestamp: json['timestamp'] as int,
@@ -35,6 +39,7 @@ class Operation {
     if (identical(this, other)) return true;
 
     return other is Operation &&
+        other.id == id &&
         other.type == type &&
         mapEquals(other.data, data) &&
         other.timestamp == timestamp &&
@@ -51,7 +56,7 @@ class Operation {
       dataHash ^= key.hashCode ^ value.hashCode;
     });
 
-    return type.hashCode ^ dataHash ^ timestamp.hashCode ^ actorId.hashCode;
+    return (id?.hashCode ?? 0) ^ type.hashCode ^ dataHash ^ timestamp.hashCode ^ actorId.hashCode;
   }
 }
 

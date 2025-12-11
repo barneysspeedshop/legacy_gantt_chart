@@ -1,0 +1,250 @@
+Analyzing gantt_view_model.dart...                              
+
+warning • The declaration '<unnamed>' isn't referenced • lib/view_models/gantt_view_model.dart:34:7 • unused_element
+warning • The declaration '_updateTasksAndStacking' isn't referenced • lib/view_models/gantt_view_model.dart:1337:8 • unused_element
+  error • A try block must be followed by an 'on', 'catch', or 'finally' clause • lib/view_models/gantt_view_model.dart:1585:5 • missing_catch_or_finally
+warning • The value of the local variable 'taskData' isn't used • lib/view_models/gantt_view_model.dart:1588:13 • unused_local_variable
+  error • Expected to find ';' • lib/view_models/gantt_view_model.dart:1661:7 • expected_token
+warning • Dead code • lib/view_models/gantt_view_model.dart:1661:9 • dead_code
+  error • Expected an identifier • lib/view_models/gantt_view_model.dart:1661:9 • missing_identifier
+  error • Unexpected text ';' • lib/view_models/gantt_view_model.dart:1661:9 • unexpected_token
+  error • Undefined name 'taskData' • lib/view_models/gantt_view_model.dart:1662:25 • undefined_identifier
+  error • Undefined name 'taskData' • lib/view_models/gantt_view_model.dart:1781:24 • undefined_identifier
+  error • Expected a class member • lib/view_models/gantt_view_model.dart:1919:7 • expected_class_member
+  error • Expected an identifier • lib/view_models/gantt_view_model.dart:1919:13 • missing_identifier
+  error • Undefined name 'op' • lib/view_models/gantt_view_model.dart:1920:50 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:1945:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:1950:13 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1951:16 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1955:11 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1962:30 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1964:32 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1966:32 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:1967:15 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:1983:9 • undefined_identifier
+  error • Undefined name '_isSyncConnected' • lib/view_models/gantt_view_model.dart:1983:32 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:1984:7 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:1999:19 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2001:7 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2001:31 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2006:11 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2008:13 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2008:58 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2008:74 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2008:104 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2010:9 • undefined_function
+  error • Undefined name '_createTasksEnabled' • lib/view_models/gantt_view_model.dart:2018:10 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2022:26 • undefined_identifier
+  error • Undefined name '_defaultStartTime' • lib/view_models/gantt_view_model.dart:2041:27 • undefined_identifier
+  error • Undefined name '_defaultEndTime' • lib/view_models/gantt_view_model.dart:2042:25 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2102:7 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2103:7 • undefined_identifier
+  error • Undefined name '_cachedFlatGridData' • lib/view_models/gantt_view_model.dart:2104:7 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2105:7 • undefined_function
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2111:28 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2127:30 • undefined_identifier
+  error • Undefined name '_cachedFlatGridData' • lib/view_models/gantt_view_model.dart:2130:7 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2131:7 • undefined_function
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2140:9 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2142:39 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2143:56 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2155:32 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2212:9 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2212:65 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2212:95 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2213:5 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2214:5 • undefined_function
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2219:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2220:7 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2235:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2236:7 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2238:7 • undefined_identifier
+  error • Undefined name 'effectiveTotalStartDate' • lib/view_models/gantt_view_model.dart:2247:9 • undefined_identifier
+  error • Undefined name 'effectiveTotalEndDate' • lib/view_models/gantt_view_model.dart:2248:9 • undefined_identifier
+  error • Undefined name '_visibleStartDate' • lib/view_models/gantt_view_model.dart:2249:9 • undefined_identifier
+  error • Undefined name '_visibleEndDate' • lib/view_models/gantt_view_model.dart:2250:9 • undefined_identifier
+  error • Undefined name 'effectiveTotalEndDate' • lib/view_models/gantt_view_model.dart:2253:27 • undefined_identifier
+  error • Undefined name 'effectiveTotalStartDate' • lib/view_models/gantt_view_model.dart:2253:61 • undefined_identifier
+  error • Undefined name '_visibleEndDate' • lib/view_models/gantt_view_model.dart:2254:29 • undefined_identifier
+  error • Undefined name '_visibleStartDate' • lib/view_models/gantt_view_model.dart:2254:57 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2264:18 • undefined_identifier
+  error • Undefined name '_gridScrollController' • lib/view_models/gantt_view_model.dart:2265:26 • undefined_identifier
+  error • Undefined name '_gridScrollController' • lib/view_models/gantt_view_model.dart:2269:27 • undefined_identifier
+  error • Undefined name '_gridScrollController' • lib/view_models/gantt_view_model.dart:2270:30 • undefined_identifier
+  error • Undefined name 'visibleGanttRows' • lib/view_models/gantt_view_model.dart:2273:31 • undefined_identifier
+  error • Undefined name '_rowMaxStackDepth' • lib/view_models/gantt_view_model.dart:2280:28 • undefined_identifier
+  error • Undefined name 'rowHeight' • lib/view_models/gantt_view_model.dart:2281:37 • undefined_identifier
+  error • Undefined name 'ganttScrollController' • lib/view_models/gantt_view_model.dart:2290:29 • undefined_identifier
+  error • Undefined name '_gridScrollController' • lib/view_models/gantt_view_model.dart:2294:9 • undefined_identifier
+  error • Undefined name '_ganttScrollController' • lib/view_models/gantt_view_model.dart:2298:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2302:13 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2303:11 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2305:13 • undefined_identifier
+  error • Undefined name '_localResources' • lib/view_models/gantt_view_model.dart:2306:28 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2316:11 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2333:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2334:7 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2336:9 • undefined_identifier
+  error • Undefined name '_localResources' • lib/view_models/gantt_view_model.dart:2337:24 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2347:7 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2355:9 • undefined_identifier
+  error • Undefined name 'visibleGanttRows' • lib/view_models/gantt_view_model.dart:2358:29 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2360:71 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2361:9 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2362:9 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2363:24 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2366:7 • undefined_function
+  error • Undefined name '_rowMaxStackDepth' • lib/view_models/gantt_view_model.dart:2374:22 • undefined_identifier
+  error • Undefined name 'rowHeight' • lib/view_models/gantt_view_model.dart:2374:73 • undefined_identifier
+  error • Undefined name '_gridScrollController' • lib/view_models/gantt_view_model.dart:2377:11 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2382:7 • undefined_function
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2389:22 • undefined_identifier
+  error • Undefined name 'visibleGanttRows' • lib/view_models/gantt_view_model.dart:2398:27 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2399:69 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2400:7 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2402:22 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2405:5 • undefined_function
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2412:20 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2428:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2437:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2439:7 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2441:28 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2444:11 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2444:66 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2444:96 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2445:7 • undefined_function
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2448:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2449:7 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2467:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2469:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2471:7 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2474:24 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2476:11 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2480:11 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2480:66 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2480:96 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2481:7 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2482:7 • undefined_function
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2485:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2486:7 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2497:33 • undefined_identifier
+  error • Undefined name '_showEmptyParentRows' • lib/view_models/gantt_view_model.dart:2498:38 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2499:11 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2500:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2502:11 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2503:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2510:11 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2511:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2515:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2517:7 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2520:24 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2522:11 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2526:11 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2526:66 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2526:96 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2527:7 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2528:7 • undefined_function
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2531:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2532:7 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2546:26 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2548:9 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2564:24 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2568:28 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2586:24 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2589:20 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2601:24 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2642:9 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2644:49 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2659:13 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2681:9 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2685:24 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2692:30 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2702:27 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2705:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2707:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2709:33 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2713:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2715:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2723:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2733:10 • undefined_identifier
+  error • Undefined name '_allGanttTasks' • lib/view_models/gantt_view_model.dart:2740:25 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2745:32 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2749:9 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2750:9 • undefined_identifier
+  error • Undefined name '_cachedFlatGridData' • lib/view_models/gantt_view_model.dart:2752:7 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2755:11 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2755:67 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2755:97 • undefined_identifier
+  error • The function '_updateTasksAndStacking' isn't defined • lib/view_models/gantt_view_model.dart:2756:7 • undefined_function
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2762:26 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2778:9 • undefined_identifier
+  error • The function 'fetchScheduleData' isn't defined • lib/view_models/gantt_view_model.dart:2779:13 • undefined_function
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2784:47 • undefined_identifier
+  error • Undefined name '_scheduleService' • lib/view_models/gantt_view_model.dart:2788:33 • undefined_identifier
+  error • Undefined name '_apiResponse' • lib/view_models/gantt_view_model.dart:2789:7 • undefined_identifier
+  error • Undefined name '_startDate' • lib/view_models/gantt_view_model.dart:2790:18 • undefined_identifier
+  error • Undefined name '_range' • lib/view_models/gantt_view_model.dart:2791:14 • undefined_identifier
+  error • Undefined name '_showConflicts' • lib/view_models/gantt_view_model.dart:2792:22 • undefined_identifier
+  error • Undefined name '_showEmptyParentRows' • lib/view_models/gantt_view_model.dart:2793:28 • undefined_identifier
+   info • Unnecessary use of a null check ('!') • lib/view_models/gantt_view_model.dart:2799:57 • unnecessary_null_checks
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2804:5 • undefined_identifier
+  error • Undefined name '_conflictIndicators' • lib/view_models/gantt_view_model.dart:2805:5 • undefined_identifier
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2806:5 • undefined_identifier
+  error • Undefined name '_cachedFlatGridData' • lib/view_models/gantt_view_model.dart:2807:5 • undefined_identifier
+  error • Undefined name '_rowMaxStackDepth' • lib/view_models/gantt_view_model.dart:2808:5 • undefined_identifier
+  error • Undefined name '_eventMap' • lib/view_models/gantt_view_model.dart:2809:5 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2812:9 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2813:27 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2814:25 • undefined_identifier
+  error • Undefined name '_ganttTasks' • lib/view_models/gantt_view_model.dart:2815:26 • undefined_identifier
+  error • Undefined name '_totalStartDate' • lib/view_models/gantt_view_model.dart:2819:7 • undefined_identifier
+  error • Undefined name '_totalEndDate' • lib/view_models/gantt_view_model.dart:2820:7 • undefined_identifier
+  error • Undefined name '_totalStartDate' • lib/view_models/gantt_view_model.dart:2822:7 • undefined_identifier
+  error • Undefined name '_startDate' • lib/view_models/gantt_view_model.dart:2822:25 • undefined_identifier
+  error • Undefined name '_totalEndDate' • lib/view_models/gantt_view_model.dart:2823:7 • undefined_identifier
+  error • Undefined name '_startDate' • lib/view_models/gantt_view_model.dart:2823:23 • undefined_identifier
+  error • Undefined name '_range' • lib/view_models/gantt_view_model.dart:2823:53 • undefined_identifier
+  error • Undefined name '_visibleStartDate' • lib/view_models/gantt_view_model.dart:2829:9 • undefined_identifier
+  error • Undefined name '_visibleEndDate' • lib/view_models/gantt_view_model.dart:2829:38 • undefined_identifier
+  error • The function '_setInitialVisibleWindow' isn't defined • lib/view_models/gantt_view_model.dart:2829:63 • undefined_function
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2831:5 • undefined_function
+  error • Undefined name '_gridData' • lib/view_models/gantt_view_model.dart:2842:28 • undefined_identifier
+  error • Undefined name 'ganttTasks' • lib/view_models/gantt_view_model.dart:2848:12 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2868:10 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2871:11 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2872:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2884:11 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2885:9 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2885:78 • undefined_function
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2889:9 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2889:35 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2890:9 • undefined_function
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2897:7 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2901:26 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2902:21 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2906:11 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2907:9 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2918:11 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2919:9 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2921:26 • undefined_function
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2924:9 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2925:9 • undefined_function
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2932:9 • undefined_identifier
+  error • Undefined name '_syncClient' • lib/view_models/gantt_view_model.dart:2933:7 • undefined_identifier
+  error • Undefined name '_useLocalDatabase' • lib/view_models/gantt_view_model.dart:2941:9 • undefined_identifier
+  error • Undefined name '_localRepository' • lib/view_models/gantt_view_model.dart:2942:7 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2942:71 • undefined_function
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2944:28 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2946:11 • undefined_identifier
+  error • Undefined name '_dependencies' • lib/view_models/gantt_view_model.dart:2949:9 • undefined_identifier
+  error • The function 'notifyListeners' isn't defined • lib/view_models/gantt_view_model.dart:2950:9 • undefined_function
+  error • The body might complete normally, causing 'null' to be returned, but the return type, 'String Function(DateTime)', is a potentially non-nullable type • lib/view_models/gantt_view_model.dart:2956:29 • body_might_complete_normally
+  error • Undefined name '_selectedAxisFormat' • lib/view_models/gantt_view_model.dart:2957:13 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2959:41 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2961:41 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2963:42 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2965:42 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2967:39 • undefined_identifier
+  error • Undefined name '_selectedLocale' • lib/view_models/gantt_view_model.dart:2969:41 • undefined_identifier
+  error • Expected a method, getter, setter or operator declaration • lib/view_models/gantt_view_model.dart:2972:1 • expected_executable
+

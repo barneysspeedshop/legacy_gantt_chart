@@ -396,6 +396,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
           _handleRemoteGhostUpdate(op.data, op.actorId);
         } else if (op.type == 'PRESENCE_UPDATE') {
           _handlePresenceUpdate(op.data, op.actorId);
+        } else if (op.type == 'SYNC_SNAPSHOT') {
+          // Handled by parent controller/view model, ignore here to avoid CRDT warning
         } else {
           _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
           if (taskGrouper != null) {

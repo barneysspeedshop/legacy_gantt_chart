@@ -30,6 +30,7 @@ class GanttDb {
 
     final db = await SqliteCrdt.open(
       path,
+      version: 6,
       onCreate: (db, version) async {
         // Tasks table
         await db.execute('''
@@ -45,7 +46,8 @@ class GanttDb {
             stack_index INTEGER,
             is_summary INTEGER,
             is_milestone INTEGER,
-            completion REAL
+            completion REAL,
+            last_updated INTEGER
           )
         ''');
 
@@ -57,6 +59,7 @@ class GanttDb {
             to_id TEXT,
             type INTEGER,
             lag_ms INTEGER,
+            last_updated INTEGER,
             PRIMARY KEY (from_id, to_id)
           )
         ''');
@@ -66,7 +69,8 @@ class GanttDb {
             id TEXT PRIMARY KEY,
             name TEXT,
             parent_id TEXT,
-            is_expanded INTEGER DEFAULT 1
+            is_expanded INTEGER DEFAULT 1,
+            last_updated INTEGER
           )
         ''');
 
@@ -97,8 +101,6 @@ class GanttDb {
             await db.execute('ALTER TABLE resources ADD COLUMN is_expanded INTEGER DEFAULT 1');
           } catch (e) {
             // Might fail if table doesn't exist? (it should)
-            // Or if column already exists (shouldn't given logic)
-            // But if we just created it above...
           }
         }
         if (oldVersion < 5) {
@@ -112,10 +114,17 @@ class GanttDb {
             )
           ''');
         }
-        // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
-        // on open, so we don't need manual migration for is_deleted.
+        if (oldVersion < 6) {
+          // Ensure these columns exist for everyone upgrading to v6
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN last_updated INTEGER');
+            await db.execute('ALTER TABLE dependencies ADD COLUMN last_updated INTEGER');
+            await db.execute('ALTER TABLE resources ADD COLUMN last_updated INTEGER');
+          } catch (e) {
+            // Ignore if columns already exist
+          }
+        }
       },
-      version: 5,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)
