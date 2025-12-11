@@ -47,7 +47,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     }
   }
 
-  void connect(String tenantId) {
+  void connect(String tenantId, {int? lastSyncedTimestamp}) {
     var finalUri = uri;
     if (authToken != null) {
       // Append token to query parameters for browser compatibility
@@ -62,8 +62,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
       // Send subscribe message immediately upon connection
       _channel!.sink.add(jsonEncode({
-        'type': 'subscribe',
+        'type': 'subscribe', // ProtocolMessage.subscribe
         'channel': tenantId,
+        'lastSyncedTimestamp': lastSyncedTimestamp,
       }));
 
       _channel!.stream.listen(
@@ -87,9 +88,17 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             }
 
             // Construct Operation from envelope fields
+            var opData = dataMap != null ? dataMap as Map<String, dynamic> : <String, dynamic>{};
+
+            // Auto-unwrap 'data' wrapper if present (Server sends {'data': {'id':...}})
+            // This ensures CRDTEngine and other consumers get flat data
+            if (opData.containsKey('data') && opData['data'] is Map) {
+              opData = opData['data'] as Map<String, dynamic>;
+            }
+
             final op = Operation(
               type: type,
-              data: dataMap != null ? dataMap as Map<String, dynamic> : <String, dynamic>{},
+              data: opData,
               timestamp: timestamp as int,
               actorId: actorId as String,
             );

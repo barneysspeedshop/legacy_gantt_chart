@@ -397,25 +397,23 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     super.didUpdateWidget(oldWidget);
 
     if (_internalViewModel != null) {
-      if (!listEquals(oldWidget.dependencies, widget.dependencies)) {
-        _internalViewModel!.updateDependencies(widget.dependencies ?? []);
-      }
+      _internalViewModel!.updateDependencies(widget.dependencies ?? []);
+
       if (oldWidget.showCursors != widget.showCursors) {
         _internalViewModel!.showRemoteCursors = widget.showCursors;
       }
-      if (!listEquals(oldWidget.data, widget.data) || !listEquals(oldWidget.holidays, widget.holidays)) {
-        final List<LegacyGanttTask> allItems = [...(widget.data ?? []), ...(widget.holidays ?? [])];
-        _internalViewModel!.updateData(allItems);
-      }
+
+      final List<LegacyGanttTask> allItems = [...(widget.data ?? []), ...(widget.holidays ?? [])];
+      _internalViewModel!.updateData(allItems);
+
       if (widget.conflictIndicators != null) {
         _internalViewModel!.updateConflictIndicators(widget.conflictIndicators!);
       }
-      if (!listEquals(oldWidget.visibleRows, widget.visibleRows)) {
-        _internalViewModel!.updateVisibleRows(widget.visibleRows);
-      }
-      if (!mapEquals(oldWidget.rowMaxStackDepth, widget.rowMaxStackDepth)) {
-        _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
-      }
+
+      _internalViewModel!.updateVisibleRows(widget.visibleRows);
+
+      _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+
       if (oldWidget.axisHeight != widget.axisHeight) {
         _internalViewModel!.updateAxisHeight(widget.axisHeight);
       }

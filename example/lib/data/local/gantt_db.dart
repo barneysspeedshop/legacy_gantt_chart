@@ -80,6 +80,14 @@ class GanttDb {
             actor_id TEXT
           )
         ''');
+
+        // KV Store table (for sync metadata)
+        await db.execute('''
+          CREATE TABLE sync_metadata (
+            meta_key TEXT PRIMARY KEY,
+            meta_value TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -112,10 +120,82 @@ class GanttDb {
             )
           ''');
         }
+        if (oldVersion < 6) {
+          // Add last_updated and deleted_at columns to all tables
+          // Tasks
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+          // Migrate is_deleted (if we have access to it, SqliteCrdt usually manages it, but we want our own tracking)
+          // We can't easily read the internal is_deleted here via raw SQL if it's hidden or managed,
+          // but SqliteCrdt exposes it.
+          // Let's assume we maintain parallel state for now or just init deleted_at null.
+
+          // Dependencies
+          try {
+            await db.execute('ALTER TABLE dependencies ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE dependencies ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+
+          // Resources
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+        }
+        if (oldVersion < 7) {
+          // Attempted creation of kv_store, might have failed or been bad.
+          // We will fix in v8.
+        }
+        if (oldVersion < 8) {
+          try {
+            await db.execute('DROP TABLE IF EXISTS kv_store');
+          } catch (_) {}
+          try {
+            await db.execute('''
+              CREATE TABLE sync_metadata (
+                meta_key TEXT PRIMARY KEY,
+                meta_value TEXT
+              )
+            ''');
+          } catch (_) {}
+        }
+        if (oldVersion < 9) {
+          // Force fix for sync_metadata missing
+          try {
+            await db.execute('DROP TABLE IF EXISTS kv_store');
+          } catch (e) {
+            print('Error dropping kv_store: $e');
+          }
+          try {
+            await db.execute('DROP TABLE IF EXISTS sync_metadata');
+          } catch (e) {
+            print('Error dropping sync_metadata: $e');
+          }
+          try {
+            await db.execute('''
+              CREATE TABLE sync_metadata (
+                meta_key TEXT PRIMARY KEY,
+                meta_value TEXT
+              )
+            ''');
+            print('Successfully created sync_metadata table (v9 migration)');
+          } catch (e) {
+            print('Error creating sync_metadata table: $e');
+            rethrow; // Don't hide it this time
+          }
+        }
         // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
         // on open, so we don't need manual migration for is_deleted.
       },
-      version: 5,
+      version: 9,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)

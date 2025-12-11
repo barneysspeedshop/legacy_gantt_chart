@@ -93,12 +93,17 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _flushQueue() async {
+    print('OfflineClient: _flushQueue called. isConnected: $_isConnected, innerClient: $_innerClient');
     if (_activeFlushFuture != null) {
+      print('OfflineClient: Flush already active, waiting for it...');
       return _activeFlushFuture;
     }
     _activeFlushFuture = _performFlush();
     try {
       await _activeFlushFuture;
+      print('OfflineClient: Flush completed.');
+    } catch (e, st) {
+      print('OfflineClient: Flush failed with error: $e\n$st');
     } finally {
       _activeFlushFuture = null;
     }
@@ -106,7 +111,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> _performFlush() async {
     // Only flush if we think we are connected.
-    if (!_isConnected || _innerClient == null) return;
+    if (!_isConnected || _innerClient == null) {
+      print('OfflineClient: Aborting flush because not connected or no inner client.');
+      return;
+    }
+
+    print('OfflineClient: Starting flush loop...');
 
     while (_isConnected && _innerClient != null) {
       if (!_isDbReady) {

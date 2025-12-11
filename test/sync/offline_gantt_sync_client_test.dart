@@ -27,7 +27,7 @@ class MockInnerClient implements WebSocketGanttSyncClient {
   }
 
   @override
-  void connect(String tenantId) {}
+  void connect(String tenantId, {int? lastSyncedTimestamp}) {}
 
   @override
   Future<void> dispose() async {

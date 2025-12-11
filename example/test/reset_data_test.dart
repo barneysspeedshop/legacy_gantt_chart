@@ -23,7 +23,7 @@ class MockSyncClient extends WebSocketGanttSyncClient {
   Stream<Operation> get operationStream => _controller.stream;
 
   @override
-  void connect(String tenantId) {
+  void connect(String tenantId, {int? lastSyncedTimestamp}) {
     // No-op for real connection, but we pretend we connected
   }
 

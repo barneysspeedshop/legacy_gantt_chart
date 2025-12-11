@@ -1551,7 +1551,11 @@ class GanttViewModel extends ChangeNotifier {
 
       // Connect AFTER listeners are set up to capture initial state
       if (wsClientToConnect != null) {
-        wsClientToConnect.connect(tenantId);
+        int? lastSynced;
+        if (_useLocalDatabase) {
+          lastSynced = await _localRepository.getLastServerSyncTimestamp();
+        }
+        wsClientToConnect.connect(tenantId, lastSyncedTimestamp: lastSynced);
       }
     } catch (e) {
       print('Sync connection error: $e');
@@ -1582,6 +1586,13 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
+    print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
+
+    // Persist the latest sync timestamp from the server, independent of local edits
+    if (_useLocalDatabase) {
+      await _localRepository.setLastServerSyncTimestamp(op.timestamp);
+    }
+
     final data = op.data;
     // Task data is directly in data
     final taskData = data;
@@ -1596,11 +1607,13 @@ class GanttViewModel extends ChangeNotifier {
         innerData = innerData['data'] as Map<String, dynamic>;
       }
 
-      final taskId = innerData['id'];
-      if (taskId == null) {
+      final taskIdRaw = innerData['id'];
+      if (taskIdRaw == null) {
         print('Warning: UPDATE_TASK received without ID');
         return;
       }
+      final taskId = taskIdRaw.toString().trim();
+      print('Processing UPDATE_TASK. ID: "$taskId" (Raw Type: ${taskIdRaw.runtimeType})');
 
       // 1. Check if task exists
       final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
@@ -1608,27 +1621,57 @@ class GanttViewModel extends ChangeNotifier {
       if (sourceIndex != -1) {
         // UPDATE Existing
         final existingTask = _allGanttTasks[sourceIndex];
+
+        // LWW Check: If local task is newer than incoming operation, ignore it.
+        // We use a small buffer (e.g. 0ms, or maybe 100ms if clocks drift, but simple > is usually enough)
+        // If lastUpdated is null (legacy data), we accept the update.
+        if (existingTask.lastUpdated != null && op.timestamp < existingTask.lastUpdated!) {
+          print(
+              'Ignoring stale UPDATE_TASK for ${existingTask.id}. Local: ${existingTask.lastUpdated}, Remote: ${op.timestamp}');
+          return;
+        }
+
+        // Robust parsing handling:
+        // 1. Support both 'start_date' (int) and 'start' (String/ISO) keys.
+        // 2. Update 'lastUpdated' to the operation timestamp to respect LWW.
+
+        DateTime? parseDate(dynamic value) {
+          if (value == null) return null;
+          if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+          if (value is String) return DateTime.tryParse(value);
+          return null;
+        }
+
+        final newStart = parseDate(innerData['start_date']) ?? parseDate(innerData['start']);
+        final newEnd = parseDate(innerData['end_date']) ?? parseDate(innerData['end']);
+
         final updatedTask = existingTask.copyWith(
           name: innerData['name'] ?? existingTask.name,
-          start: innerData['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
-              : existingTask.start,
-          end: innerData['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
-              : existingTask.end,
+          start: newStart ?? existingTask.start,
+          end: newEnd ?? existingTask.end,
+          lastUpdated: op.timestamp,
           // Update other fields if present in payload
         );
 
-        if (_useLocalDatabase) {
-          await _localRepository.insertOrUpdateTask(updatedTask);
-        }
+        try {
+          if (_useLocalDatabase) {
+            await _localRepository.insertOrUpdateTask(updatedTask);
+          }
 
-        _allGanttTasks[sourceIndex] = updatedTask;
-        final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
-        if (visibleIndex != -1) {
-          _ganttTasks[visibleIndex] = updatedTask;
+          // Force new list reference to ensure CustomPainter detects change
+          _allGanttTasks = List.from(_allGanttTasks);
+          _allGanttTasks[sourceIndex] = updatedTask;
+
+          // Also update visible tasks immediately to avoid flicker before full process
+          final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
+          if (visibleIndex != -1) {
+            _ganttTasks[visibleIndex] = updatedTask;
+          }
+          await _processLocalData();
+          print('Processing UPDATE_TASK complete for $taskId');
+        } catch (e, st) {
+          print('Error processing UPDATE_TASK for $taskId: $e\n$st');
         }
-        _recalculateStackingAndNotify();
       } else {
         // UPSERT (Treat as INSERT)
         // This handles valid initial sync data sent as UPDATE_TASK
@@ -1652,29 +1695,11 @@ class GanttViewModel extends ChangeNotifier {
 
         if (_useLocalDatabase) {
           await _localRepository.insertOrUpdateTask(newTask);
-          // The repository stream usually handles the update, but for immediate feedback:
-          // _allGanttTasks.add(newTask); // Wait for stream?
-          // Actually, earlier code in INSERT_TASK says:
-          // if (_useLocalDatabase) await ... (and relies on stream?)
-          // NO, INSERT_TASK block handles both.
-          // Let's rely on stream if local DB used, BUT for Recalculate we might need it now.
-          // Existing INSERT_TASK code:
-          /*
-            if (_useLocalDatabase) {
-               await _localRepository.insertOrUpdateTask(newTask);
-            } else {
-               _allGanttTasks.add(newTask);
-               _recalculateStackingAndNotify();
-            }
-           */
-          // However, for UPDATE_TASK above, we manually updated _allGanttTasks even if using local DB.
-          // Reason: "We do this IMMEDIATELY even for local mode to ensure conflicts are recalculated."
-          // So we should do the same here.
         }
 
         // Add to in-memory list immediately
-        _allGanttTasks.add(newTask);
-        _recalculateStackingAndNotify();
+        _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
+        await _processLocalData();
       }
     } else if (op.type == 'INSERT_TASK') {
       var data = op.data;
@@ -1687,8 +1712,8 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       final newTask = LegacyGanttTask(
-        id: data['id'],
-        rowId: data['rowId'],
+        id: data['id']?.toString().trim() ?? '',
+        rowId: data['rowId']?.toString().trim() ?? '',
         name: data['name'],
         start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
         end: DateTime.fromMillisecondsSinceEpoch(data['end_date']),
@@ -1700,10 +1725,10 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         await _localRepository.insertOrUpdateTask(newTask);
-      } else {
-        _allGanttTasks.add(newTask);
-        _recalculateStackingAndNotify();
       }
+
+      _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
+      await _processLocalData();
     } else if (op.type == 'DELETE_TASK') {
       // Handle DELETE_TASK
       final taskId = taskData['id'];
@@ -1711,13 +1736,13 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         await _localRepository.deleteTask(taskId);
-      } else {
-        _ganttTasks.removeWhere((t) => t.id == taskId);
-        _allGanttTasks.removeWhere((t) => t.id == taskId);
-        // Also remove dependencies involving this task
-        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-        _recalculateStackingAndNotify();
       }
+
+      _ganttTasks.removeWhere((t) => t.id == taskId);
+      _allGanttTasks.removeWhere((t) => t.id == taskId);
+      // Also remove dependencies involving this task
+      _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
+      await _processLocalData();
     } else if (op.type == 'PRESENCE_UPDATE') {
       final data = op.data;
       final userId = op.actorId;
@@ -1801,10 +1826,24 @@ class GanttViewModel extends ChangeNotifier {
       if (_useLocalDatabase) {
         await _localRepository.insertOrUpdateResource(resource);
       }
+
+      // Update in-memory state explicitly (Upsert)
+      final index = _localResources.indexWhere((r) => r.id == resource.id);
+      if (index != -1) {
+        _localResources[index] = resource;
+      } else {
+        _localResources = List.from(_localResources)..add(resource);
+      }
+
+      await _processLocalData();
     } else if (op.type == 'DELETE_RESOURCE') {
       final id = op.data['id'];
-      if (id != null && _useLocalDatabase) {
-        await _localRepository.deleteResource(id);
+      if (id != null) {
+        if (_useLocalDatabase) {
+          await _localRepository.deleteResource(id);
+        }
+        _localResources.removeWhere((r) => r.id == id);
+        await _processLocalData();
       }
     } else if (op.type == 'RESET_DATA') {
       // Unconditionally clear local DB
@@ -1821,28 +1860,6 @@ class GanttViewModel extends ChangeNotifier {
       _conflictIndicators.clear();
 
       notifyListeners();
-    } else if (op.type == 'INSERT_RESOURCE') {
-      var data = op.data;
-      // Unwrap if nested
-      if (data.containsKey('data') && data['data'] is Map) {
-        data = data['data'] as Map<String, dynamic>;
-      }
-
-      final newResource = LocalResource(
-        id: data['id'],
-        name: data['name'],
-        parentId: data['parentId'],
-        isExpanded: data['isExpanded'] == true,
-      );
-
-      if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateResource(newResource);
-        // Stream listener will update the UI
-      } else {
-        // Not fully supported in non-local mode for this example yet,
-        // as _gridData is derived. But could be added if needed.
-        // For now, assuming local DB mode is the primary sync target.
-      }
     }
   }
 
@@ -1861,10 +1878,25 @@ class GanttViewModel extends ChangeNotifier {
     // 1. Handle Local Database Mode - Persist change
     if (_useLocalDatabase) {
       // Write to database asynchronously.
-      // We do NOT return here anymore. We proceed to update the in-memory state optimistically
-      // so that the UI remains consistent if the user interacts (e.g. expands a row)
-      // before the DB stream emits the new data.
-      await _localRepository.insertOrUpdateTask(task.copyWith(start: newStart, end: newEnd));
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
+      await _localRepository.insertOrUpdateTask(updatedTask);
+
+      // Optimistically update in-memory request with the timestamped task
+      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        _allGanttTasks[index] = updatedTask;
+
+        if (_apiResponse != null) {
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
+              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+        }
+      }
+      // Return early or continue? The original logic continued to sync client.
+      // We can continue, but we've already updated memory.
+      // The original code had a duplicate memory update at the bottom.
+      // Let's rely on the bottom part but ensure we use the updated task.
     } else if (_apiResponse != null) {
       // 2. Handle Mock Data Mode (Memory only) - only if NOT using local DB
       // Find the parent resource and child job to update the "backend" (apiResponse)
@@ -1897,7 +1929,10 @@ class GanttViewModel extends ChangeNotifier {
 
     // Sync Client Notification (Common)
     // Moved after local persistence to ensure optimistic update applies locally first
-    if (_syncClient != null && _isSyncConnected) {
+    // Sync Client Notification (Common)
+    // Moved after local persistence to ensure optimistic update applies locally first
+    // Allow sending if connected OR if using OfflineClient (which buffers internally)
+    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
       _syncClient!.sendOperation(Operation(
         type: 'UPDATE_TASK',
         data: {
@@ -1913,18 +1948,20 @@ class GanttViewModel extends ChangeNotifier {
 
     // Common: Update the source of truth (_allGanttTasks) optimistically
     // This applies to both Local Mode (optimistic) and Mock Mode (memory)
-    final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
-    if (index != -1) {
-      _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd);
+    // FIX: Ensure we only update if we haven't already done so in the Local DB block above.
+    // OR simpler: Make the bottom block the ONLY block, but ensuring `lastUpdated` is set.
 
-      // Now recalculate using the UPDATED source of truth
-      // Note: In local mode, _apiResponse is a dummy, but that's fine as long as _allGanttTasks is correct
-      // and we have a valid dummy response structure (which _processLocalData creates).
-      if (_apiResponse != null) {
-        final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-            _scheduleService.publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+    if (!_useLocalDatabase) {
+      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd);
 
-        _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+        if (_apiResponse != null) {
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
+              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+
+          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+        }
       }
     }
   }
@@ -2549,6 +2586,7 @@ class GanttViewModel extends ChangeNotifier {
         start: updatedTaskData.start,
         end: updatedTaskData.end,
         completion: updatedTaskData.completion,
+        lastUpdated: DateTime.now().millisecondsSinceEpoch,
       );
       await _updateMultipleTasks([updatedTask]);
     }
@@ -2562,13 +2600,16 @@ class GanttViewModel extends ChangeNotifier {
     for (final updatedTask in updatedTasks) {
       final index = newTasks.indexWhere((t) => t.id == updatedTask.id);
       if (index != -1) {
-        // Preserve original properties by only copying over the edited fields.
         final originalTask = newTasks[index];
+        final now = DateTime.now().millisecondsSinceEpoch;
+        // Preserve original properties by only copying over the edited fields.
+        // Also ensure lastUpdated is updated if not already set new.
         newTasks[index] = originalTask.copyWith(
           name: updatedTask.name,
           start: updatedTask.start,
           end: updatedTask.end,
           completion: updatedTask.completion,
+          lastUpdated: updatedTask.lastUpdated ?? now,
         );
 
         // Update the underlying GanttJobData in the API response to persist changes.

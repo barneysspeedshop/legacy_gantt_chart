@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.16
+
+* **EXAMPLE FIX**: Fix reconcile offline/missed remote online update
+
 ## 4.0.0-CRDT.alpha.15
 
 * **FIX**: Fix lint

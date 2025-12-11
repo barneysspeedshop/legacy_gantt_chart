@@ -31,8 +31,8 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       await db.execute(
         '''
-      INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, is_deleted)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0)
+      INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
       ON CONFLICT(id) DO UPDATE SET
         row_id = ?2,
         start_date = ?3,
@@ -44,6 +44,8 @@ class LocalGanttRepository {
         is_summary = ?9,
         is_milestone = ?10,
         resource_id = ?11,
+        last_updated = ?12,
+        deleted_at = NULL,
         is_deleted = 0
       ''',
         [
@@ -57,7 +59,8 @@ class LocalGanttRepository {
           task.stackIndex,
           task.isSummary ? 1 : 0,
           task.isMilestone ? 1 : 0,
-          task.originalId, // Storing originalId/resourceId here for now
+          task.originalId,
+          task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
     });
@@ -67,8 +70,8 @@ class LocalGanttRepository {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
-        'UPDATE tasks SET is_deleted = 1 WHERE id = ?',
-        [taskId],
+        'UPDATE tasks SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
+        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, taskId],
       );
     });
   }
@@ -78,11 +81,13 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       await db.execute(
         '''
-      INSERT INTO dependencies (from_id, to_id, type, lag_ms, is_deleted)
-      VALUES (?1, ?2, ?3, ?4, 0)
+      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at, is_deleted)
+      VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0)
       ON CONFLICT(from_id, to_id) DO UPDATE SET
         type = ?3,
         lag_ms = ?4,
+        last_updated = ?5,
+        deleted_at = NULL,
         is_deleted = 0
       ''',
         [
@@ -90,6 +95,7 @@ class LocalGanttRepository {
           dependency.successorTaskId,
           dependency.type.index,
           dependency.lag?.inMilliseconds,
+          dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
     });
@@ -99,8 +105,8 @@ class LocalGanttRepository {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
-        'UPDATE dependencies SET is_deleted = 1 WHERE from_id = ? AND to_id = ?',
-        [fromId, toId],
+        'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? AND to_id = ?',
+        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, fromId, toId],
       );
     });
   }
@@ -109,8 +115,8 @@ class LocalGanttRepository {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
-        'UPDATE dependencies SET is_deleted = 1 WHERE from_id = ? OR to_id = ?',
-        [taskId, taskId],
+        'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? OR to_id = ?',
+        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, taskId, taskId],
       );
     });
   }
@@ -171,14 +177,22 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       await db.execute(
         '''
-      INSERT INTO resources (id, name, parent_id, is_expanded)
-      VALUES (?1, ?2, ?3, ?4)
+      INSERT INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, NULL)
       ON CONFLICT(id) DO UPDATE SET
         name = ?2,
         parent_id = ?3,
-        is_expanded = ?4
+        is_expanded = ?4,
+        last_updated = ?5,
+        deleted_at = NULL
       ''',
-        [resource.id, resource.name, resource.parentId, resource.isExpanded ? 1 : 0],
+        [
+          resource.id,
+          resource.name,
+          resource.parentId,
+          resource.isExpanded ? 1 : 0,
+          resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+        ],
       );
     });
   }
@@ -187,8 +201,8 @@ class LocalGanttRepository {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
-        'UPDATE resources SET is_expanded = ? WHERE id = ?',
-        [isExpanded ? 1 : 0, id],
+        'UPDATE resources SET is_expanded = ?, last_updated = ? WHERE id = ?',
+        [isExpanded ? 1 : 0, DateTime.now().millisecondsSinceEpoch, id],
       );
     });
   }
@@ -203,7 +217,8 @@ class LocalGanttRepository {
   Future<void> deleteResource(String id) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      await db.execute('DELETE FROM resources WHERE id = ?', [id]);
+      await db.execute('UPDATE resources SET deleted_at = ?, last_updated = ? WHERE id = ?',
+          [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, id]);
     });
   }
 
@@ -212,7 +227,58 @@ class LocalGanttRepository {
         name: row['name'] as String?,
         parentId: row['parent_id'] as String?,
         isExpanded: (row['is_expanded'] as int?) == 1,
+        lastUpdated: row['last_updated'] as int?,
       );
+
+  Future<int> getMaxLastUpdated() async {
+    final db = await GanttDb.db;
+    // We want the maximum of last_updated OR deleted_at across all tables.
+    // We can do this with a few queries.
+
+    int maxTs = 0;
+
+    final tRes =
+        await db.query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM tasks');
+    if (tRes.isNotEmpty && tRes.first['max_ts'] != null) {
+      final val = tRes.first['max_ts'] as int;
+      if (val > maxTs) maxTs = val;
+    }
+
+    final dRes = await db
+        .query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM dependencies');
+    if (dRes.isNotEmpty && dRes.first['max_ts'] != null) {
+      final val = dRes.first['max_ts'] as int;
+      if (val > maxTs) maxTs = val;
+    }
+
+    final rRes =
+        await db.query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM resources');
+    if (rRes.isNotEmpty && rRes.first['max_ts'] != null) {
+      final val = rRes.first['max_ts'] as int;
+      if (val > maxTs) maxTs = val;
+    }
+
+    return maxTs;
+  }
+
+  Future<int?> getLastServerSyncTimestamp() async {
+    final db = await GanttDb.db;
+    final res = await db.query('SELECT meta_value FROM sync_metadata WHERE meta_key = ?', ['last_server_sync']);
+    if (res.isNotEmpty && res.first['meta_value'] != null) {
+      return int.tryParse(res.first['meta_value'] as String);
+    }
+    return null;
+  }
+
+  Future<void> setLastServerSyncTimestamp(int timestamp) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.execute(
+        'INSERT OR REPLACE INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)',
+        ['last_server_sync', timestamp.toString()],
+      );
+    });
+  }
 }
 
 class LocalResource {
@@ -220,6 +286,7 @@ class LocalResource {
   final String? name;
   final String? parentId;
   final bool isExpanded;
+  final int? lastUpdated;
 
-  LocalResource({required this.id, this.name, this.parentId, this.isExpanded = true});
+  LocalResource({required this.id, this.name, this.parentId, this.isExpanded = true, this.lastUpdated});
 }

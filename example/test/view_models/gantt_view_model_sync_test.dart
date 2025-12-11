@@ -20,7 +20,7 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
   Stream<bool> get connectionStateStream => _connectionStateController.stream;
 
   @override
-  Future<void> connect(String tenantId) async {
+  void connect(String tenantId, {int? lastSyncedTimestamp}) {
     isConnected = true;
     _connectionStateController.add(true);
   }
