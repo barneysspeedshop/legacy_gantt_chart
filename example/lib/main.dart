@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -13,6 +11,8 @@ import 'package:provider/provider.dart';
 import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 import 'ui/widgets/dashboard_header.dart';
+import 'ui/widgets/custom_header_painter.dart';
+import 'ui/widgets/dependency_dialog.dart';
 import 'view_models/gantt_view_model.dart';
 
 import 'platform/platform_init.dart'
@@ -82,9 +82,9 @@ class _GanttViewState extends State<GanttView> {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
     _uriController = TextEditingController(text: 'http://localhost:8080');
-    _tenantIdController = TextEditingController(text: 'debug');
-    _usernameController = TextEditingController(text: 'debug');
-    _passwordController = TextEditingController(text: 'debug');
+    _tenantIdController = TextEditingController(text: 'legacy');
+    _usernameController = TextEditingController(text: 'patrick');
+    _passwordController = TextEditingController(text: 'password');
   }
 
   @override
@@ -197,7 +197,7 @@ class _GanttViewState extends State<GanttView> {
 
     final dependencyToRemove = await showDialog<LegacyGanttTaskDependency>(
       context: context,
-      builder: (context) => _DependencyManagerDialog(
+      builder: (context) => DependencyManagerDialog(
         title: 'Remove Dependency for "${task.name}"',
         dependencies: dependencies,
         tasks: _viewModel.ganttTasks,
@@ -393,7 +393,7 @@ class _GanttViewState extends State<GanttView> {
           List<DateTime> totalDomain, LegacyGanttTheme theme, double totalContentWidth) =>
       CustomPaint(
         size: Size(totalContentWidth, 54.0),
-        painter: _CustomHeaderPainter(
+        painter: CustomHeaderPainter(
           scale: scale,
           visibleDomain: visibleDomain,
           totalDomain: totalDomain,
@@ -1354,145 +1354,6 @@ class _GanttViewState extends State<GanttView> {
             ),
           ),
         ),
-      );
-}
-
-class _CustomHeaderPainter extends CustomPainter {
-  final double Function(DateTime) scale;
-  final List<DateTime> visibleDomain;
-  final List<DateTime> totalDomain;
-  final LegacyGanttTheme theme;
-  final String selectedLocale;
-
-  _CustomHeaderPainter({
-    required this.scale,
-    required this.visibleDomain,
-    required this.totalDomain,
-    required this.theme,
-    required this.selectedLocale,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (totalDomain.isEmpty || visibleDomain.isEmpty) {
-      return;
-    }
-    final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
-    final monthTextStyle = theme.axisTextStyle.copyWith(fontWeight: FontWeight.bold);
-    final dayTextStyle = theme.axisTextStyle.copyWith(fontSize: 10);
-
-    // Determine the tick interval based on the visible duration.
-    Duration tickInterval;
-    if (visibleDuration.inDays > 60) {
-      tickInterval = const Duration(days: 7);
-    } else if (visibleDuration.inDays > 14) {
-      tickInterval = const Duration(days: 2);
-    } else {
-      tickInterval = const Duration(days: 1);
-    }
-
-    DateTime current = totalDomain.first;
-    String? lastMonth;
-    while (current.isBefore(totalDomain.last)) {
-      final next = current.add(tickInterval);
-      final monthFormat = DateFormat('MMMM yyyy', selectedLocale);
-      final dayFormat = DateFormat('d', selectedLocale);
-
-      // Month label
-      final monthStr = monthFormat.format(current);
-      if (monthStr != lastMonth) {
-        lastMonth = monthStr;
-        final monthStart = DateTime(current.year, current.month, 1);
-        final monthEnd = DateTime(current.year, current.month + 1, 0);
-        final startX = scale(monthStart.isBefore(visibleDomain.first) ? visibleDomain.first : monthStart);
-        final endX = scale(monthEnd.isAfter(visibleDomain.last) ? visibleDomain.last : monthEnd);
-
-        final textSpan = TextSpan(text: monthStr, style: monthTextStyle);
-        final textPainter = TextPainter(
-          text: textSpan,
-          textAlign: TextAlign.center,
-          textDirection: ui.TextDirection.ltr,
-        );
-        textPainter.layout();
-        if (endX > startX) {
-          textPainter.paint(
-            canvas,
-            Offset(startX + (endX - startX) / 2 - textPainter.width / 2, 0),
-          );
-        }
-      }
-
-      // Day label
-      final dayX = scale(current);
-      final dayText = dayFormat.format(current);
-      final textSpan = TextSpan(text: dayText, style: dayTextStyle);
-      final textPainter = TextPainter(
-        text: textSpan,
-        textAlign: TextAlign.center,
-        textDirection: ui.TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(dayX - textPainter.width / 2, 20),
-      );
-
-      current = next;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CustomHeaderPainter oldDelegate) =>
-      oldDelegate.scale != scale ||
-      !listEquals(oldDelegate.visibleDomain, visibleDomain) ||
-      !listEquals(oldDelegate.totalDomain, totalDomain) ||
-      oldDelegate.theme != theme ||
-      oldDelegate.selectedLocale != selectedLocale;
-}
-
-/// A dialog to manage (remove) dependencies for a task.
-class _DependencyManagerDialog extends StatelessWidget {
-  final String title;
-  final List<LegacyGanttTaskDependency> dependencies;
-  final List<LegacyGanttTask> tasks;
-  final LegacyGanttTask sourceTask;
-
-  const _DependencyManagerDialog({
-    required this.title,
-    required this.dependencies,
-    required this.tasks,
-    required this.sourceTask,
-  });
-
-  String _dependencyText(LegacyGanttTaskDependency dep) {
-    final sourceTaskName = tasks.firstWhere((t) => t.id == dep.predecessorTaskId).name;
-    final targetTaskName = tasks.firstWhere((t) => t.id == dep.successorTaskId).name;
-    return '$sourceTaskName -> $targetTaskName';
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        key: const Key('dependencyManagerDialog'),
-        title: Text(title),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: dependencies.isEmpty
-              ? const Text('No dependencies to remove.')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: dependencies.length,
-                  itemBuilder: (context, index) {
-                    final dep = dependencies[index];
-                    return ListTile(
-                      title: Text(_dependencyText(dep)),
-                      onTap: () => Navigator.of(context).pop(dep),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        ],
       );
 }
 

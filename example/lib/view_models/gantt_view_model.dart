@@ -1495,15 +1495,20 @@ class GanttViewModel extends ChangeNotifier {
       );
 
       final wsUri = parsedUri.replace(scheme: parsedUri.scheme == 'https' ? 'wss' : 'ws', path: '/ws');
+      WebSocketGanttSyncClient? wsClientToConnect;
+
       if (syncClientFactory != null) {
         _syncClient = syncClientFactory!(uri: wsUri, authToken: token);
+        if (_syncClient is WebSocketGanttSyncClient) {
+          wsClientToConnect = _syncClient as WebSocketGanttSyncClient;
+        }
       } else {
         // Initialize WebSocket Client
         final wsClient = WebSocketGanttSyncClient(
           uri: wsUri,
           authToken: token,
         );
-        wsClient.connect(tenantId);
+        wsClientToConnect = wsClient;
 
         if (_syncClient is OfflineGanttSyncClient) {
           await (_syncClient as OfflineGanttSyncClient).setInnerClient(wsClient);
@@ -1516,12 +1521,6 @@ class GanttViewModel extends ChangeNotifier {
           await offlineClient.setInnerClient(wsClient);
           _syncClient = offlineClient;
         }
-      }
-
-      // Login and Connect handled above by setInnerClient or factory
-      // If factory was used, we might need to connect it?
-      if (_syncClient is WebSocketGanttSyncClient && syncClientFactory != null) {
-        (_syncClient as WebSocketGanttSyncClient).connect(tenantId);
       }
 
       // Listen to connection state
@@ -1549,6 +1548,11 @@ class GanttViewModel extends ChangeNotifier {
       _isSyncConnected = true;
       _broadcastPresence();
       notifyListeners();
+
+      // Connect AFTER listeners are set up to capture initial state
+      if (wsClientToConnect != null) {
+        wsClientToConnect.connect(tenantId);
+      }
     } catch (e) {
       print('Sync connection error: $e');
       rethrow;
@@ -1583,41 +1587,93 @@ class GanttViewModel extends ChangeNotifier {
     final taskData = data;
 
     if (op.type == 'UPDATE_TASK') {
-      final taskId = taskData['id'];
-      if (taskId == null) return;
+      var innerData = taskData;
+      String? ganttType;
 
-      // 1. Construct the updated task
-      // We need to find the task in our source list first to respect immutable patterns
-      // and keep other fields that might not be in the update payload.
+      // Unwrap if nested (gantt_type present or just nested data)
+      if (innerData.containsKey('data') && innerData['data'] is Map) {
+        ganttType = innerData['gantt_type'] as String?;
+        innerData = innerData['data'] as Map<String, dynamic>;
+      }
+
+      final taskId = innerData['id'];
+      if (taskId == null) {
+        print('Warning: UPDATE_TASK received without ID');
+        return;
+      }
+
+      // 1. Check if task exists
       final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
+
       if (sourceIndex != -1) {
+        // UPDATE Existing
         final existingTask = _allGanttTasks[sourceIndex];
         final updatedTask = existingTask.copyWith(
-          name: taskData['name'] ?? existingTask.name,
-          start: taskData['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(taskData['start_date'] as int)
+          name: innerData['name'] ?? existingTask.name,
+          start: innerData['start_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
               : existingTask.start,
-          end: taskData['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(taskData['end_date'] as int)
+          end: innerData['end_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
               : existingTask.end,
+          // Update other fields if present in payload
         );
 
-        // 2. Persist to DB (if local)
         if (_useLocalDatabase) {
           await _localRepository.insertOrUpdateTask(updatedTask);
         }
 
-        // 3. Update In-Memory State & Recalculate
-        // We do this IMMEDIATELY even for local mode to ensure conflicts are recalculated.
-        // Relying on the DB stream alone was causing conflicts to hide.
         _allGanttTasks[sourceIndex] = updatedTask;
-
-        // Also update the visible list if it's there (though recalculate should fix this)
         final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
         if (visibleIndex != -1) {
           _ganttTasks[visibleIndex] = updatedTask;
         }
+        _recalculateStackingAndNotify();
+      } else {
+        // UPSERT (Treat as INSERT)
+        // This handles valid initial sync data sent as UPDATE_TASK
+        print('Upserting new task from UPDATE_TASK: $taskId');
 
+        final newTask = LegacyGanttTask(
+          id: taskId,
+          rowId: innerData['rowId'] ?? 'unknown_row', // Fallback if rowId missing, though important
+          name: innerData['name'] ?? 'Unnamed Task',
+          start: innerData['start_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
+              : DateTime.now(),
+          end: innerData['end_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
+              : DateTime.now().add(const Duration(days: 1)),
+          isSummary: ganttType == 'summary' || innerData['is_summary'] == true,
+          isMilestone: ganttType == 'milestone',
+          color: _parseColor(innerData['color']),
+          textColor: _parseColor(innerData['textColor']),
+        );
+
+        if (_useLocalDatabase) {
+          await _localRepository.insertOrUpdateTask(newTask);
+          // The repository stream usually handles the update, but for immediate feedback:
+          // _allGanttTasks.add(newTask); // Wait for stream?
+          // Actually, earlier code in INSERT_TASK says:
+          // if (_useLocalDatabase) await ... (and relies on stream?)
+          // NO, INSERT_TASK block handles both.
+          // Let's rely on stream if local DB used, BUT for Recalculate we might need it now.
+          // Existing INSERT_TASK code:
+          /*
+            if (_useLocalDatabase) {
+               await _localRepository.insertOrUpdateTask(newTask);
+            } else {
+               _allGanttTasks.add(newTask);
+               _recalculateStackingAndNotify();
+            }
+           */
+          // However, for UPDATE_TASK above, we manually updated _allGanttTasks even if using local DB.
+          // Reason: "We do this IMMEDIATELY even for local mode to ensure conflicts are recalculated."
+          // So we should do the same here.
+        }
+
+        // Add to in-memory list immediately
+        _allGanttTasks.add(newTask);
         _recalculateStackingAndNotify();
       }
     } else if (op.type == 'INSERT_TASK') {

@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.14
+
+* **FIX**: Fix missed remote update when connecting
+
 ## 4.0.0-CRDT.alpha.13
 
 * **FIX**: Set offline features as optional
