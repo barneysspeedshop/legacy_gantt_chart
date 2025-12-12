@@ -1,77 +1,14 @@
-## 4.0.0-CRDT.alpha.17
+## 4.0.0
 
-* **FEATURE**: Implemented real backend URL for testing. Don't rely on it existing forever... It won't.
-
-## 4.0.0-CRDT.alpha.16
-
-* **EXAMPLE FIX**: Fix reconcile offline/missed remote online update
-
-## 4.0.0-CRDT.alpha.15
-
-* **FIX**: Fix lint
-
-## 4.0.0-CRDT.alpha.14
-
-* **FIX**: Fix missed remote update when connecting
-
-## 4.0.0-CRDT.alpha.13
-
-* **FIX**: Set offline features as optional
-
-## 4.0.0-CRDT.alpha.12
-
-* **FIX**: Fix dependencies
-
-## 4.0.0-CRDT.alpha.11
-
-* **FIX**: Fix platform support
-* **TESTS**: Implement more comprehensive testing
-
-## 4.0.0-CRDT.alpha.10
-
-* **FEATURE**: Follow me! (follow a user's cursor/pan/scroll/zoom)
-
-## 4.0.0-CRDT.alpha.9
-
-* **FEATURE**: Move sync operations from example to library
-* **EXAMPLE FIX**: Stablize conflict indicators when connecting
-* **EXAMPLE**: MVE for gantt sync
-
-## 4.0.0-CRDT.alpha.8
-
-* **EXAMPLE FIX**: Fix grid row expand/collapse state
-
-## 4.0.0-CRDT.alpha.7
-
-* **FIX**: Fix ghost bar sync
-* **FIX**: Fix conflict visualization on clients receiving updates
-
-## 4.0.0-CRDT.alpha.6
-
-* **FIX**: Fix lint
-
-## 4.0.0-CRDT.alpha.5
-
+* **FEATURE**: Added experimental support for CRDT. This still needs some polishing
 * **FEATURE**: Cursor sync
-* **FEATURE**: Ghost sync (currently broken)
-
-## 4.0.0-CRDT.alpha.4
-
-* **FIX**: Fix horizontal scroll
-* **FEATURE**: Implemented backend connection in UI example
-
-## 4.0.0-CRDT.alpha.3
-
-* **FIX**: Fix changelog
-
-## 4.0.0-CRDT.alpha.2
-
+* **FEATURE**: Ghost sync
+* **NEW EXAMPLE**: Minimum Viable Example for gantt sync
+* **EXAMPLE FEATURE**: Implemented backend connection in main UI example
+* **EXAMPLE FEATURE**: Implemented a real backend URL for testing. Don't rely on this existing forever... It may not
 * **EXAMPLE FEATURE**: Implement websocket gantt sync client
-
-## 4.0.0-CRDT.alpha.1
-
-* **FEATURE**: Added support for CRDTs. 
-* **EXAMPLE FEATURE**: Added a toggle to the example application that demonstrates how to use CRDTs with the gantt chart.
+* **EXAMPLE FEATURE**: Added a toggle to the example application that demonstrates how to use CRDTs with the gantt chart
+* **TESTS**: Implement more comprehensive testing
 
 ## 3.1.8
 

@@ -28,6 +28,7 @@ A flexible and performant Gantt chart widget for Flutter. Supports interactive d
   - [Custom Task Appearance](#custom-task-appearance)
   - [Custom Timeline Labels](#custom-timeline-labels)
   - [Theming](#theming)
+- [Experimental: Real-time Sync & Offline Support](#experimental-real-time-sync--offline-support)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -464,6 +465,43 @@ LegacyGanttChartWidget(
 ### Theming
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
+
+[ ^Table of Contents ^ ](#table-of-contents)
+
+---
+
+## Experimental: Real-time Sync & Offline Support
+
+> **Note:** This feature is currently in **alpha**. APIs are subject to change.
+
+The package now includes experimental support for real-time synchronization and offline capabilities using Conflict-Free Replicated Data Types (CRDTs). This allows multiple users to edit the chart simultaneously, with changes merging automatically and conflict-free.
+
+### Key Components
+
+*   **`WebSocketGanttSyncClient`**: Connects to a compatible backend (COMING SOON!) to push and receive updates in real-time.
+*   **`OfflineGanttSyncClient`**: Queues operations when offline and syncs them when the connection is restored.
+*   **`CrdtEngine`**: The core logic that handles the merging of concurrent edits.
+
+### Usage
+
+To use the sync client, you typically initialize it and pass it to your `LegacyGanttController` or view model.
+
+```dart
+// Example initialization (simplified)
+final syncClient = WebSocketGanttSyncClient(
+  uri: 'ws://your-server.com/ws',
+  tenantId: 'your-tenant-id',
+  username: 'user-1',
+);
+
+// Connect
+await syncClient.connect();
+
+// Send an operation
+syncClient.insertTask(newTask);
+```
+
+For a full implementation reference, check the `example/lib/main.dart` file which implements a complete sync-enabled Gantt chart.
 
 [ ^Table of Contents ^ ](#table-of-contents)
 
