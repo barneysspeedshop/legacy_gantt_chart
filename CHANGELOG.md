@@ -1,3 +1,7 @@
+## 4.0.0-CRDT.alpha.17
+
+* **FEATURE**: Implemented real backend URL for testing. Don't rely on it existing forever... It won't.
+
 ## 4.0.0-CRDT.alpha.16
 
 * **EXAMPLE FIX**: Fix reconcile offline/missed remote online update

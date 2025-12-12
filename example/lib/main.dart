@@ -81,7 +81,7 @@ class _GanttViewState extends State<GanttView> {
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
-    _uriController = TextEditingController(text: 'http://localhost:8080');
+    _uriController = TextEditingController(text: 'https://gantt.legacy-automation.online');
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
     _passwordController = TextEditingController(text: 'password');
