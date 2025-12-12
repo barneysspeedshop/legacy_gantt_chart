@@ -45,7 +45,9 @@ class GanttDb {
             stack_index INTEGER,
             is_summary INTEGER,
             is_milestone INTEGER,
-            completion REAL
+            completion REAL,
+            last_updated INTEGER,
+            deleted_at INTEGER
           )
         ''');
 
@@ -57,6 +59,8 @@ class GanttDb {
             to_id TEXT,
             type INTEGER,
             lag_ms INTEGER,
+            last_updated INTEGER,
+            deleted_at INTEGER,
             PRIMARY KEY (from_id, to_id)
           )
         ''');
@@ -66,7 +70,9 @@ class GanttDb {
             id TEXT PRIMARY KEY,
             name TEXT,
             parent_id TEXT,
-            is_expanded INTEGER DEFAULT 1
+            is_expanded INTEGER DEFAULT 1,
+            last_updated INTEGER,
+            deleted_at INTEGER
           )
         ''');
 
@@ -192,10 +198,38 @@ class GanttDb {
             rethrow; // Don't hide it this time
           }
         }
+        if (oldVersion < 10) {
+          // REPAIR: Add last_updated and deleted_at columns if missing (fresh installs on v9 had buggy onCreate)
+          // Tasks
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+
+          // Dependencies
+          try {
+            await db.execute('ALTER TABLE dependencies ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE dependencies ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+
+          // Resources
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN last_updated INTEGER');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN deleted_at INTEGER');
+          } catch (_) {}
+          print('Successfully applied v10 column repair');
+        }
+
         // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
         // on open, so we don't need manual migration for is_deleted.
       },
-      version: 9,
+      version: 10,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)

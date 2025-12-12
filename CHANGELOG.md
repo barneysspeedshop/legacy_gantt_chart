@@ -1,3 +1,7 @@
+## 4.0.1
+
+* **FIX**: Fix `last_synced` so that the backend can send only what is needed, not all time
+
 ## 4.0.0
 
 * **FEATURE**: Added experimental support for CRDT. This still needs some polishing

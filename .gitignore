@@ -45,7 +45,7 @@ pubspec.lock
 /example/android/app/release/
 /example/android/app/profile/
 /example/android/key.properties
-/example/android/gradle.properties
+
 /example/android/local.properties
 /android/app/src/main/assets/flutter_assets/
 /android/app/build/
