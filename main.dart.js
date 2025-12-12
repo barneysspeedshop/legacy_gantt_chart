@@ -49264,7 +49264,7 @@ k.wX(!0)
 e.d!==$&&A.bu()
 e.d=k
 e.x!==$&&A.bu()
-e.x=new A.fF(new A.cc("http://localhost:8080",B.by,B.aI),f)
+e.x=new A.fF(new A.cc("https://gantt.legacy-automation.online",B.by,B.aI),f)
 e.y!==$&&A.bu()
 e.y=new A.fF(new A.cc("legacy",B.by,B.aI),f)
 e.z!==$&&A.bu()
