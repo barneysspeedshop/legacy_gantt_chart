@@ -258,25 +258,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Timer? _cursorUpdateThrottle;
-  static const Duration _cursorThrottleDuration = Duration(milliseconds: 50);
-
-  void _sendCursorMove(DateTime time, String rowId) {
-    if (_cursorUpdateThrottle?.isActive ?? false) return;
-
-    _cursorUpdateThrottle = Timer(_cursorThrottleDuration, () {
-      syncClient?.sendOperation(Operation(
-        type: 'CURSOR_MOVE',
-        data: {
-          'time': time.millisecondsSinceEpoch,
-          'rowId': rowId,
-        },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-        actorId: 'me',
-      ));
-    });
-  }
-
   void _handleRemoteCursorMove(Map<String, dynamic> data, String actorId) {
     final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
     final timeMs = actualData['time'] as int?;
@@ -511,6 +492,27 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  void _sendCursorMove(DateTime time, String rowId) {
+    if (syncClient == null) return;
+
+    // THROTTLING: Only send updates every 100ms to allow GC to keep up and reduce network traffic
+    final now = DateTime.now();
+    if (_lastCursorSync != null && now.difference(_lastCursorSync!) < const Duration(milliseconds: 100)) {
+      return;
+    }
+    _lastCursorSync = now;
+
+    syncClient!.sendOperation(Operation(
+      type: 'CURSOR_MOVE',
+      data: {
+        'time': time.toIso8601String(),
+        'rowId': rowId,
+      },
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      actorId: 'user',
+    ));
+  }
+
   void _sendDependencyOp(String type, LegacyGanttTaskDependency dep) {
     if (syncClient == null) return;
     syncClient!.sendOperation(Operation(
@@ -541,6 +543,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Offset _initialLocalPosition = Offset.zero;
   bool _isScrollingInternally = false;
   String? _lastHoveredTaskId;
+  DateTime? _lastCursorSync; // Throttling timestamp
   double Function(DateTime) _totalScale = (DateTime date) => 0.0;
   List<DateTime> _totalDomain = [];
   List<DateTime> _visibleExtent = [];

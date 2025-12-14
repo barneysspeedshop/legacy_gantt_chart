@@ -1,3 +1,7 @@
+## 4.0.6
+
+* **FIX**: Throttle cursor events to 100ms for performance enhancement
+
 ## 4.0.5
 
 * **FIX**: More performance enhancement to panning and scrolling.
