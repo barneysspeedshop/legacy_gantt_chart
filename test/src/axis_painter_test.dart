@@ -330,5 +330,44 @@ void main() {
       ));
       expect(findPainter(), findsOneWidget);
     });
+    testWidgets('handles high zoom level (1 minute visible in 1 year domain)', (WidgetTester tester) async {
+      // 1 year domain
+      final start = DateTime(2023, 1, 1);
+      final end = DateTime(2024, 1, 1);
+      // 1 minute visible
+      final visibleStart = DateTime(2023, 6, 1, 12, 0);
+      final visibleEnd = visibleStart.add(const Duration(minutes: 1));
+
+      // Mock scale needs to handle the zooming
+      // 1 minute = 800 pixels width
+      double highZoomScale(DateTime date) {
+        final relativeMs = date.difference(visibleStart).inMilliseconds;
+        final totalVisibleMs = visibleEnd.difference(visibleStart).inMilliseconds;
+        // Map visible start to 0, visible end to 800
+        return (relativeMs / totalVisibleMs) * 800;
+      }
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CustomPaint(
+            size: const Size(800, 100),
+            painter: AxisPainter(
+              x: 0,
+              y: 0,
+              width: 800,
+              height: 100,
+              scale: highZoomScale,
+              domain: [start, end],
+              visibleDomain: [visibleStart, visibleEnd],
+              theme: theme,
+            ),
+          ),
+        ),
+      ));
+
+      // If the loop optimization wasn't there, this might hang or be very slow
+      // But mainly we want to ensure it still paints correctly (finds one widget)
+      expect(findPainter(), findsOneWidget);
+    });
   });
 }

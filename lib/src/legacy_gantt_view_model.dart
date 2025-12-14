@@ -345,6 +345,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _translateY = -scrollController!.offset;
     }
     scrollController?.addListener(_onExternalScroll);
+    ganttHorizontalScrollController?.addListener(_onHorizontalScrollControllerUpdate);
 
     if (syncClient != null) {
       _syncSubscription = syncClient!.operationStream.listen((op) {
@@ -698,6 +699,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     scrollController?.removeListener(_onExternalScroll);
+    ganttHorizontalScrollController?.removeListener(_onHorizontalScrollControllerUpdate);
     _syncSubscription?.cancel();
     super.dispose();
   }
@@ -769,6 +771,41 @@ class LegacyGanttViewModel extends ChangeNotifier {
     setTranslateY(newTranslateY);
   }
 
+  void _onHorizontalScrollControllerUpdate() {
+    _updateVisibleExtentFromScroll();
+    notifyListeners();
+  }
+
+  void _updateVisibleExtentFromScroll() {
+    if (ganttHorizontalScrollController == null ||
+        !ganttHorizontalScrollController!.hasClients ||
+        _totalDomain.isEmpty) {
+      return;
+    }
+
+    final position = ganttHorizontalScrollController!.position;
+    final double viewportWidth = position.viewportDimension;
+    final double scrollOffset = position.pixels;
+    final double totalWidth = _width; // The total content width
+
+    if (totalWidth <= 0) return;
+
+    final double totalDurationMs =
+        (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
+
+    // Calculate start time based on scroll offset
+    final double startOffsetMs = (scrollOffset / totalWidth) * totalDurationMs;
+    final double visibleDurationMs = (viewportWidth / totalWidth) * totalDurationMs;
+
+    final startMs = _totalDomain[0].millisecondsSinceEpoch + startOffsetMs;
+    final endMs = startMs + visibleDurationMs;
+
+    _visibleExtent = [
+      DateTime.fromMillisecondsSinceEpoch(startMs.round()),
+      DateTime.fromMillisecondsSinceEpoch(endMs.round()),
+    ];
+  }
+
   void _calculateDomains() {
     if (gridMin != null && gridMax != null) {
       _visibleExtent = [
@@ -776,12 +813,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
         DateTime.fromMillisecondsSinceEpoch(gridMax!.toInt()),
       ];
     } else if (data.isEmpty) {
-      // If there's no data and no explicit gridMin/gridMax, create a default range.
       final now = DateTime.now();
       _visibleExtent = [now.subtract(const Duration(days: 30)), now.add(const Duration(days: 30))];
     } else {
-      // If there is data, calculate the range from the data.
-      // This branch is now only taken if gridMin/gridMax are null but data is not empty.
       if (data.isNotEmpty) {
         final dateTimes = data.expand((task) => [task.start, task.end]).map((d) => d.millisecondsSinceEpoch).toList();
         _visibleExtent = [
@@ -799,8 +833,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final double totalDomainDurationMs =
         (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
 
-    // The width provided to the ViewModel is the total width of the scrollable area,
-    // as calculated by the parent widget (e.g., the example app's `_calculateGanttWidth`).
     final double totalContentWidth = _width;
 
     if (totalDomainDurationMs > 0) {
@@ -810,6 +842,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       };
     } else {
       _totalScale = (date) => 0.0;
+    }
+
+    // Override visibleExtent if using horizontal scroll controller
+    if (ganttHorizontalScrollController != null && ganttHorizontalScrollController!.hasClients) {
+      _updateVisibleExtentFromScroll();
     }
   }
 

@@ -1,3 +1,7 @@
+## 4.0.3
+
+* **FIX**: Fix axis timeline render performance at high zoom levels. Panning should now be stable and fluid at all zoom levels. 
+
 ## 4.0.2
 
 * **ADJUSTMENT**: Adjust backend sync to perform in-band authentication, reducing token leakage potential

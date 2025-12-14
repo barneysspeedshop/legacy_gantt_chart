@@ -130,16 +130,28 @@ class AxisPainter extends CustomPainter {
 
     final List<MapEntry<double, DateTime>> tickPositions = [];
 
-    // Find the first tick position that is on or after the start of the total domain.
+    // Find the first tick position that is on or after the start of the visible domain.
     // Round down to the nearest interval, then add intervals until we are in view.
-    if (domain.first.isBefore(domain.last)) {
-      DateTime currentTick = _roundDownTo(domain.first, tickInterval);
+    if (visibleDomain.isNotEmpty && domain.first.isBefore(domain.last)) {
+      DateTime currentTick = _roundDownTo(visibleDomain.first, tickInterval);
+
+      // Ensure we don't start before the absolute domain start
       if (currentTick.isBefore(domain.first)) {
-        currentTick = currentTick.add(tickInterval);
+        currentTick = _roundDownTo(domain.first, tickInterval);
+        if (currentTick.isBefore(domain.first)) {
+          currentTick = currentTick.add(tickInterval);
+        }
       }
 
-      // Generate ticks across the entire domain to ensure they are present when scrolling.
-      while (currentTick.isBefore(domain.last)) {
+      // Generate ticks only for the visible domain (plus a buffer)
+      // We use visibleDomain.last but ensure we don't go past domain.last
+      final effectiveEnd = visibleDomain.last.isBefore(domain.last) ? visibleDomain.last : domain.last;
+
+      // Add one interval buffer to ensure we cover the right edge completely
+      final loopEnd = effectiveEnd.add(tickInterval);
+
+      while (currentTick.isBefore(loopEnd) &&
+          (currentTick.isBefore(domain.last) || currentTick.isAtSameMomentAs(domain.last))) {
         tickPositions.add(MapEntry(scale(currentTick), currentTick));
         currentTick = currentTick.add(tickInterval);
       }
