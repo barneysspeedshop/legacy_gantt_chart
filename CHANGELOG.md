@@ -1,3 +1,7 @@
+## 4.0.2
+
+* **ADJUSTMENT**: Adjust backend sync to perform in-band authentication, reducing token leakage potential
+
 ## 4.0.1
 
 * **FIX**: Fix `last_synced` so that the backend can send only what is needed, not all time

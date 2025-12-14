@@ -48,19 +48,21 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }
 
   void connect(String tenantId, {int? lastSyncedTimestamp}) {
-    var finalUri = uri;
-    if (authToken != null) {
-      // Append token to query parameters for browser compatibility
-      final newQueryParams = Map<String, dynamic>.from(uri.queryParameters);
-      newQueryParams['token'] = authToken;
-      finalUri = uri.replace(queryParameters: newQueryParams);
-    }
+    // No longer appending token to URL for security
+    final finalUri = uri;
 
     try {
       _channel = _channelFactory(finalUri);
-      // _connectionStateController.add(true); // Don't allow send until subscribed
 
-      // Send subscribe message immediately upon connection
+      if (authToken != null) {
+        // Send Auth Token as first message
+        _channel!.sink.add(jsonEncode({
+          'type': 'auth',
+          'token': authToken,
+        }));
+      }
+
+      // Send subscribe message immediately (will be processed after auth)
       _channel!.sink.add(jsonEncode({
         'type': 'subscribe', // ProtocolMessage.subscribe
         'channel': tenantId,
