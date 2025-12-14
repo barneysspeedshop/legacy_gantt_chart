@@ -1,3 +1,7 @@
+## 4.0.8
+
+* **EXAMPLE FIX**: Fix for an issue that caused grid expansion states to be out of sync with their respective gantt bars on foreign clients
+
 ## 4.0.7
 
 * **FIX**: Fix null check on null operator during startup when viewport has no dimensions yet

@@ -188,35 +188,6 @@ class GanttViewModel extends ChangeNotifier {
 
     // Listen to resources
     _resourcesSubscription = _localRepository.watchResources().listen((resources) {
-      // Check for remote expansion changes to force UI rebuild (specifically for UnifiedDataGrid key)
-      // If the expansion state in the incoming DB data differs from our current in-memory _gridData,
-      // it means the change came from a remote sync (or a reset), not a local user action.
-      if (_gridData.isNotEmpty) {
-        final currentMap = <String, bool>{};
-        void traverse(List<GanttGridData> nodes) {
-          for (final node in nodes) {
-            currentMap[node.id] = node.isExpanded;
-            traverse(node.children);
-          }
-        }
-
-        traverse(_gridData);
-
-        bool expansionChanged = false;
-        for (final res in resources) {
-          if (currentMap.containsKey(res.id)) {
-            if (currentMap[res.id] != res.isExpanded) {
-              expansionChanged = true;
-              break;
-            }
-          }
-        }
-
-        if (expansionChanged) {
-          _seedVersion++;
-        }
-      }
-
       _localResources = resources;
       // processing triggered by tasks usually, but we might need to trigger if resources change
       if (_ganttTasks.isNotEmpty) {
@@ -692,6 +663,22 @@ class GanttViewModel extends ChangeNotifier {
 
   List<GanttGridData> get visibleGridData => _gridData;
   LocalGanttRepository get localRepository => _localRepository;
+
+  /// Returns a signature string representing the current expansion state of the grid.
+  /// Used to force a grid rebuild when expansion changes remotely.
+  String get expansionSignature {
+    final ids = <String>[];
+    void traverse(List<GanttGridData> nodes) {
+      for (final node in nodes) {
+        if (node.isExpanded) ids.add(node.id);
+        traverse(node.children);
+      }
+    }
+
+    traverse(_gridData);
+    ids.sort();
+    return ids.join(',');
+  }
 
   List<Map<String, dynamic>>? _cachedFlatGridData;
 

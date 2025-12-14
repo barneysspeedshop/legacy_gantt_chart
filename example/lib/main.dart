@@ -905,7 +905,9 @@ class _GanttViewState extends State<GanttView> {
                                         builder: (context, constraints) => UnifiedDataGrid<Map<String, dynamic>>(
                                           // Use a key that changes when data reloads to force a grid refresh.
                                           allowSorting: false,
-                                          key: ValueKey('local_grid_${vm.seedVersion}'),
+                                          // Combine seedVersion (for full resets) with expansionSignature (for remote/local toggles).
+                                          // This ensures the grid is recreated, respecting the new initialExpandedRowIds.
+                                          key: ValueKey('local_grid_${vm.seedVersion}_${vm.expansionSignature}'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,

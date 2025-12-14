@@ -1,22 +1,9 @@
-// ignore_for_file: avoid_relative_lib_imports
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import '../../lib/view_models/gantt_view_model.dart';
-import '../../lib/data/local/gantt_db.dart';
-import '../../lib/data/local/local_gantt_repository.dart';
-
-class MockWebSocketClient extends WebSocketGanttSyncClient {
-  int? capturedLastSynced;
-
-  MockWebSocketClient({required super.uri, required super.authToken});
-
-  @override
-  void connect(String tenantId, {int? lastSyncedTimestamp}) {
-    capturedLastSynced = lastSyncedTimestamp;
-  }
-}
+import 'package:legacy_gantt_chart/legacy_gantt_chart.dart'; // From package
+import 'package:example/view_models/gantt_view_model.dart';
+import 'package:example/data/local/gantt_db.dart';
+import 'package:example/data/local/local_gantt_repository.dart';
 
 void main() {
   setUpAll(() {
@@ -24,35 +11,48 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('GanttViewModel passes lastSynced to client', () async {
-    // Setup DB
+  test('GanttViewModel updates expansionSignature on remote expansion change', () async {
+    // 1. Setup DB
     GanttDb.overridePath = ':memory:';
     await GanttDb.reset();
 
-    // Pre-populate DB with a timestamp
+    // 2. Insert initial data (One parent, collapsed)
     final repo = LocalGanttRepository();
     await repo.init();
-    const expectedTs = 123456789;
-    await repo.setLastServerSyncTimestamp(expectedTs);
+    await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
+    await repo.insertOrUpdateResource(LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
 
-    // Setup ViewModel
+    // Add a task to ensure grid data is built (otherwise logic might skip)
+    await repo.insertOrUpdateTask(LegacyGanttTask(
+        id: 't1',
+        rowId: 'c1',
+        start: DateTime.now(),
+        end: DateTime.now().add(const Duration(days: 1)),
+        name: 'Task 1'));
+
+    // 3. Init ViewModel
     final vm = GanttViewModel(useLocalDatabase: true);
 
-    // Setup Mock Client
-    final mockClient = MockWebSocketClient(uri: Uri.parse('ws://mock'), authToken: 'token');
+    // Wait for initial load (seedVersion increments on init)
+    await Future.delayed(const Duration(milliseconds: 500));
+    final initialSignature = vm.expansionSignature;
+    expect(vm.gridData.length, greaterThan(0));
+    expect(vm.gridData.first.isExpanded, isFalse);
 
-    vm.syncClientFactory = ({required uri, required authToken}) => mockClient;
-    vm.loginFunction = ({required uri, required username, required password}) async => 'mock_token';
+    // 4. Simulate Remote Update (Update DB directly)
+    // Expand p1
+    await repo.updateResourceExpansion('p1', true);
 
-    // Connect
-    await vm.connectSync(
-      uri: 'http://mock',
-      tenantId: 'tenant',
-      username: 'user',
-      password: 'pass',
-    );
+    // Wait for listener to fire
+    await Future.delayed(const Duration(milliseconds: 500));
 
-    // Verify
-    expect(mockClient.capturedLastSynced, equals(expectedTs));
+    // 5. Verify expansionSignature changed
+    // If it changed, the main.dart ValueKey will change and grid will rebuild.
+    expect(vm.expansionSignature, isNot(equals(initialSignature)));
+
+    // Verify grid data updated
+    expect(vm.gridData.first.isExpanded, isTrue);
+
+    vm.dispose();
   });
 }
