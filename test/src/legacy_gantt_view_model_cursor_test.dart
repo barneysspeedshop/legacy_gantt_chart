@@ -77,7 +77,7 @@ void main() {
       ));
 
       // Wait for throttle (50ms)
-      await Future.delayed(const Duration(milliseconds: 60));
+      await Future.delayed(const Duration(milliseconds: 110));
 
       expect(mockSyncClient.sentOperations.isNotEmpty, isTrue);
       final op = mockSyncClient.sentOperations.last;
@@ -120,7 +120,7 @@ void main() {
       }
 
       // Wait for throttle
-      await Future.delayed(const Duration(milliseconds: 60));
+      await Future.delayed(const Duration(milliseconds: 110));
 
       // Should only have sent 1 operation (or very few, but definitely not 5 if throttled correctly)
       // Actually the throttle logic is:

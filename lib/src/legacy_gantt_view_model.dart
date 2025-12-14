@@ -505,7 +505,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     syncClient!.sendOperation(Operation(
       type: 'CURSOR_MOVE',
       data: {
-        'time': time.toIso8601String(),
+        'time': time.millisecondsSinceEpoch,
         'rowId': rowId,
       },
       timestamp: DateTime.now().millisecondsSinceEpoch,
