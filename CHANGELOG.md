@@ -1,3 +1,7 @@
+## 4.0.9
+
+* **EXAMPLE FIX**: Fix for an issue that prevented milestones from populating in the example in local DB mode 
+
 ## 4.0.8
 
 * **EXAMPLE FIX**: Fix for an issue that caused grid expansion states to be out of sync with their respective gantt bars on foreign clients

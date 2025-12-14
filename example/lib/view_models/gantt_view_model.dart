@@ -356,6 +356,24 @@ class GanttViewModel extends ChangeNotifier {
     );
 
     final tasks = processedData.ganttTasks;
+
+    // --- Manually add a milestone for demonstration (Replicated from fetchScheduleData) ---
+    // Find a valid row to place the milestone on.
+    if (processedData.gridData.isNotEmpty && processedData.gridData.first.children.isNotEmpty) {
+      final firstChildRowId = processedData.gridData.first.children.first.id;
+      final milestoneDate = _startDate.add(const Duration(days: 5));
+      final milestone = LegacyGanttTask(
+        id: 'milestone_demo_1',
+        rowId: firstChildRowId,
+        name: 'Project Kick-off',
+        start: milestoneDate,
+        end: milestoneDate, // start and end are the same for a milestone
+        isMilestone: true,
+        color: Colors.deepPurple, // Give it a distinct color
+      );
+      tasks.add(milestone);
+    }
+
     final dependencies = <LegacyGanttTaskDependency>[];
 
     // Re-create sample dependencies similar to fetchScheduleData
@@ -619,6 +637,10 @@ class GanttViewModel extends ChangeNotifier {
   List<LegacyGanttTaskDependency> get dependencies => _showDependencies ? _dependencies : [];
   List<GanttGridData> get gridData => _gridData;
   ThemePreset get selectedTheme => _selectedTheme;
+  List<LegacyGanttTask> get tasks => _ganttTasks;
+  List<LegacyGanttTask> get allGanttTasks => _allGanttTasks;
+  // dependencies already defined above
+
   bool get dragAndDropEnabled => _dragAndDropEnabled;
   bool get resizeEnabled => _resizeEnabled;
   bool get createTasksEnabled => _createTasksEnabled;

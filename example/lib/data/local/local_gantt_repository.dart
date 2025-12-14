@@ -18,6 +18,12 @@ class LocalGanttRepository {
         .map((rows) => rows.map((row) => _rowToTask(row)).toList());
   }
 
+  Future<List<LegacyGanttTask>> getAllTasks() async {
+    final db = await GanttDb.db;
+    final rows = await db.query('SELECT * FROM tasks WHERE is_deleted = 0');
+    return rows.map((row) => _rowToTask(row)).toList();
+  }
+
   Stream<List<LegacyGanttTaskDependency>> watchDependencies() async* {
     final db = await GanttDb.db;
     yield* db
