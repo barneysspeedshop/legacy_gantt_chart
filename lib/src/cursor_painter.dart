@@ -26,23 +26,34 @@ class CursorPainter extends CustomPainter {
     // Cache row Y positions
     final Map<String, double> rowYPositions = {};
     double currentTop = 0.0;
+
+    // Optimization: Skip loop if we know we are past visible area?
+    // Actually we need to build the map, but we can stop populating if we go way past?
+    // But valid rows are needed. Let's just iterate, it's cheap compared to painting.
     for (final row in visibleRows) {
-      rowYPositions[row.id] = currentTop;
       final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
-      currentTop += rowHeight * stackDepth;
+      final double rowHeightTotal = rowHeight * stackDepth;
+
+      // Store center Y
+      rowYPositions[row.id] = currentTop + (rowHeight / 2);
+
+      currentTop += rowHeightTotal;
     }
 
     // Paint each cursor
     for (final cursor in remoteCursors.values) {
-      final x = totalScale(cursor.time);
-      final rowY = rowYPositions[cursor.rowId];
+      final rowCenterY = rowYPositions[cursor.rowId];
 
-      if (rowY != null) {
-        final y = rowY + (rowHeight / 2) + translateY;
+      if (rowCenterY != null) {
+        final y = rowCenterY + translateY; // Apply scroll translation
 
-        // Only draw if within vertical visible bounds roughly
-        // (Optional optimization: if (y < -50 || y > size.height + 50) continue;)
+        // Vertical Culling
+        // Check if the cursor is roughly on screen (allow some buffer for label/arrow size)
+        if (y < -50 || y > size.height + 50) {
+          continue;
+        }
 
+        final x = totalScale(cursor.time);
         _drawCursor(canvas, Offset(x, y), cursor.color, cursor.userId);
       }
     }

@@ -1,3 +1,11 @@
+## 4.0.5
+
+* **FIX**: More performance enhancement to panning and scrolling.
+
+## 4.0.4
+
+* **ERROR 404**: VERSION NOT FOUND!
+
 ## 4.0.3
 
 * **FIX**: Fix axis timeline render performance at high zoom levels. Panning should now be stable and fluid at all zoom levels. 

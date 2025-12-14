@@ -134,9 +134,31 @@ class BarsCollectionPainter extends CustomPainter {
       }
     }
 
+    // Calculate the visible vertical range in the content's coordinate system.
+    // translateY is negative when scrolled down (moving content up).
+    // So visible content starts at -translateY and ends at -translateY + size.height.
+    final visibleContentTop = -translateY;
+    final visibleContentBottom = -translateY + size.height;
+
     for (var rowData in visibleRows) {
       final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
       final double dynamicRowHeight = rowHeight * stackDepth;
+
+      final double rowTop = cumulativeRowTop;
+      final double rowBottom = cumulativeRowTop + dynamicRowHeight;
+
+      // CULLING OPTIMIZATION:
+      // 1. If row is completely above the viewport, skip it but still increment cumulativeRowTop.
+      if (rowBottom < visibleContentTop) {
+        cumulativeRowTop += dynamicRowHeight;
+        continue;
+      }
+
+      // 2. If row starts below the viewport, we can stop drawing entirely
+      // because visibleRows are ordered vertically.
+      if (rowTop > visibleContentBottom) {
+        break;
+      }
 
       final tasksInThisRow = tasksByRow[rowData.id] ?? [];
 
