@@ -1,3 +1,7 @@
+## 4.0.10
+
+* **FIX**: Fix milestone sync
+
 ## 4.0.9
 
 * **EXAMPLE FIX**: Fix for an issue that prevented milestones from populating in the example in local DB mode 

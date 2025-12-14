@@ -82,6 +82,35 @@ void main() {
       expect(subJson['channel'], equals('tenant-123'));
     });
 
+    test('preserves gantt_type in unwrapped UPDATE_TASK message', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        channelFactory: mockChannelFactory,
+      );
+      client.connect('tenant-123');
+
+      final innerData = {
+        'id': 'task-1',
+        'name': 'Test Task',
+      };
+
+      // Server sends data wrapped with sibling gantt_type
+      final serverData = {
+        'data': innerData,
+        'gantt_type': 'milestone',
+      };
+
+      final envelope = {'type': 'UPDATE_TASK', 'data': serverData, 'timestamp': 1000, 'actorId': 'user-1'};
+
+      // Emit incoming message
+      incomingController.add(jsonEncode(envelope));
+
+      final receivedOp = await client.operationStream.first;
+      expect(receivedOp.type, 'UPDATE_TASK');
+      expect(receivedOp.data['id'], equals('task-1'));
+      expect(receivedOp.data['gantt_type'], equals('milestone'));
+    });
+
     test('unwraps incoming UPDATE_TASK message', () async {
       client = WebSocketGanttSyncClient(
         uri: Uri.parse('ws://localhost'),

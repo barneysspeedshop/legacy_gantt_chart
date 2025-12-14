@@ -95,7 +95,11 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             // Auto-unwrap 'data' wrapper if present (Server sends {'data': {'id':...}})
             // This ensures CRDTEngine and other consumers get flat data
             if (opData.containsKey('data') && opData['data'] is Map) {
-              opData = opData['data'] as Map<String, dynamic>;
+              final innerData = opData['data'] as Map<String, dynamic>;
+              if (opData.containsKey('gantt_type')) {
+                innerData['gantt_type'] = opData['gantt_type'];
+              }
+              opData = innerData;
             }
 
             final op = Operation(
