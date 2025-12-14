@@ -1,3 +1,7 @@
+## 4.0.7
+
+* **FIX**: Fix null check on null operator during startup when viewport has no dimensions yet
+
 ## 4.0.6
 
 * **FIX**: Throttle cursor events to 100ms for performance enhancement

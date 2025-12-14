@@ -780,13 +780,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _updateVisibleExtentFromScroll() {
-    if (ganttHorizontalScrollController == null ||
-        !ganttHorizontalScrollController!.hasClients ||
-        _totalDomain.isEmpty) {
+    final controller = ganttHorizontalScrollController;
+    if (controller == null || !controller.hasClients || _totalDomain.isEmpty) {
       return;
     }
 
-    final position = ganttHorizontalScrollController!.position;
+    final position = controller.position;
+    if (!position.hasViewportDimension || !position.hasPixels) {
+      return;
+    }
+
     final double viewportWidth = position.viewportDimension;
     final double scrollOffset = position.pixels;
     final double totalWidth = _width; // The total content width
