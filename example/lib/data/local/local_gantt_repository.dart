@@ -183,7 +183,8 @@ class LocalGanttRepository {
             type = ?3,
             lag_ms = ?4,
             last_updated = ?5,
-            deleted_at = NULL
+            deleted_at = NULL,
+            is_deleted = 0
           WHERE from_id = ?1 AND to_id = ?2
           ''',
           [
@@ -223,7 +224,8 @@ class LocalGanttRepository {
           type = ?3,
           lag_ms = ?4,
           last_updated = ?5,
-          deleted_at = NULL
+          deleted_at = NULL,
+          is_deleted = 0
         WHERE from_id = ?1 AND to_id = ?2
         ''',
         [
@@ -337,7 +339,8 @@ class LocalGanttRepository {
             parent_id = ?3,
             is_expanded = ?4,
             last_updated = ?5,
-            deleted_at = NULL
+            deleted_at = NULL,
+            is_deleted = 0
           WHERE id = ?1
           ''',
           [
@@ -378,7 +381,8 @@ class LocalGanttRepository {
           parent_id = ?3,
           is_expanded = ?4,
           last_updated = ?5,
-          deleted_at = NULL
+          deleted_at = NULL,
+          is_deleted = 0
         WHERE id = ?1
         ''',
         [
