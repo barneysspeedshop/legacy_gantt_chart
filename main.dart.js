@@ -48866,7 +48866,7 @@ break
 case 1:o.push(b)
 s=p}for(;;)switch(s){case 0:s=3
 return A.l0(A.eC(),$async$B1,r)
-case 3:l=b.R4("SELECT * FROM dependencies WHERE is_deleted = 0")
+case 3:l=b.R4("SELECT * FROM dependencies WHERE deleted_at IS NULL")
 s=4
 q=[1]
 return A.l0(A.aWT(new A.oh(new A.aoT(m),l,A.m(l).i("oh<dl.T,K<e7>>"))),$async$B1,r)
@@ -49054,7 +49054,7 @@ m=n.d
 m=m==null?null:B.f.c8(m.a,1000)
 p=Date.now()
 s=3
-return A.p(o.fA("      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at, is_deleted)\n      VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0)\n      ON CONFLICT(from_id, to_id) DO UPDATE SET\n        type = ?3,\n        lag_ms = ?4,\n        last_updated = ?5,\n        deleted_at = NULL,\n        is_deleted = 0\n      ",[n.a,n.b,n.c.a,m,p]),$async$$0)
+return A.p(o.fA("      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)\n      VALUES (?1, ?2, ?3, ?4, ?5, NULL)\n      ON CONFLICT(from_id, to_id) DO UPDATE SET\n        type = ?3,\n        lag_ms = ?4,\n        last_updated = ?5,\n        deleted_at = NULL\n      ",[n.a,n.b,n.c.a,m,p]),$async$$0)
 case 3:return A.E(null,r)}})
 return A.F($async$$0,r)},
 $S:24}
