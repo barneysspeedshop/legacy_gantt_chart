@@ -85,6 +85,8 @@ class BarsCollectionPainter extends CustomPainter {
 
   /// The ID of the task being hovered over as a potential target for a new dependency.
   final String? hoveredTaskForDependency;
+  final Set<String> selectedTaskIds;
+  final Map<String, (DateTime, DateTime)> bulkGhostTasks;
 
   BarsCollectionPainter({
     required this.conflictIndicators,
@@ -110,10 +112,16 @@ class BarsCollectionPainter extends CustomPainter {
     this.dependencyDragStartIsFromStart,
     this.dependencyDragCurrentPosition,
     this.hoveredTaskForDependency,
+    this.selectedTaskIds = const {},
+    this.bulkGhostTasks = const {},
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paint(canvas, size);
+  }
+
+  void _paint(Canvas canvas, Size size) {
     canvas.save();
     canvas.translate(0, translateY);
     double cumulativeRowTop = 0;
@@ -123,6 +131,79 @@ class BarsCollectionPainter extends CustomPainter {
 
     // Draw the empty space highlight for creating new tasks.
     _drawEmptySpaceHighlight(canvas, size);
+
+    // Draw bulk ghost tasks
+    if (bulkGhostTasks.isNotEmpty) {
+      final Paint ghostPaint = Paint()
+        ..color = theme.ghostBarColor.withValues(alpha: 0.5)
+        ..style = PaintingStyle.fill;
+      final Paint ghostBorderPaint = Paint()
+        ..color = theme.ghostBarColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+
+      // Pre-calculate ghosts by row for efficient rendering
+      final Map<String, List<({LegacyGanttTask task, DateTime start, DateTime end})>> ghostsByRow = {};
+
+      for (final entry in bulkGhostTasks.entries) {
+        final taskId = entry.key;
+        final times = entry.value;
+        try {
+          // Find the original task to get row/stack info
+          final task = data.firstWhere((t) => t.id == taskId);
+          // Initialize list if needed
+          ghostsByRow.putIfAbsent(task.rowId, () => []);
+          ghostsByRow[task.rowId]!.add((task: task, start: times.$1, end: times.$2));
+        } catch (_) {
+          // Task not found in current data, skip
+        }
+      }
+
+      for (final rowData in visibleRows) {
+        final ghostsInThisRow = ghostsByRow[rowData.id];
+        final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
+        final double dynamicRowHeight = rowHeight * stackDepth;
+
+        // Skip if no ghosts in this row
+        if (ghostsInThisRow == null || ghostsInThisRow.isEmpty) {
+          cumulativeRowTop += dynamicRowHeight;
+          continue;
+        }
+
+        final double rowTop = cumulativeRowTop;
+        final double rowBottom = cumulativeRowTop + dynamicRowHeight;
+
+        // CULLING OPTIMIZATION:
+        if (rowBottom < -translateY || rowTop > -translateY + size.height) {
+          cumulativeRowTop += dynamicRowHeight;
+          continue;
+        }
+
+        for (final ghost in ghostsInThisRow) {
+          final task = ghost.task;
+          final double barStartX = scale(ghost.start);
+          final double barEndX = scale(ghost.end);
+
+          if (barEndX < 0 || barStartX > size.width) {
+            continue;
+          }
+
+          final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+          final double barHeight = rowHeight * theme.barHeightRatio;
+          final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
+
+          final RRect barRRect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, max(0.0, barEndX - barStartX), barHeight),
+            theme.barCornerRadius,
+          );
+
+          canvas.drawRRect(barRRect, ghostPaint);
+          canvas.drawRRect(barRRect, ghostBorderPaint);
+        }
+        cumulativeRowTop += dynamicRowHeight;
+      }
+      cumulativeRowTop = 0; // Reset for main drawing loop
+    }
 
     // Create a map for quick lookup of tasks by rowId for visible rows.
     // This is more efficient than filtering the entire dataset multiple times.
@@ -317,6 +398,16 @@ class BarsCollectionPainter extends CustomPainter {
             Rect.fromLTWH(taskStartX, barTop + barVerticalCenterOffset, taskEndX - taskStartX, barHeight),
             theme.barCornerRadius,
           );
+
+          // Draw selection border if selected
+          if (selectedTaskIds.contains(task.id)) {
+            final Paint selectionPaint = Paint()
+              ..color = Colors.blue
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.0;
+            // Inflate slightly so it surrounds the bar
+            canvas.drawRRect(barRRect.inflate(1.0), selectionPaint);
+          }
 
           // --- Draw dependency handles ---
           if (enableDependencyCreation) {

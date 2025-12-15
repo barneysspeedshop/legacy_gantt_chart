@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -71,6 +72,8 @@ class _GanttViewState extends State<GanttView> {
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
   bool _showCursors = true;
+  Timer? _bulkUpdateTimer;
+  int _bulkUpdateCount = 0;
 
   late final TextEditingController _uriController;
   late final TextEditingController _tenantIdController;
@@ -829,68 +832,74 @@ class _GanttViewState extends State<GanttView> {
 
   @override
   Widget build(BuildContext context) => ChangeNotifierProvider.value(
-        value: _viewModel,
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('Legacy Gantt Chart Example'),
-            leading: IconButton(
-              icon: const Icon(Icons.menu),
-              tooltip: 'Toggle Controls',
-              onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
-            ),
-            actions: [
-              Consumer<GanttViewModel>(
-                builder: (context, vm, child) =>
-                    Row(mainAxisSize: MainAxisSize.min, children: _buildUserChips(context, vm)),
-              ),
-              const SizedBox(width: 8),
-            ],
+      value: _viewModel,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Legacy Gantt Chart Example'),
+          leading: IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Toggle Controls',
+            onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
           ),
-          body: SafeArea(
-            child: Consumer<GanttViewModel>(
-              builder: (context, vm, child) {
-                final ganttTheme = _buildGanttTheme();
-                // Update the format after the current frame is built to avoid calling notifyListeners during build.
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
-                  // Attach scroll listeners after the first frame is built to ensure
-                  // the controllers are attached to their respective scroll views.
-                  // This prevents the "ScrollController not attached" error.
-                  vm.attachScrollListeners();
-                });
+          actions: [
+            Consumer<GanttViewModel>(
+              builder: (context, vm, child) =>
+                  Row(mainAxisSize: MainAxisSize.min, children: _buildUserChips(context, vm)),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: SafeArea(
+          child: Consumer<GanttViewModel>(
+            builder: (context, vm, child) {
+              final ganttTheme = _buildGanttTheme();
+              // Update the format after the current frame is built to avoid calling notifyListeners during build.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
+                // Attach scroll listeners after the first frame is built to ensure
+                // the controllers are attached to their respective scroll views.
+                // This prevents the "ScrollController not attached" error.
+                vm.attachScrollListeners();
+              });
 
-                return Row(
-                  children: [
-                    if (_isPanelVisible)
-                      SizedBox(
-                        width: vm.controlPanelWidth ?? 350,
-                        child: _buildControlPanel(context, vm),
-                      ),
-                    if (_isPanelVisible)
-                      GestureDetector(
-                        onHorizontalDragUpdate: (details) {
-                          final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
-                          vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
-                        },
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.resizeLeftRight,
-                          child: VerticalDivider(
-                            width: 8,
-                            thickness: 8,
-                            color: Theme.of(context).dividerColor,
-                          ),
+              return Row(
+                children: [
+                  if (_isPanelVisible)
+                    SizedBox(
+                      width: vm.controlPanelWidth ?? 350,
+                      child: _buildControlPanel(context, vm),
+                    ),
+                  if (_isPanelVisible)
+                    GestureDetector(
+                      onHorizontalDragUpdate: (details) {
+                        final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
+                        vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeLeftRight,
+                        child: VerticalDivider(
+                          width: 8,
+                          thickness: 8,
+                          color: Theme.of(context).dividerColor,
                         ),
                       ),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          if (vm.gridWidth == null) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              vm.setGridWidth(constraints.maxWidth * 0.4);
-                            });
-                          }
+                    ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (vm.gridWidth == null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            vm.setGridWidth(constraints.maxWidth * 0.4);
+                          });
+                        }
 
-                          return Row(
+                        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          LegacyGanttToolbar(
+                            controller: vm.controller,
+                            theme: ganttTheme,
+                          ),
+                          Expanded(
+                              child: Row(
                             children: [
                               // Gantt Grid (Left Side)
                               // This is a custom widget for this example app that shows a data grid.
@@ -1081,6 +1090,9 @@ class _GanttViewState extends State<GanttView> {
 
                                           final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
 
+                                          // Notify VM of the width so it can adjust scroll offset if needed (maintain visible date)
+                                          vm.maintainScrollOffsetForWidth(ganttWidth);
+
                                           // The axis height is adjusted based on whether we are using the
                                           // default single-line header or the custom two-line header.
                                           final double axisHeight =
@@ -1094,6 +1106,7 @@ class _GanttViewState extends State<GanttView> {
                                               height: chartConstraints
                                                   .maxHeight, // Fix: Constrain height to viewport so internal scroll works
                                               child: LegacyGanttChartWidget(
+                                                controller: vm.controller,
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
                                                 syncClient: vm.syncClient,
@@ -1107,9 +1120,9 @@ class _GanttViewState extends State<GanttView> {
                                                         : null,
 
                                                 // --- Data and Layout ---
-                                                data: vm.ganttTasks,
-                                                dependencies: vm.dependencies,
-                                                conflictIndicators: vm.conflictIndicators,
+                                                // data: vm.ganttTasks, // Removed: Controlled by vm.controller
+                                                // dependencies: vm.dependencies, // Removed: Controlled by vm.controller
+                                                // conflictIndicators: vm.conflictIndicators, // Removed: Controlled by vm.controller
                                                 visibleRows: vm.visibleGanttRows, // This should be correct
                                                 rowHeight: 27.0,
                                                 rowMaxStackDepth: vm.rowMaxStackDepth,
@@ -1137,8 +1150,8 @@ class _GanttViewState extends State<GanttView> {
 
                                                 // --- Date Range ---
                                                 // These define the currently visible time window.
-                                                gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
-                                                gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
+                                                // gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(), // Removed: Controlled by vm.controller
+                                                // gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(), // Removed: Controlled by vm.controller
                                                 // These define the total scrollable time range.
                                                 totalGridMin:
                                                     vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
@@ -1149,7 +1162,16 @@ class _GanttViewState extends State<GanttView> {
                                                 enableResize: vm.resizeEnabled,
                                                 onTaskUpdate: (task, start, end) {
                                                   vm.handleTaskUpdate(task, start, end);
-                                                  _showSnackbar('Updated ${task.name}');
+                                                  _bulkUpdateCount++;
+                                                  _bulkUpdateTimer?.cancel();
+                                                  _bulkUpdateTimer = Timer(const Duration(milliseconds: 100), () {
+                                                    if (_bulkUpdateCount == 1) {
+                                                      _showSnackbar('Updated ${task.name}');
+                                                    } else {
+                                                      _showSnackbar('Updated $_bulkUpdateCount tasks');
+                                                    }
+                                                    _bulkUpdateCount = 0;
+                                                  });
                                                 },
                                                 onTaskDoubleClick: (task) {
                                                   _handleSnapToTask(task);
@@ -1346,17 +1368,17 @@ class _GanttViewState extends State<GanttView> {
                                 ),
                               )
                             ],
-                          );
-                        },
-                      ),
+                          ))
+                        ]);
+                      },
                     ),
-                  ],
-                );
-              },
-            ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-      );
+      ));
 }
 
 /// A stateful widget for the "Create Task" dialog.

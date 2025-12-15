@@ -426,7 +426,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         (widget.theme ?? LegacyGanttTheme.fromTheme(theme)).copyWith(weekendColor: widget.weekendColor);
 
     if (widget.controller != null) {
-      return AnimatedBuilder(
+      return _wrap(AnimatedBuilder(
         animation: widget.controller!,
         builder: (context, child) {
           final controller = widget.controller!;
@@ -435,6 +435,15 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final dependencies = controller.dependencies;
           final conflictIndicators = controller.conflictIndicators;
           final allItems = [...tasks, ...holidays]; // Conflicts are handled separately
+
+          // Push updates to internal view model
+          if (_internalViewModel != null) {
+            _internalViewModel!.updateData(allItems);
+            _internalViewModel!.updateDependencies(dependencies);
+            _internalViewModel!.updateConflictIndicators(conflictIndicators);
+            _internalViewModel!.updateVisibleRange(controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
+                controller.visibleEndDate.millisecondsSinceEpoch.toDouble());
+          }
 
           if (controller.isOverallLoading && allItems.isEmpty && !widget.showEmptyRows) {
             if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
@@ -464,6 +473,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 effectiveTheme,
                 gridMin: controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
                 gridMax: controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
+                currentTool: controller.currentTool,
               ),
               if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.linear)
                 Positioned(
@@ -483,11 +493,11 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             ],
           );
         },
-      );
+      ));
     }
 
     if (widget.tasksFuture != null || widget.holidaysFuture != null) {
-      return FutureBuilder<List<dynamic>>(
+      return _wrap(FutureBuilder<List<dynamic>>(
         future: Future.wait([
           widget.tasksFuture ?? Future.value(<LegacyGanttTask>[]),
           widget.holidaysFuture ?? Future.value(<LegacyGanttTask>[])
@@ -513,9 +523,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
               );
             }
           }
-          return _buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme);
+          return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
         },
-      );
+      ));
     } else {
       final tasks = widget.data ?? [];
       final holidays = widget.holidays ?? [];
@@ -523,20 +533,20 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final allItems = [...tasks, ...holidays];
       if (allItems.isEmpty && !widget.showEmptyRows) {
         if (widget.noDataWidgetBuilder != null) {
-          return widget.noDataWidgetBuilder!(context);
+          return _wrap(widget.noDataWidgetBuilder!(context));
         } else {
-          return Center(
+          return _wrap(Center(
             child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-          );
+          ));
         }
       }
-      return _buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme);
+      return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
     }
   }
 
   Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies,
           List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
-          {double? gridMin, double? gridMax}) =>
+          {double? gridMin, double? gridMax, GanttTool currentTool = GanttTool.move}) =>
       ChangeNotifierProvider<LegacyGanttViewModel>(
         key: ValueKey(widget.syncClient),
         create: (context) {
@@ -577,236 +587,250 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 }
               }
             },
+            onSelectionChanged: (ids) {
+              if (widget.controller != null) {
+                widget.controller!.setSelectedTaskIds(ids);
+              }
+            },
           )..showRemoteCursors = widget.showCursors;
           return _internalViewModel!;
         },
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
-            if (vm.conflictIndicators.isNotEmpty) {}
+            // Force update of view model properties that might have changed
+            // This is a bit of a hack to ensure the VM is up to date with the widget
+            // Ideally we would trigger updates via `didUpdateWidget`, which we do, but
+            // this ensures it happens within the build cycle if needed.
+            // Actually, `didUpdateWidget` handles most updates.
+            // The postFrameCallback handles updates that depend on layout or focus.
             SchedulerBinding.instance.addPostFrameCallback((_) {
               if (!vm.isDisposed) {
                 vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
                 vm.updateFocusedTask(widget.focusedTaskId);
                 vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat);
+                vm.setTool(currentTool);
               }
             });
 
-            return LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                if (constraints.maxWidth == 0 || constraints.maxHeight == 0) {
-                  return const SizedBox.shrink();
-                }
+            return Column(
+              children: [
+                // Toolbar
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      if (constraints.maxWidth == 0 || constraints.maxHeight == 0) {
+                        return const SizedBox.shrink();
+                      }
 
-                vm.updateLayout(constraints.maxWidth, constraints.maxHeight);
+                      vm.updateLayout(constraints.maxWidth, constraints.maxHeight);
 
-                final double totalContentWidth =
-                    vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
+                      final double totalContentWidth =
+                          vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
 
-                final double totalContentHeight =
-                    (widget.showEmptyRows ? widget.visibleRows.map((r) => r.id) : vm.data.map((t) => t.rowId))
-                        .toSet()
-                        .fold<double>(
-                          0.0,
-                          (prev, rowId) => prev + widget.rowHeight * (widget.rowMaxStackDepth[rowId] ?? 1),
-                        );
+                      final double totalContentHeight =
+                          (widget.showEmptyRows ? widget.visibleRows.map((r) => r.id) : vm.data.map((t) => t.rowId))
+                              .toSet()
+                              .fold<double>(
+                                0.0,
+                                (prev, rowId) => prev + widget.rowHeight * (widget.rowMaxStackDepth[rowId] ?? 1),
+                              );
 
-                final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
-                final double chartHeight;
+                      final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
+                      final double chartHeight;
 
-                if (widget.height != null) {
-                  chartHeight = widget.height!;
-                } else if (useIntrinsicHeight) {
-                  chartHeight = vm.timeAxisHeight + totalContentHeight;
-                } else {
-                  chartHeight = constraints.maxHeight;
-                }
-                final double contentHeight = chartHeight - vm.timeAxisHeight;
+                      if (widget.height != null) {
+                        chartHeight = widget.height!;
+                      } else if (useIntrinsicHeight) {
+                        chartHeight = vm.timeAxisHeight + totalContentHeight;
+                      } else {
+                        chartHeight = constraints.maxHeight;
+                      }
+                      final double contentHeight = chartHeight - vm.timeAxisHeight;
 
-                return MouseRegion(
-                  cursor: vm.cursor,
-                  onHover: vm.onHover,
-                  onExit: vm.onHoverExit,
-                  child: RawGestureDetector(
-                    gestures: {
-                      _AllowMultipleHorizontalDragGestureRecognizer:
-                          GestureRecognizerFactoryWithHandlers<_AllowMultipleHorizontalDragGestureRecognizer>(
-                        () => _AllowMultipleHorizontalDragGestureRecognizer(
-                          supportedDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch},
-                        ),
-                        (instance) {
-                          instance.onStart = vm.onHorizontalPanStart;
-                          instance.onUpdate = vm.onHorizontalPanUpdate;
-                          instance.onEnd = vm.onHorizontalPanEnd;
-                          instance.onCancel = vm.onHorizontalPanCancel;
-                        },
-                      ),
-                      VerticalDragGestureRecognizer:
-                          GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
-                        () => VerticalDragGestureRecognizer(),
-                        (instance) {
-                          instance.onStart = vm.onVerticalPanStart;
-                          instance.onUpdate = vm.onVerticalPanUpdate;
-                          instance.onEnd = vm.onVerticalPanEnd;
-                          instance.onCancel = vm.onVerticalPanCancel;
-                        },
-                      ),
-                      TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                        () => TapGestureRecognizer(),
-                        (instance) {
-                          instance.onTapUp = vm.onTapUp;
-                        },
-                      ),
-                      DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-                        () => DoubleTapGestureRecognizer(),
-                        (instance) {
-                          instance.onDoubleTapDown = (details) => vm.onDoubleTap(details.localPosition);
-                        },
-                      ),
-                    },
-                    child: Listener(
-                      onPointerSignal: (event) {
-                        if (event is PointerScrollEvent) {
-                          if (event.scrollDelta.dx != 0) {
-                            vm.onHorizontalScroll(event.scrollDelta.dx);
-                          }
-                          if (event.scrollDelta.dy != 0) {
-                            // forward vertical scroll to the controller if attached
-                            if (vm.scrollController != null && vm.scrollController!.hasClients) {
-                              final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
-                              // We rely on jumpTo/animateTo to respect bounds
-                              vm.scrollController!.jumpTo(newOffset.clamp(vm.scrollController!.position.minScrollExtent,
-                                  vm.scrollController!.position.maxScrollExtent));
+                      return Listener(
+                        onPointerSignal: (event) {
+                          if (event is PointerScrollEvent) {
+                            if (event.scrollDelta.dx != 0) {
+                              vm.onHorizontalScroll(event.scrollDelta.dx);
+                            }
+                            if (event.scrollDelta.dy != 0) {
+                              if (vm.scrollController != null && vm.scrollController!.hasClients) {
+                                final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
+                                vm.scrollController!.jumpTo(newOffset.clamp(
+                                    vm.scrollController!.position.minScrollExtent,
+                                    vm.scrollController!.position.maxScrollExtent));
+                              }
                             }
                           }
-                        }
-                      },
-                      child: Container(
-                        color: effectiveTheme.backgroundColor,
-                        height: chartHeight,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: CustomPaint(
-                                painter: AxisPainter(
-                                  x: 0,
-                                  y: vm.timeAxisHeight,
-                                  width: totalContentWidth,
-                                  height: contentHeight,
-                                  scale: vm.totalScale,
-                                  domain: vm.totalDomain,
-                                  visibleDomain: vm.visibleExtent,
-                                  theme: effectiveTheme.copyWith(
-                                      axisTextStyle: const TextStyle(color: Colors.transparent)),
-                                  weekendColor: effectiveTheme.weekendColor,
-                                  weekendDays: widget.weekendDays,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: vm.timeAxisHeight,
-                              left: 0,
-                              width: constraints.maxWidth,
-                              height: contentHeight,
-                              child: ClipRect(
-                                child: Stack(
-                                  children: [
-                                    CustomPaint(
-                                      painter: BarsCollectionPainter(
-                                        conflictIndicators: vm.conflictIndicators,
-                                        dependencies: vm.dependencies,
-                                        data: vm.data,
-                                        domain: vm.totalDomain,
-                                        visibleRows: widget.visibleRows,
-                                        rowMaxStackDepth: widget.rowMaxStackDepth,
-                                        scale: vm.totalScale,
-                                        rowHeight: widget.rowHeight,
-                                        draggedTaskId: vm.draggedTask?.id,
-                                        ghostTaskStart: vm.ghostTaskStart,
-                                        ghostTaskEnd: vm.ghostTaskEnd,
-                                        remoteGhosts: vm.remoteGhosts,
-                                        theme: effectiveTheme,
-                                        hoveredRowId: vm.hoveredRowId,
-                                        hoveredDate: vm.hoveredDate,
-                                        hasCustomTaskBuilder: widget.taskBarBuilder != null,
-                                        hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
-                                        translateY: vm.translateY,
-                                      ),
-                                      size: Size(totalContentWidth, totalContentHeight),
-                                    ),
-                                    IgnorePointer(
-                                      child: CustomPaint(
-                                        painter: CursorPainter(
-                                          remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
-                                          totalScale: vm.totalScale,
-                                          visibleRows: widget.visibleRows,
-                                          rowMaxStackDepth: widget.rowMaxStackDepth,
-                                          rowHeight: widget.rowHeight,
-                                          translateY: vm.translateY,
-                                        ),
-                                        size: Size(totalContentWidth, totalContentHeight),
-                                      ),
-                                    ),
-                                    ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
-                                    ..._buildCustomCellWidgets(vm, vm.data),
-                                    ..._buildFocusedTaskWidgets(vm, vm.data, effectiveTheme,
-                                        widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              width: totalContentWidth,
-                              height: vm.timeAxisHeight,
-                              child: ClipRect(
-                                child: Container(
-                                  color: effectiveTheme.backgroundColor,
-                                  child: widget.timelineAxisHeaderBuilder != null
-                                      ? widget.timelineAxisHeaderBuilder!(
-                                          context,
-                                          vm.totalScale,
-                                          vm.visibleExtent,
-                                          vm.totalDomain,
-                                          effectiveTheme,
-                                          totalContentWidth,
-                                        )
-                                      : CustomPaint(
-                                          size: Size(totalContentWidth, vm.timeAxisHeight),
-                                          painter: AxisPainter(
-                                            x: 0,
-                                            y: vm.timeAxisHeight / 2,
-                                            width: totalContentWidth,
-                                            height: 0,
-                                            scale: vm.totalScale,
-                                            domain: vm.totalDomain,
-                                            visibleDomain: vm.visibleExtent,
-                                            theme: effectiveTheme,
-                                            timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
-                                            weekendColor: effectiveTheme.weekendColor,
-                                            weekendDays: widget.weekendDays,
+                        },
+                        child: GestureDetector(
+                          onPanStart: (details) => vm.onPanStart(details),
+                          onPanUpdate: (details) => vm.onPanUpdate(details),
+                          onPanEnd: (details) => vm.onPanEnd(details),
+                          onTapUp: (details) => vm.onTapUp(details),
+                          onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
+                          child: MouseRegion(
+                            cursor: vm.cursor,
+                            onHover: (event) => vm.onHover(event),
+                            onExit: (event) => vm.onHoverExit(event),
+                            child: ClipRect(
+                              child: Stack(
+                                children: [
+                                  // 1. Chart Content Area (Grid, Bars, Tasks, Cursors)
+                                  Padding(
+                                    padding: EdgeInsets.only(top: vm.timeAxisHeight),
+                                    child: Stack(
+                                      children: [
+                                        // 1.1 Grid Painter (Background)
+                                        RepaintBoundary(
+                                          child: CustomPaint(
+                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                            painter: AxisPainter(
+                                              x: 0,
+                                              y: 0,
+                                              width: totalContentWidth,
+                                              height: contentHeight,
+                                              scale: vm.totalScale,
+                                              domain: vm.totalDomain,
+                                              visibleDomain: vm.visibleExtent,
+                                              theme: effectiveTheme.copyWith(
+                                                  axisTextStyle: const TextStyle(color: Colors.transparent)),
+                                              weekendColor: effectiveTheme.weekendColor,
+                                              weekendDays: widget.weekendDays,
+                                            ),
                                           ),
                                         ),
-                                ),
+                                        // 1.2 Bars Painter (Main Content)
+                                        RepaintBoundary(
+                                          child: CustomPaint(
+                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                            painter: BarsCollectionPainter(
+                                              conflictIndicators: vm.conflictIndicators,
+                                              dependencies: vm.dependencies,
+                                              data: vm.data,
+                                              domain: vm.totalDomain,
+                                              visibleRows: widget.visibleRows,
+                                              rowMaxStackDepth: widget.rowMaxStackDepth,
+                                              scale: vm.totalScale,
+                                              rowHeight: widget.rowHeight,
+                                              draggedTaskId: vm.draggedTask?.id,
+                                              ghostTaskStart: vm.ghostTaskStart,
+                                              ghostTaskEnd: vm.ghostTaskEnd,
+                                              remoteGhosts: vm.remoteGhosts,
+                                              theme: effectiveTheme,
+                                              hoveredRowId: vm.hoveredRowId,
+                                              hoveredDate: vm.hoveredDate,
+                                              hasCustomTaskBuilder: widget.taskBarBuilder != null,
+                                              hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
+                                              translateY: vm.translateY,
+                                              selectedTaskIds: vm.selectedTaskIds,
+                                              bulkGhostTasks: vm.bulkGhostTasks,
+                                            ),
+                                          ),
+                                        ),
+                                        // 1.3 Selection Box Painter
+                                        if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
+                                          CustomPaint(
+                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                            painter: _SelectionBoxPainter(
+                                              rect: vm.selectionRect!,
+                                              borderColor: Theme.of(context).primaryColor,
+                                              fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                                            ),
+                                          ),
+                                        // 1.4 Custom Task Widgets
+                                        if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
+                                          ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
+                                        ..._buildCustomCellWidgets(vm, vm.data),
+                                        ..._buildFocusedTaskWidgets(vm, vm.data, effectiveTheme,
+                                            widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
+                                        // 1.5 Cursors
+                                        if (vm.showRemoteCursors)
+                                          RepaintBoundary(
+                                            child: CustomPaint(
+                                              size:
+                                                  Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                              painter: CursorPainter(
+                                                remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
+                                                totalScale: vm.totalScale,
+                                                visibleRows: widget.visibleRows,
+                                                rowMaxStackDepth: widget.rowMaxStackDepth,
+                                                rowHeight: widget.rowHeight,
+                                                translateY: vm.translateY,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  // 2. Header Painter (Top Axis) - Fixed at Top
+                                  Positioned(
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: vm.timeAxisHeight,
+                                    child: widget.timelineAxisHeaderBuilder != null
+                                        ? widget.timelineAxisHeaderBuilder!(
+                                            context,
+                                            vm.totalScale,
+                                            vm.visibleExtent,
+                                            vm.totalDomain,
+                                            effectiveTheme,
+                                            totalContentWidth,
+                                          )
+                                        : Container(
+                                            color: effectiveTheme.backgroundColor,
+                                            child: RepaintBoundary(
+                                              child: CustomPaint(
+                                                painter: AxisPainter(
+                                                  x: 0,
+                                                  y: 0,
+                                                  width: totalContentWidth,
+                                                  height: vm.timeAxisHeight,
+                                                  scale: vm.totalScale,
+                                                  domain: vm.totalDomain,
+                                                  visibleDomain: vm.visibleExtent,
+                                                  theme: effectiveTheme,
+                                                  timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                                  weekendColor: effectiveTheme.weekendColor,
+                                                  weekendDays: widget.weekendDays,
+                                                  showGridLines: false,
+                                                  verticallyCenterLabels: true,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+
+                                  // 3. Resize Tooltip - Absolute Position
+                                  if (vm.showResizeTooltip)
+                                    Positioned(
+                                      left: vm.resizeTooltipPosition.dx + 15,
+                                      top: vm.resizeTooltipPosition.dy + 15,
+                                      child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
+                                    ),
+                                ],
                               ),
                             ),
-                            if (vm.showResizeTooltip)
-                              Positioned(
-                                left: vm.resizeTooltipPosition.dx + 15,
-                                top: vm.resizeTooltipPosition.dy + 15,
-                                child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
-                              ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ],
             );
           },
         ),
       );
+
+  Widget _wrap(Widget child) {
+    if (widget.height != null) {
+      return SizedBox(height: widget.height, child: child);
+    }
+    return child;
+  }
 
   Widget _buildResizeTooltip(BuildContext context, String text, LegacyGanttTheme theme) {
     final tooltipBackgroundColor = widget.resizeTooltipBackgroundColor ?? theme.barColorPrimary;
@@ -1058,17 +1082,6 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
   }
 }
 
-/// A custom gesture recognizer that allows multiple horizontal drag gesture
-/// recognizers to compete and win simultaneously. This is crucial for allowing
-/// both the inner Gantt chart's task drag/resize and the outer `SingleChildScrollView`'s
-/// scroll to be recognized.
-class _AllowMultipleHorizontalDragGestureRecognizer extends HorizontalDragGestureRecognizer {
-  _AllowMultipleHorizontalDragGestureRecognizer({super.supportedDevices});
-
-  @override
-  void rejectGesture(int pointer) => acceptGesture(pointer);
-}
-
 /// A widget that uses a [CustomPainter] to draw the conflict/overlap pattern.
 class _OverlapIndicatorBar extends StatelessWidget {
   final LegacyGanttTheme theme;
@@ -1130,4 +1143,33 @@ class _OverlapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _OverlapPainter oldDelegate) => oldDelegate.theme != theme;
+}
+
+class _SelectionBoxPainter extends CustomPainter {
+  final Rect rect;
+  final Color borderColor;
+  final Color fillColor;
+
+  _SelectionBoxPainter({required this.rect, required this.borderColor, required this.fillColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = fillColor
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = borderColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SelectionBoxPainter oldDelegate) =>
+      rect != oldDelegate.rect || borderColor != oldDelegate.borderColor || fillColor != oldDelegate.fillColor;
 }

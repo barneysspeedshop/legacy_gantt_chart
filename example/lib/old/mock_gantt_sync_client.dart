@@ -12,17 +12,15 @@ class MockGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperation(Operation operation) async {
-    // Simulate network latency
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // In a real app, the server would broadcast this to other clients.
-    // Here, we just echo it back to simulate "confirmation" or other clients seeing it
-    // if we were running multiple instances.
-    // However, for a single client demo, we might want to simulate *another* user
-    // making a conflicting change or a random change.
-
     // For now, let's just log it.
     print('MockClient: Sent operation ${operation.type}');
+  }
+
+  @override
+  Future<void> sendOperations(List<Operation> operations) async {
+    for (final op in operations) {
+      await sendOperation(op);
+    }
   }
 
   @override

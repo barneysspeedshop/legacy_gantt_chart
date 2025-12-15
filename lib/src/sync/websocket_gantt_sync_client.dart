@@ -173,6 +173,13 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     _channel!.sink.add(encodedEnvelope);
   }
 
+  @override
+  Future<void> sendOperations(List<Operation> operations) async {
+    for (final op in operations) {
+      await sendOperation(op);
+    }
+  }
+
   Future<void> dispose() async {
     await _channel?.sink.close();
     await _operationController.close();

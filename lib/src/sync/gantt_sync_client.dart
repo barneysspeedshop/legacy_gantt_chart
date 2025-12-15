@@ -64,6 +64,9 @@ abstract class GanttSyncClient {
   /// Sends an operation to the server/peers.
   Future<void> sendOperation(Operation operation);
 
+  /// Sends multiple operations to the server/peers efficiently.
+  Future<void> sendOperations(List<Operation> operations);
+
   /// Fetches the initial state or full state from the server.
   /// Returns a list of operations representing the history or current state.
   Future<List<Operation>> getInitialState();

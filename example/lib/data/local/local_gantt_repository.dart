@@ -31,6 +31,50 @@ class LocalGanttRepository {
         .map((rows) => rows.map((row) => _rowToDependency(row)).toList());
   }
 
+  Future<void> insertTasks(List<LegacyGanttTask> tasks) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.transaction((txn) async {
+        for (final task in tasks) {
+          await txn.execute(
+            '''
+          INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
+          ON CONFLICT(id) DO UPDATE SET
+            row_id = ?2,
+            start_date = ?3,
+            end_date = ?4,
+            name = ?5,
+            color = ?6,
+            text_color = ?7,
+            stack_index = ?8,
+            is_summary = ?9,
+            is_milestone = ?10,
+            resource_id = ?11,
+            last_updated = ?12,
+            deleted_at = NULL,
+            is_deleted = 0
+          ''',
+            [
+              task.id,
+              task.rowId,
+              task.start.toIso8601String(),
+              task.end.toIso8601String(),
+              task.name,
+              task.color?.toARGB32().toRadixString(16),
+              task.textColor?.toARGB32().toRadixString(16),
+              task.stackIndex,
+              task.isSummary ? 1 : 0,
+              task.isMilestone ? 1 : 0,
+              task.originalId,
+              task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            ],
+          );
+        }
+      });
+    });
+  }
+
   Future<void> insertOrUpdateTask(LegacyGanttTask task) async {
     // Use lock to prevent concurrent writes that cause "database is locked" errors
     await _lock.synchronized(() async {
@@ -79,6 +123,34 @@ class LocalGanttRepository {
         'UPDATE tasks SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
         [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, taskId],
       );
+    });
+  }
+
+  Future<void> insertDependencies(List<LegacyGanttTaskDependency> dependencies) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.transaction((txn) async {
+        for (final dependency in dependencies) {
+          await txn.execute(
+            '''
+          INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+          ON CONFLICT(from_id, to_id) DO UPDATE SET
+            type = ?3,
+            lag_ms = ?4,
+            last_updated = ?5,
+            deleted_at = NULL
+          ''',
+            [
+              dependency.predecessorTaskId,
+              dependency.successorTaskId,
+              dependency.type.index,
+              dependency.lag?.inMilliseconds,
+              dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            ],
+          );
+        }
+      });
     });
   }
 
@@ -175,6 +247,35 @@ class LocalGanttRepository {
   Stream<List<LocalResource>> watchResources() async* {
     final db = await GanttDb.db;
     yield* db.watch('SELECT * FROM resources').map((rows) => rows.map((row) => _rowToResource(row)).toList());
+  }
+
+  Future<void> insertResources(List<LocalResource> resources) async {
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      await db.transaction((txn) async {
+        for (final resource in resources) {
+          await txn.execute(
+            '''
+          INSERT INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+          ON CONFLICT(id) DO UPDATE SET
+            name = ?2,
+            parent_id = ?3,
+            is_expanded = ?4,
+            last_updated = ?5,
+            deleted_at = NULL
+          ''',
+            [
+              resource.id,
+              resource.name,
+              resource.parentId,
+              resource.isExpanded ? 1 : 0,
+              resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            ],
+          );
+        }
+      });
+    });
   }
 
   Future<void> insertOrUpdateResource(LocalResource resource) async {

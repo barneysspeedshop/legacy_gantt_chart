@@ -14,7 +14,10 @@ class GanttDb {
   }
 
   static Future<void> reset() async {
-    _db = null;
+    if (_db != null) {
+      await _db!.close();
+      _db = null;
+    }
   }
 
   static Future<SqliteCrdt> _init() async {

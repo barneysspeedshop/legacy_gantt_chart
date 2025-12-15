@@ -50,6 +50,13 @@ class AxisPainter extends CustomPainter {
   /// A list of integers representing the days of the week to be highlighted as weekends.
   final List<int>? weekendDays;
 
+  /// Whether to draw the vertical grid lines (ticks).
+  final bool showGridLines;
+
+  /// Whether to vertically center the labels within the [height] of the painter area.
+  /// If false, labels are drawn just above the [y] line.
+  final bool verticallyCenterLabels;
+
   AxisPainter({
     required this.x,
     required this.y,
@@ -62,6 +69,8 @@ class AxisPainter extends CustomPainter {
     this.timelineAxisLabelBuilder,
     this.weekendColor,
     this.weekendDays,
+    this.showGridLines = true,
+    this.verticallyCenterLabels = false,
   });
 
   @override
@@ -90,48 +99,49 @@ class AxisPainter extends CustomPainter {
 
     final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
 
-    Duration tickInterval;
-    String Function(DateTime) labelFormat;
+    // Filter steps that are too small for the current visible duration.
+    // E.g., don't try 1-minute ticks if looking at a year.
+    // We want at least 2 ticks on screen to be useful, so step < visibleDuration / 2
+    final usableSteps = _tickSteps.where((s) => s.interval.inMilliseconds * 2 <= visibleDuration.inMilliseconds);
 
-    if (visibleDuration.inDays > 60) {
-      tickInterval = const Duration(days: 7);
-      labelFormat = (dt) => 'Week ${_weekNumber(dt)}';
-    } else if (visibleDuration.inDays > 14) {
-      tickInterval = const Duration(days: 2);
-      labelFormat = (dt) => DateFormat('d MMM').format(dt);
-    } else if (visibleDuration.inDays > 3) {
-      tickInterval = const Duration(days: 1);
-      labelFormat = (dt) => DateFormat('EEE d').format(dt);
-    } else if (visibleDuration.inHours > 48) {
-      tickInterval = const Duration(hours: 12);
-      labelFormat = (dt) => DateFormat('ha').format(dt);
-    } else if (visibleDuration.inHours > 24) {
-      tickInterval = const Duration(hours: 6);
-      labelFormat = (dt) => DateFormat('ha').format(dt);
-    } else if (visibleDuration.inHours > 12) {
-      tickInterval = const Duration(hours: 2);
-      labelFormat = (dt) => DateFormat('h a').format(dt);
-    } else if (visibleDuration.inHours > 6) {
-      tickInterval = const Duration(hours: 1);
-      labelFormat = (dt) => DateFormat('h:mm a').format(dt);
-    } else if (visibleDuration.inHours > 3) {
-      tickInterval = const Duration(minutes: 30);
-      labelFormat = (dt) => DateFormat('h:mm a').format(dt);
-    } else if (visibleDuration.inMinutes > 90) {
-      tickInterval = const Duration(minutes: 15);
-      labelFormat = (dt) => DateFormat('h:mm a').format(dt);
-    } else if (visibleDuration.inMinutes > 30) {
-      tickInterval = const Duration(minutes: 5);
-      labelFormat = (dt) => DateFormat('h:mm').format(dt);
-    } else {
-      tickInterval = const Duration(minutes: 1);
-      labelFormat = (dt) => DateFormat('h:mm:ss').format(dt);
+    _TickStep? selectedStep;
+
+    // Adaptive Logic: Find the smallest interval where labels fit.
+    for (final step in usableSteps) {
+      // Calculate screen width of this interval
+      // (scale is essentially linear for small intervals, so we can mock it)
+      // Actually, better to take two points.
+      final t1 = visibleDomain.first;
+      final t2 = t1.add(step.interval);
+      final pixelsPerTick = (scale(t2) - scale(t1)).abs();
+
+      // Measure label width
+      final testLabel = step.labelFormat(DateTime(2023, 1, 1, 10, 0)); // Sample date
+      final textStyle = theme.axisTextStyle;
+      final textSpan = TextSpan(text: testLabel, style: textStyle);
+      final textPainter = TextPainter(
+        text: textSpan,
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      );
+      textPainter.layout();
+
+      // Check fit with some padding (e.g., 8px)
+      if (pixelsPerTick > textPainter.width + 8) {
+        selectedStep = step;
+        break; // Found the best fit!
+      }
     }
+
+    // Fallback if nothing fits or list empty
+    selectedStep ??= usableSteps.isNotEmpty ? usableSteps.last : _tickSteps.last;
+
+    final Duration tickInterval = selectedStep.interval;
+    final String Function(DateTime) labelFormat = selectedStep.labelFormat;
 
     final List<MapEntry<double, DateTime>> tickPositions = [];
 
     // Find the first tick position that is on or after the start of the visible domain.
-    // Round down to the nearest interval, then add intervals until we are in view.
     if (visibleDomain.isNotEmpty && domain.first.isBefore(domain.last)) {
       DateTime currentTick = _roundDownTo(visibleDomain.first, tickInterval);
 
@@ -143,11 +153,7 @@ class AxisPainter extends CustomPainter {
         }
       }
 
-      // Generate ticks only for the visible domain (plus a buffer)
-      // We use visibleDomain.last but ensure we don't go past domain.last
       final effectiveEnd = visibleDomain.last.isBefore(domain.last) ? visibleDomain.last : domain.last;
-
-      // Add one interval buffer to ensure we cover the right edge completely
       final loopEnd = effectiveEnd.add(tickInterval);
 
       while (currentTick.isBefore(loopEnd) &&
@@ -157,17 +163,43 @@ class AxisPainter extends CustomPainter {
       }
     }
 
+    bool isFirstVisibleTickFound = false;
+    DateTime? previousTickTime;
+
     for (final entry in tickPositions) {
       final tickX = entry.key;
       final tickTime = entry.value;
-      final label =
-          timelineAxisLabelBuilder != null ? timelineAxisLabelBuilder!(tickTime, tickInterval) : labelFormat(tickTime);
 
-      canvas.drawLine(
-        Offset(tickX, y),
-        Offset(tickX, y + height),
-        paint,
-      );
+      String label;
+      final bool isSubDaily = tickInterval.inHours < 24 && tickInterval.inDays < 1;
+
+      // Check if this tick represents the start of a new day compared to the previous tick.
+      // This is more robust than checking for midnight (00:00) because large intervals (e.g. 6h)
+      // might land on 1AM, 7AM etc. in local timezones.
+      final bool isNewDay = previousTickTime != null && tickTime.day != previousTickTime.day;
+      final bool isVisible = tickX >= x;
+
+      // Show full date for the first visible tick or when the day changes.
+      if (isSubDaily && ((isVisible && !isFirstVisibleTickFound) || isNewDay)) {
+        label = DateFormat('MMM d').format(tickTime);
+        if (isVisible) {
+          isFirstVisibleTickFound = true;
+        }
+      } else {
+        label = timelineAxisLabelBuilder != null
+            ? timelineAxisLabelBuilder!(tickTime, tickInterval)
+            : labelFormat(tickTime);
+      }
+
+      previousTickTime = tickTime;
+
+      if (showGridLines) {
+        canvas.drawLine(
+          Offset(tickX, y),
+          Offset(tickX, y + height),
+          paint,
+        );
+      }
 
       final textStyle = theme.axisTextStyle;
       if (textStyle.color != Colors.transparent) {
@@ -178,9 +210,19 @@ class AxisPainter extends CustomPainter {
           textDirection: ui.TextDirection.ltr,
         );
         textPainter.layout();
+
+        double textY;
+        if (verticallyCenterLabels) {
+          // Center vertically within the provided height starting from y
+          textY = y + (height - textPainter.height) / 2;
+        } else {
+          // Draw just above y (bottom alignment)
+          textY = y - textPainter.height;
+        }
+
         textPainter.paint(
           canvas,
-          Offset(tickX - (textPainter.width / 2), y - textPainter.height),
+          Offset(tickX - (textPainter.width / 2), textY),
         );
       }
     }
@@ -191,30 +233,65 @@ class AxisPainter extends CustomPainter {
       theme != oldDelegate.theme ||
       width != oldDelegate.width ||
       height != oldDelegate.height ||
-      // A direct comparison of scale functions is not reliable.
-      // Instead, we check the domains which determine the scale.
+      showGridLines != oldDelegate.showGridLines ||
+      verticallyCenterLabels != oldDelegate.verticallyCenterLabels ||
       !listEquals(domain, oldDelegate.domain) ||
-      // Check if the visible domain's start or end has changed.
       (visibleDomain.isNotEmpty && oldDelegate.visibleDomain.isNotEmpty
           ? visibleDomain.first != oldDelegate.visibleDomain.first ||
               visibleDomain.last != oldDelegate.visibleDomain.last
           : listEquals(visibleDomain, oldDelegate.visibleDomain));
 
   DateTime _roundDownTo(DateTime dt, Duration delta) {
-    final ms = dt.millisecondsSinceEpoch;
-    final deltaMs = delta.inMilliseconds;
+    if (delta.inDays >= 7) {
+      // Special handling for weeks if needed, for now standard math works relative to epoch
+      // but weeks don't align perfectly with epoch if you want "Monday" start.
+      // The original code didn't do strict Monday alignment, so we stick to epoch math for consistency
+      // unless refined later.
+    }
+    final int ms = dt.millisecondsSinceEpoch;
+    final int deltaMs = delta.inMilliseconds;
+
+    // Adjust for timezone offset to align ticks to local time (e.g. Midnight)
+    // rather than UTC epoch (which might be 7pm local).
+    final int offset = dt.timeZoneOffset.inMilliseconds;
+    final int localMs = ms + offset;
+    final int roundedLocalMs = (localMs ~/ deltaMs) * deltaMs;
+    final int resultMs = roundedLocalMs - offset;
+
     return DateTime.fromMillisecondsSinceEpoch(
-      (ms ~/ deltaMs) * deltaMs,
+      resultMs,
       isUtc: dt.isUtc,
     );
   }
+}
 
-  int _weekNumber(DateTime date) {
-    // A simple week number calculation.
-    final dayOfYear = int.parse(DateFormat('D').format(date));
-    final woy = ((dayOfYear - date.weekday + 10) / 7).floor();
-    if (woy < 1) return 52; // Fallback for early days in the year.
-    if (woy > 52) return 52; // Fallback for late days in the year.
-    return woy;
-  }
+class _TickStep {
+  final Duration interval;
+  final String Function(DateTime) labelFormat;
+
+  const _TickStep(this.interval, this.labelFormat);
+}
+
+// Ordered from smallest to largest
+final List<_TickStep> _tickSteps = [
+  _TickStep(const Duration(minutes: 1), (dt) => DateFormat('h:mm:ss').format(dt)),
+  _TickStep(const Duration(minutes: 5), (dt) => DateFormat('h:mm').format(dt)),
+  _TickStep(const Duration(minutes: 15), (dt) => DateFormat('h:mm a').format(dt)),
+  _TickStep(const Duration(minutes: 30), (dt) => DateFormat('h:mm a').format(dt)),
+  _TickStep(const Duration(hours: 1), (dt) => DateFormat('h:mm a').format(dt)),
+  _TickStep(const Duration(hours: 2), (dt) => DateFormat('h a').format(dt)),
+  _TickStep(const Duration(hours: 6), (dt) => DateFormat('h a').format(dt)),
+  _TickStep(const Duration(hours: 12), (dt) => DateFormat('ha').format(dt)),
+  _TickStep(const Duration(days: 1), (dt) => DateFormat('EEE d').format(dt)),
+  _TickStep(const Duration(days: 2), (dt) => DateFormat('d MMM').format(dt)),
+  _TickStep(const Duration(days: 7), (dt) => 'Week ${_weekNumber(dt)}'),
+];
+
+// Helper for week number outside the class to access in _tickSteps
+int _weekNumber(DateTime date) {
+  final dayOfYear = int.parse(DateFormat('D').format(date));
+  final woy = ((dayOfYear - date.weekday + 10) / 7).floor();
+  if (woy < 1) return 52;
+  if (woy > 52) return 52;
+  return woy;
 }

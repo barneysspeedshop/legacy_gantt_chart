@@ -248,4 +248,44 @@ class LegacyGanttController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  GanttTool _currentTool = GanttTool.move;
+  final Set<String> _selectedTaskIds = {};
+
+  /// The currently active tool.
+  GanttTool get currentTool => _currentTool;
+
+  /// The IDs of the currently selected tasks.
+  Set<String> get selectedTaskIds => Set.unmodifiable(_selectedTaskIds);
+
+  /// Sets the currently active tool.
+  void setTool(GanttTool tool) {
+    if (_currentTool != tool) {
+      _currentTool = tool;
+      _selectedTaskIds.clear(); // Clear selection when switching tools?
+      notifyListeners();
+    }
+  }
+
+  /// Updates the set of selected task IDs.
+  void setSelectedTaskIds(Set<String> ids) {
+    _selectedTaskIds.clear();
+    _selectedTaskIds.addAll(ids);
+    notifyListeners();
+  }
+
+  /// Clears the current selection.
+  void clearSelection() {
+    _selectedTaskIds.clear();
+    notifyListeners();
+  }
+}
+
+/// Defines the active tool for interacting with the Gantt chart.
+enum GanttTool {
+  /// The default move tool for panning and dragging tasks.
+  move,
+
+  /// The select tool for box-selecting multiple tasks.
+  select,
 }

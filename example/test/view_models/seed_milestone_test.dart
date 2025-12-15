@@ -40,6 +40,7 @@ void main() {
     final dbMilestone = tasks.firstWhere((t) => t.id == 'milestone_demo_1');
     expect(dbMilestone, isNotNull);
 
-    vm.dispose();
+    await vm.disposeAsync();
+    await GanttDb.reset();
   });
 }

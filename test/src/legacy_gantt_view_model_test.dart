@@ -546,6 +546,13 @@ class MockGanttSyncClient extends GanttSyncClient {
   }
 
   @override
+  Future<void> sendOperations(List<Operation> operations) async {
+    for (final op in operations) {
+      await sendOperation(op);
+    }
+  }
+
+  @override
   Future<List<Operation>> getInitialState() async => [];
 
   void addOperation(Operation op) {

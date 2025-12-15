@@ -1,6 +1,13 @@
-## 4.0.12
+## 4.1.0
 
-* **FIX**: Fix dependency persistence crash by using deleted_at instead of is_deleted
+* **FEATURE**: Implemented the ability to select a group of tasks and move them in bulk
+* **FEATURE**: Enhanced Axis Labels to be contextual:
+    * The first visible tick now always displays the Date (e.g., "Oct 10") instead of just time, providing immediate context.
+    * Ticks crossing into a new day also display the Date.
+* **FEATURE**: Implemented Adaptive Axis Ticks logic to prevent label overlap when zooming out.
+* **EXAMPLE FIX**: Fixed a visual "drift" issue where the visible date range would jump unexpectedly when resizing the window; the chart now correctly maintains the scroll offset.
+* **FIX**: Fixed Axis Tick Alignment to respect local timezones, ensuring ticks land on "round" hours (e.g., 00:00, 12:00) rather than UTC-shifted offsets.
+* **FIX**: Fixed Axis Header visibility issue by correcting the painter's Y-coordinate logic.
 
 ## 4.0.11
 

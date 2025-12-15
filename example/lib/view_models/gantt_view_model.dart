@@ -143,6 +143,9 @@ class GanttViewModel extends ChangeNotifier {
   bool _isSyncingGanttScroll = false;
   bool _areScrollListenersAttached = false;
 
+  /// The controller for the Gantt chart.
+  late final LegacyGanttController controller;
+
   /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
   bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
 
@@ -211,6 +214,7 @@ class GanttViewModel extends ChangeNotifier {
     // Listen to dependencies
     _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
       _dependencies = deps;
+      _syncToController();
       notifyListeners();
     });
 
@@ -335,10 +339,27 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     _isLoading = false;
+    _syncToController();
     notifyListeners();
   }
 
+  Future<void>? _activeSeedingFuture;
+
   Future<void> seedLocalDatabase() async {
+    // If a seed is already in progress, we can return it (or chain it, but usually we just want to wait for the current one).
+    if (_activeSeedingFuture != null) {
+      return _activeSeedingFuture;
+    }
+
+    _activeSeedingFuture = _seedLocalDatabaseInternal();
+    try {
+      await _activeSeedingFuture;
+    } finally {
+      _activeSeedingFuture = null;
+    }
+  }
+
+  Future<void> _seedLocalDatabaseInternal() async {
     _isLoading = true;
     notifyListeners();
 
@@ -413,17 +434,16 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     // Insert into local DB
-    for (final task in tasks) {
-      await _localRepository.insertOrUpdateTask(task);
-    }
-    for (final dep in dependencies) {
-      await _localRepository.insertOrUpdateDependency(dep);
-    }
+    // Insert into local DB
+    await _localRepository.insertTasks(tasks);
+    await _localRepository.insertDependencies(dependencies);
 
     // Sync Client Notification (Broadcast re-seed)
     if (_syncClient != null) {
+      final opsToSend = <Operation>[];
+
       // 1. Send RESET_DATA
-      _syncClient!.sendOperation(Operation(
+      opsToSend.add(Operation(
         type: 'RESET_DATA',
         data: {},
         timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -439,7 +459,7 @@ class GanttViewModel extends ChangeNotifier {
           ganttType = 'summary';
         }
 
-        _syncClient!.sendOperation(Operation(
+        opsToSend.add(Operation(
           type: 'INSERT_TASK',
           data: {
             'gantt_type': ganttType,
@@ -462,7 +482,7 @@ class GanttViewModel extends ChangeNotifier {
 
       // 3. Send INSERT_DEPENDENCY for all new dependencies
       for (final dep in dependencies) {
-        _syncClient!.sendOperation(Operation(
+        opsToSend.add(Operation(
           type: 'INSERT_DEPENDENCY',
           data: {
             'predecessorTaskId': dep.predecessorTaskId,
@@ -473,6 +493,8 @@ class GanttViewModel extends ChangeNotifier {
           actorId: 'local-user',
         ));
       }
+
+      await _syncClient!.sendOperations(opsToSend);
     }
 
     // Insert resources
@@ -487,28 +509,31 @@ class GanttViewModel extends ChangeNotifier {
     fillExpansion(processedData.gridData);
 
     // Insert resources with controlled expansion state (first one expanded, others collapsed)
+    // Insert resources with controlled expansion state (first one expanded, others collapsed)
+    final resourcesToInsert = <LocalResource>[];
     for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
       final resource = processedData.apiResponse.resourcesData[i];
       final isExpanded = i == 0; // Only expand the first one
 
-      await _localRepository.insertOrUpdateResource(
-          LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
+      resourcesToInsert
+          .add(LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
 
       for (final child in resource.children) {
         // Children expansion doesn't matter much if parent is collapsed, but let's keep them expanded by default
-        await _localRepository.insertOrUpdateResource(
-            LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
+        resourcesToInsert.add(LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
       }
     }
+    await _localRepository.insertResources(resourcesToInsert);
 
     // 4. Send INSERT_RESOURCE for all new resources (Broadcast re-seed)
     if (_syncClient != null) {
+      final resourceOps = <Operation>[];
       for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
         final resource = processedData.apiResponse.resourcesData[i];
         final isExpanded = i == 0; // Only expand the first one
 
         // Send parent resource
-        _syncClient!.sendOperation(Operation(
+        resourceOps.add(Operation(
           type: 'INSERT_RESOURCE',
           data: {
             'gantt_type': 'person',
@@ -525,7 +550,7 @@ class GanttViewModel extends ChangeNotifier {
 
         for (final child in resource.children) {
           // Send child resource
-          _syncClient!.sendOperation(Operation(
+          resourceOps.add(Operation(
             type: 'INSERT_RESOURCE',
             data: {
               'gantt_type': 'job',
@@ -541,6 +566,7 @@ class GanttViewModel extends ChangeNotifier {
           ));
         }
       }
+      await _syncClient!.sendOperations(resourceOps);
     }
 
     // _seedVersion++; // Handled in _processLocalData via _pendingSeedReset
@@ -745,6 +771,11 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Constructor initializes the locale and sets up a listener for horizontal scrolling.
   GanttViewModel({String? initialLocale, bool useLocalDatabase = false}) {
+    controller = LegacyGanttController(
+      initialVisibleStartDate: _startDate,
+      initialVisibleEndDate: _startDate.add(Duration(days: _range)),
+    );
+
     if (initialLocale != null) {
       _selectedLocale = initialLocale;
     }
@@ -797,6 +828,54 @@ class GanttViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _removeTooltip();
+    _tasksSubscription?.cancel();
+    _dependenciesSubscription?.cancel();
+    _resourcesSubscription?.cancel();
+
+    // Dispose sync client (important for Offline client to stop flush loop)
+    if (_syncClient is OfflineGanttSyncClient) {
+      (_syncClient as OfflineGanttSyncClient).dispose();
+    } else if (_syncClient is WebSocketGanttSyncClient) {
+      (_syncClient as WebSocketGanttSyncClient).dispose();
+    }
+
+    // Remove listeners before disposing controllers.
+    _gridScrollController.removeListener(_syncGanttScroll);
+    _ganttScrollController.removeListener(_syncGridScroll);
+    _gridScrollController.dispose();
+    _ganttScrollController.dispose();
+    _ganttHorizontalScrollController.removeListener(_onGanttScroll);
+    _ganttHorizontalScrollController.dispose();
+    super.dispose();
+  }
+
+  /// Disposes of the view model and its resources asynchronously.
+  /// This is preferred over [dispose] when using [OfflineGanttSyncClient], as it
+  /// ensures that any active background flush operations are completed before
+  /// the method returns.
+  Future<void> disposeAsync() async {
+    _removeTooltip();
+
+    // Wait for any active seeding to complete before closing resources
+    if (_activeSeedingFuture != null) {
+      try {
+        await _activeSeedingFuture;
+      } catch (e) {
+        debugPrint('Error waiting for seeding during dispose: $e');
+      }
+    }
+
+    await _tasksSubscription?.cancel();
+    await _dependenciesSubscription?.cancel();
+    await _resourcesSubscription?.cancel();
+
+    // Dispose sync client (important for Offline client to stop flush loop)
+    if (_syncClient is OfflineGanttSyncClient) {
+      await (_syncClient as OfflineGanttSyncClient).dispose();
+    } else if (_syncClient is WebSocketGanttSyncClient) {
+      await (_syncClient as WebSocketGanttSyncClient).dispose();
+    }
+
     // Remove listeners before disposing controllers.
     _gridScrollController.removeListener(_syncGanttScroll);
     _ganttScrollController.removeListener(_syncGridScroll);
@@ -1056,11 +1135,11 @@ class GanttViewModel extends ChangeNotifier {
       // After the UI has been built with the new data, scroll the Gantt chart
       // to the initial visible window.
       WidgetsBinding.instance.addPostFrameCallback((_) => _setInitialScroll());
+      _syncToController();
     } catch (e) {
+      debugPrint('Error fetching schedule data: $e');
       _isLoading = false;
       notifyListeners();
-      debugPrint('Error fetching gantt schedule data: $e');
-      // Consider showing an error message to the user
     }
   }
 
@@ -1182,6 +1261,8 @@ class GanttViewModel extends ChangeNotifier {
     });
   }
 
+  double? _lastTotalGanttWidth;
+
   /// Listener for the `_ganttHorizontalScrollController`. This is triggered when the
   /// user scrolls the main Gantt chart horizontally.
   ///
@@ -1197,6 +1278,11 @@ class GanttViewModel extends ChangeNotifier {
 
     final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
     if (totalDataDuration <= 0) return;
+
+    // We no longer rely on _lastTotalGanttWidth check here because _onGanttScroll
+    // might not fire if pixel offset doesn't change during resize.
+    // Instead we rely on maintainScrollOffsetForWidth called from the view.
+
     final startOffsetMs = (position.pixels / totalGanttWidth) * totalDataDuration;
     final newVisibleStart = effectiveTotalStartDate!.add(Duration(milliseconds: startOffsetMs.round()));
     final newVisibleEnd = newVisibleStart.add(_visibleEndDate!.difference(_visibleStartDate!));
@@ -1208,6 +1294,33 @@ class GanttViewModel extends ChangeNotifier {
       _broadcastPresence();
       notifyListeners();
     }
+  }
+
+  /// Called by the view when the layout width of the gantt chart changes (e.g. window resize).
+  /// This ensures we adjust the scroll offset to keep the current date in view, preventing drift.
+  void maintainScrollOffsetForWidth(double totalWidth) {
+    if (_lastTotalGanttWidth != null && (totalWidth - _lastTotalGanttWidth!).abs() > 1.0) {
+      _lastTotalGanttWidth = totalWidth;
+
+      if (effectiveTotalStartDate == null || effectiveTotalEndDate == null) return;
+
+      final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
+      if (totalDataDuration <= 0) return;
+
+      // Schedule the jump for after layout
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Guard against controller detachment or data changes in the interim
+        if (!_ganttHorizontalScrollController.hasClients) return;
+        if (effectiveTotalStartDate == null) return;
+
+        final startOffsetMs = _visibleStartDate!.difference(effectiveTotalStartDate!).inMilliseconds;
+        final newScrollOffset = (startOffsetMs / totalDataDuration) * totalWidth;
+
+        _ganttHorizontalScrollController
+            .jumpTo(newScrollOffset.clamp(0.0, _ganttHorizontalScrollController.position.maxScrollExtent));
+      });
+    }
+    _lastTotalGanttWidth = totalWidth;
   }
 
   /// Sets the initial horizontal scroll position of the Gantt chart after data
@@ -1348,7 +1461,14 @@ class GanttViewModel extends ChangeNotifier {
     _ganttTasks = tasks;
     _conflictIndicators = conflictIndicators;
     _rowMaxStackDepth = maxDepth;
+    _syncToController();
     notifyListeners();
+  }
+
+  void _syncToController() {
+    controller.setTasks(_ganttTasks);
+    controller.setDependencies(_dependencies);
+    controller.setConflictIndicators(_conflictIndicators);
   }
 
   // --- Presence & Follow Mode ---

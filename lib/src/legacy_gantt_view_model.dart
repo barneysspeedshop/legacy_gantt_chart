@@ -11,10 +11,11 @@ import 'models/remote_ghost.dart';
 import 'sync/gantt_sync_client.dart';
 import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
+import 'legacy_gantt_controller.dart';
 
 enum DragMode { none, move, resizeStart, resizeEnd }
 
-enum PanType { none, vertical, horizontal }
+enum PanType { none, vertical, horizontal, selection }
 
 enum TaskPart { body, startHandle, endHandle }
 
@@ -280,6 +281,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// A callback invoked when the visible date range changes.
   final Function(DateTime start, DateTime end)? onVisibleRangeChanged;
 
+  /// A callback invoked when simple selection changes.
+  final Function(Set<String>)? onSelectionChanged;
+
   /// Creates an instance of [LegacyGanttViewModel].
   ///
   /// This constructor takes all the relevant properties from the
@@ -316,6 +320,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.resizeHandleWidth = 10.0,
     this.syncClient,
     this.taskGrouper,
+    this.onSelectionChanged,
   })  : _tasks = List.from(data),
         _axisHeight = axisHeight {
     // 1. Pre-calculate row offsets immediately
@@ -550,6 +555,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
   LegacyGanttTask? _draggedTask;
   DateTime? _ghostTaskStart;
   DateTime? _ghostTaskEnd;
+  final Map<String, (DateTime, DateTime)> _bulkGhostTasks = {};
+  Map<String, (DateTime, DateTime)> get bulkGhostTasks => _bulkGhostTasks;
   DragMode _dragMode = DragMode.none;
   PanType _panType = PanType.none;
   double _dragStartGlobalX = 0.0;
@@ -567,6 +574,99 @@ class LegacyGanttViewModel extends ChangeNotifier {
   // Add this list to your class properties to cache row positions
   List<double> _rowVerticalOffsets = [];
   double _totalContentHeight = 0;
+
+  /// The currently active tool.
+  GanttTool _currentTool = GanttTool.move;
+  GanttTool get currentTool => _currentTool;
+
+  /// The current selection rectangle in local coordinates (relative to the chart content).
+  Rect? _selectionRect;
+  Rect? get selectionRect => _selectionRect;
+
+  /// The IDs of the currently selected tasks.
+  final Set<String> _selectedTaskIds = {};
+  Set<String> get selectedTaskIds => Set.unmodifiable(_selectedTaskIds);
+
+  /// Sets the current tool.
+  void setTool(GanttTool tool) {
+    if (_currentTool != tool) {
+      _currentTool = tool;
+      _selectionRect = null;
+      if (tool == GanttTool.select) {
+        _clearEmptySpaceHover();
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Updates the selection rectangle and selects tasks within it.
+  void updateSelection(Rect? rect) {
+    _selectionRect = rect;
+    if (rect != null) {
+      _selectTasksInRect(rect);
+    }
+    notifyListeners();
+  }
+
+  /// Selects tasks that intersect with the given rectangle.
+  /// Selects tasks that intersect with the given rectangle.
+  void _selectTasksInRect(Rect rect) {
+    _selectedTaskIds.clear();
+
+    // The rect is in local widget coordinates. We need to convert it to "content" coordinates
+    // used by the tasks (which are laid out relative to timeAxisHeight).
+    // Also consider the scroll offset (_translateY).
+    // Content Y = 0 matches Screen Y = timeAxisHeight + _translateY.
+    // Screen Y = Content Y + timeAxisHeight + _translateY.
+    // Content Y = Screen Y - timeAxisHeight - _translateY.
+    final contentRect = rect.shift(Offset(0, -timeAxisHeight - _translateY));
+
+    // Optimize: Pre-calculate map if needed, but linear scan is fine for typical N.
+    // We only check tasks in visible rows to be safe? Or all?
+    // "Select" usually means "visual selection", so selecting visible is prioritized.
+    // But if we want to select *everything* in the box even if hidden?
+    // Let's stick to ALL tasks to support bulk actions on expanded/hidden items if the box covers them visually?
+    // No, if they are hidden (collapsed parent), they have no Y position.
+    // So we iterate `visibleRows`.
+
+    final visibleRowIndices = {for (var i = 0; i < visibleRows.length; i++) visibleRows[i].id: i};
+
+    for (final task in data) {
+      final rowIndex = visibleRowIndices[task.rowId];
+      if (rowIndex == null) continue;
+
+      // Check task intersection
+      final rowTop = _rowVerticalOffsets[rowIndex];
+      final top = rowTop + (task.stackIndex * rowHeight);
+      final bottom = top + rowHeight;
+
+      // Optimization: Check Y overlap first
+      if (contentRect.top > bottom || contentRect.bottom < top) continue;
+
+      final startX = _totalScale(task.start);
+      final endX = _totalScale(task.end);
+
+      final taskRect = Rect.fromLTRB(startX, top, endX, bottom);
+
+      if (contentRect.overlaps(taskRect)) {
+        _selectedTaskIds.add(task.id);
+      }
+    }
+  }
+
+  // Let's defer exact selection logic to the View or Helper, or implement basic time-range overlap here.
+  // 1. Calculate time range from rect.left / rect.right
+  // 2. Calculate row range from rect.top / rect.bottom
+
+  // Actually, we can do this in the `onPanUpdate` equivalent for selection later.
+  // For now just storing the rect.
+
+  /// Clear the current selection.
+  void clearSelection() {
+    _selectedTaskIds.clear();
+    _selectionRect = null;
+    notifyListeners();
+  }
 
   /// The current vertical scroll offset of the chart content.
   double get translateY => _translateY;
@@ -987,7 +1087,52 @@ class LegacyGanttViewModel extends ChangeNotifier {
         }
       }
     }
+    _commitBulkUpdates();
     _resetDragState();
+  }
+
+  void _commitBulkUpdates() {
+    if (_bulkGhostTasks.isEmpty) return;
+
+    bool localStateChanged = false;
+
+    for (final entry in _bulkGhostTasks.entries) {
+      final taskId = entry.key;
+      final (newStart, newEnd) = entry.value;
+      // Use _allGanttTasks or data to find the current state of the task
+      final task = data.firstWhere((t) => t.id == taskId, orElse: () => LegacyGanttTask.empty());
+      if (task.id.isEmpty) continue;
+
+      if (syncClient != null) {
+        final op = Operation(
+            type: 'UPDATE_TASK',
+            data: {
+              'id': taskId,
+              'start': newStart.toIso8601String(),
+              'end': newEnd.toIso8601String(),
+            },
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+            actorId: 'user');
+        syncClient!.sendOperation(op);
+        _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
+      } else {
+        final updatedTask = task.copyWith(start: newStart, end: newEnd);
+        final index = _tasks.indexWhere((t) => t.id == taskId);
+        if (index != -1) {
+          _tasks[index] = updatedTask;
+          localStateChanged = true;
+        }
+      }
+      // Notify parent app
+      onTaskUpdate?.call(task, newStart, newEnd);
+    }
+
+    // Recalculate conflicts if needed (mainly for local mode)
+    if (localStateChanged && taskGrouper != null) {
+      final conflicts = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
+      conflictIndicators = conflicts;
+      notifyListeners();
+    }
   }
 
   void onHorizontalPanCancel() {
@@ -1026,6 +1171,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _draggedTask = null;
     _ghostTaskStart = null;
     _ghostTaskEnd = null;
+    _bulkGhostTasks.clear(); // Clear bulk ghost tasks on reset
     _dragMode = DragMode.none;
     _panType = PanType.none;
     _showResizeTooltip = false;
@@ -1054,6 +1200,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
+    if (_currentTool == GanttTool.select) {
+      _panType = PanType.selection;
+      // Adjust for header height
+      final startY = max(0.0, details.localPosition.dy - timeAxisHeight);
+      final startPoint = Offset(details.localPosition.dx, startY);
+      _initialLocalPosition = startPoint;
+      _selectionRect = Rect.fromPoints(startPoint, startPoint);
+      _selectedTaskIds.clear(); // Start new selection
+      notifyListeners();
+      return;
+    }
+
     // Otherwise heuristic based - this is risky with conflicting recognizers.
     // We'll leave it simple:
     _panType = PanType.none;
@@ -1066,6 +1224,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void onPanUpdate(DragUpdateDetails details) {
     if (_panType == PanType.horizontal) {
       onHorizontalPanUpdate(details);
+    } else if (_panType == PanType.selection) {
+      if (_selectionRect != null) {
+        final currentY = max(0.0, details.localPosition.dy - timeAxisHeight);
+        final currentPoint = Offset(details.localPosition.dx, currentY);
+        // Create rect from initial point to current point
+        final newRect = Rect.fromPoints(_initialLocalPosition, currentPoint);
+        _selectionRect = newRect;
+        _updateSelectionFromRect(newRect);
+        notifyListeners();
+      }
     } else if (_panType == PanType.vertical) {
       onVerticalPanUpdate(details);
     } else {
@@ -1100,6 +1268,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void onPanEnd(DragEndDetails details) {
     if (_panType == PanType.horizontal) {
       onHorizontalPanEnd(details);
+    } else if (_panType == PanType.selection) {
+      _panType = PanType.none;
+      _selectionRect = null; // Hide box but keep selection
+      notifyListeners();
     } else {
       onVerticalPanEnd(details);
     }
@@ -1116,6 +1288,40 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Gesture handler for a tap gesture. Determines if a task or empty space
   /// was tapped and invokes the appropriate callback.
   void onTapUp(TapUpDetails details) {
+    // If in select mode, handle selection logic
+    if (_currentTool == GanttTool.select) {
+      final hit = _getTaskPartAtPosition(details.localPosition);
+      if (hit != null) {
+        // Toggle selection for this task
+        if (_selectedTaskIds.contains(hit.task.id)) {
+          _selectedTaskIds.remove(hit.task.id);
+        } else {
+          _selectedTaskIds.add(hit.task.id);
+        }
+        notifyListeners();
+        // Also notify listener if needed?
+        // For now, internal selection state is what prevents drag,
+        // but external controller might want to know.
+        // There is no `onSelectionChanged` callback exposed to VM yet?
+        // The controller has `selectedTaskIds` getter.
+        // We might need to sync back to Validatable or just rely on Controller polling?
+        // Actually, the widget syncs selection FROM controller? No, controller has `selectedTaskIds`.
+        // The VM has `_selectedTaskIds`. They need to sync.
+        // But `LegacyGanttChartWidget` doesn't seem to sync selection change UP to controller?
+        // Let's look at `LegacyGanttContent`.
+
+        // Actually, let's just NOT trigger onEmptySpaceClick if select mode.
+        // Notify listener if available
+        onSelectionChanged?.call(_selectedTaskIds);
+      } else {
+        // Clicked empty space in select mode -> Clear selection
+        if (_selectedTaskIds.isNotEmpty) {
+          clearSelection();
+        }
+      }
+      return;
+    }
+
     final hit = _getTaskPartAtPosition(details.localPosition);
     if (hit != null) {
       onPressTask?.call(hit.task);
@@ -1154,35 +1360,49 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final hoveredTask = hit?.task;
 
     MouseCursor newCursor = SystemMouseCursors.basic;
-    if (hit != null) {
-      switch (hit.part) {
-        case TaskPart.startHandle:
-        case TaskPart.endHandle:
-          if (enableResize) newCursor = SystemMouseCursors.resizeLeftRight;
-          break;
-        case TaskPart.body:
-          if (enableDragAndDrop) newCursor = SystemMouseCursors.move;
-          break;
-      }
-    } else if (onEmptySpaceClick != null) {
-      // No task was hit, check for empty space.
-      final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
 
-      if (rowId != null && time != null) {
-        // Snap time to the start of the day for the highlight box
-        final day = DateTime(time.year, time.month, time.day);
-        if (_hoveredRowId != rowId || _hoveredDate != day) {
-          _hoveredRowId = rowId;
-          _hoveredDate = day;
-          newCursor = SystemMouseCursors.click;
-          if (!isDisposed) notifyListeners();
+    // DIFFERENT LOGIC FOR SELECTION TOOL
+    if (_currentTool == GanttTool.select) {
+      newCursor = SystemMouseCursors.cell; // Use cell cursor for selection mode
+
+      // If hovering a task, show click to indicate selectable
+      if (hit != null) {
+        newCursor = SystemMouseCursors.click;
+      }
+
+      // Clear any empty space hover highlight from move mode
+      _clearEmptySpaceHover();
+    } else {
+      if (hit != null) {
+        switch (hit.part) {
+          case TaskPart.startHandle:
+          case TaskPart.endHandle:
+            if (enableResize) newCursor = SystemMouseCursors.resizeLeftRight;
+            break;
+          case TaskPart.body:
+            if (enableDragAndDrop) newCursor = SystemMouseCursors.move;
+            break;
+        }
+      } else if (onEmptySpaceClick != null) {
+        // No task was hit, check for empty space.
+        final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
+
+        if (rowId != null && time != null) {
+          // Snap time to the start of the day for the highlight box
+          final day = DateTime(time.year, time.month, time.day);
+          if (_hoveredRowId != rowId || _hoveredDate != day) {
+            _hoveredRowId = rowId;
+            _hoveredDate = day;
+            newCursor = SystemMouseCursors.click;
+            if (!isDisposed) notifyListeners();
+          }
+        } else {
+          // Hovering over dead space or feature is disabled
+          _clearEmptySpaceHover();
         }
       } else {
-        // Hovering over dead space or feature is disabled
         _clearEmptySpaceHover();
       }
-    } else {
-      _clearEmptySpaceHover();
     }
 
     if (_cursor != newCursor) {
@@ -1258,6 +1478,55 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final time = DateTime.fromMillisecondsSinceEpoch(timeMs.round());
 
     return (rowId, time);
+  }
+
+  void _updateSelectionFromRect(Rect rect) {
+    if (visibleRows.isEmpty) return;
+
+    final newSelection = <String>{};
+    double currentTop = 0.0;
+
+    for (final row in visibleRows) {
+      final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
+      final double rowHeightTotal = rowHeight * stackDepth;
+      final double rowTop = currentTop;
+      final double rowBottom = rowTop + rowHeightTotal;
+
+      // Check if row vertically intersects the selection rect
+      if (rect.top < rowBottom && rect.bottom > rowTop) {
+        // Row is involved. Check its tasks.
+        final tasksInRow =
+            data.where((t) => t.rowId == row.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator && !t.isSummary);
+
+        for (final task in tasksInRow) {
+          // Calculate task geometry
+          final double taskLeft = _totalScale(task.start);
+          final double taskRight = _totalScale(task.end);
+          final double taskTop = rowTop + (task.stackIndex * rowHeight);
+          final double taskBottom = taskTop + rowHeight;
+
+          // Check intersection
+          // Note: rect.left/right are X coordinates.
+          if (rect.left < taskRight && rect.right > taskLeft && rect.top < taskBottom && rect.bottom > taskTop) {
+            newSelection.add(task.id);
+          }
+        }
+      }
+
+      currentTop += rowHeightTotal;
+    }
+
+    if (!_setEquals(_selectedTaskIds, newSelection)) {
+      _selectedTaskIds.clear();
+      _selectedTaskIds.addAll(newSelection);
+      // Notify controller if needed
+      onSelectionChanged?.call(_selectedTaskIds);
+    }
+  }
+
+  bool _setEquals(Set<Object> a, Set<Object> b) {
+    if (a.length != b.length) return false;
+    return a.containsAll(b);
   }
 
   void _scrollToFocusedTask() {
@@ -1477,6 +1746,23 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _resizeTooltipPosition = details.localPosition.translate(0, -40);
       }
     }
+
+    // Bulk Move Logic
+    if (_dragMode == DragMode.move && _draggedTask != null && _selectedTaskIds.contains(_draggedTask!.id)) {
+      _bulkGhostTasks.clear();
+      for (final taskId in _selectedTaskIds) {
+        if (taskId == _draggedTask!.id) continue;
+        final task = data.firstWhere((t) => t.id == taskId, orElse: () => LegacyGanttTask.empty());
+        if (task.id.isEmpty) continue;
+
+        final taskNewStart = task.start.add(durationDelta);
+        final taskNewEnd = task.isMilestone ? taskNewStart : task.end.add(durationDelta);
+        _bulkGhostTasks[taskId] = (taskNewStart, taskNewEnd);
+      }
+    } else {
+      _bulkGhostTasks.clear();
+    }
+
     if (!isDisposed) notifyListeners();
   }
 

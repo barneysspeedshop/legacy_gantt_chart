@@ -236,6 +236,32 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     _flushQueue();
   }
 
+  @override
+  Future<void> sendOperations(List<Operation> operations) async {
+    // Filter transient operations
+    const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
+    final opsToQueue = <Operation>[];
+
+    for (final op in operations) {
+      if (transientOps.contains(op.type)) {
+        if (_innerClient != null && _isConnected) {
+          // Send directly (fire and forget for transient in batch?)
+          // We can just await it.
+          await _innerClient!.sendOperation(op);
+        } else {
+          print('OfflineClient: Dropping transient operation ${op.type} because offline');
+        }
+      } else {
+        opsToQueue.add(op);
+      }
+    }
+
+    if (opsToQueue.isNotEmpty) {
+      await _queueOperations(opsToQueue);
+      _flushQueue();
+    }
+  }
+
   Future<void> _queueOperation(Operation operation) async {
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing operation ${operation.type}');
@@ -252,8 +278,36 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     });
   }
 
+  Future<void> _queueOperations(List<Operation> operations) async {
+    if (!_isDbReady) await _dbInitFuture;
+    print('OfflineClient: Queuing ${operations.length} operations');
+    await _lock.synchronized(() async {
+      await _db.transaction((txn) async {
+        for (final operation in operations) {
+          await txn.execute(
+            'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
+            [
+              operation.type,
+              jsonEncode(operation.data),
+              operation.timestamp,
+              operation.actorId,
+            ],
+          );
+        }
+      });
+    });
+  }
+
   Future<void> dispose() async {
-    _detachInnerClient();
+    await _detachInnerClient();
+    // Wait for any active flush to complete/exit
+    if (_activeFlushFuture != null) {
+      try {
+        await _activeFlushFuture;
+      } catch (e) {
+        print('OfflineClient: Error awaiting flush during dispose: $e');
+      }
+    }
     await _operationController.close();
     await _connectionStateController.close();
   }
