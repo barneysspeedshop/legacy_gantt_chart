@@ -119,7 +119,7 @@ void main() {
       await client.sendOperations(ops);
 
       // Wait a bit for stream?
-      await Future.delayed(Duration(milliseconds: 10));
+      await Future.delayed(const Duration(milliseconds: 10));
 
       // 0: Subscribe
       // 1: BATCH_UPDATE
@@ -166,7 +166,7 @@ void main() {
       incomingController.add(batchMsg);
 
       // Wait for stream processing
-      await Future.delayed(Duration(milliseconds: 10));
+      await Future.delayed(const Duration(milliseconds: 10));
 
       expect(updateOps, hasLength(2));
       expect(updateOps[0].type, 'INSERT_TASK');
