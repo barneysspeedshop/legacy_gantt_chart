@@ -1,9 +1,6 @@
-## 4.3.2
-
-* **FIX**: Fix bulk actions performance in web browsers
-
 ## 4.3.1
 
+* **FIX**: Fix bulk actions performance in web browsers
 * **FIX**: Fix bulk websocket sync executed sequentially
 
 ## 4.3.0
