@@ -1,3 +1,8 @@
+## 4.1.1
+
+* **FIX**: Fix for an issue that caused a range error when calculating offsets on visible rows during data reset
+* **EXAMPLE FIX**: Clear dependencies when resetting data
+
 ## 4.1.0
 
 * **FEATURE**: Implemented the ability to select a group of tasks and move them in bulk

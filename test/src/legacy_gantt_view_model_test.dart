@@ -103,6 +103,32 @@ void main() {
       // Check if offsets recalculated
       // Row 2 is now index 0
       expect(viewModel.getRowVerticalOffset(0), 0.0);
+      expect(viewModel.getRowVerticalOffset(0), 0.0);
+    });
+
+    test('updateVisibleRows to empty prevents RangeError on interaction', () {
+      // Regression test: when visibleRows becomes empty, if offsets aren't recalculated,
+      // _findRowIndex might return a valid index (mapping to old rows) which is then used
+      // to access visibleRows, causing RangeError.
+
+      // 1. Initial state has rows (set in setUp)
+      expect(viewModel.visibleRows, isNotEmpty);
+
+      // 2. Clear rows
+      viewModel.updateVisibleRows([]);
+      expect(viewModel.visibleRows, isEmpty);
+
+      // 3. Simulate tap. Should NOT throw RangeError.
+      // 50px down would have been Row 1 or 2 previously.
+      try {
+        viewModel.onTapUp(TapUpDetails(
+          kind: PointerDeviceKind.touch,
+          globalPosition: const Offset(100, 25),
+          localPosition: const Offset(100, 25),
+        ));
+      } catch (e) {
+        fail('Should not throw exception after clearing rows: $e');
+      }
     });
 
     test('hover logic', () {

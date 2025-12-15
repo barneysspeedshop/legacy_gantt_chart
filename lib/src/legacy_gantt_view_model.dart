@@ -371,8 +371,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
             }
           }
         } else if (op.type == 'RESET_DATA') {
-          _tasks.clear();
           dependencies = [];
+          _tasks.clear();
           conflictIndicators = [];
           // Force repaint/recalculate
           _calculateDomains();
@@ -431,6 +431,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (!listEquals(this.visibleRows, visibleRows)) {
       if (isDisposed) return;
       this.visibleRows = visibleRows;
+      _calculateRowOffsets();
       notifyListeners();
     }
   }
@@ -439,6 +440,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (!mapEquals(this.rowMaxStackDepth, rowMaxStackDepth)) {
       if (isDisposed) return;
       this.rowMaxStackDepth = rowMaxStackDepth;
+      _calculateRowOffsets();
       notifyListeners();
     }
   }
