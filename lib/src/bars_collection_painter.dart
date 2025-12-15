@@ -47,6 +47,9 @@ class BarsCollectionPainter extends CustomPainter {
   /// The projected end date of the task being dragged.
   final DateTime? ghostTaskEnd;
 
+  /// The temporary task being drawn interactively (e.g. via Draw Tool).
+  final LegacyGanttTask? drawingTask;
+
   /// Map of remote ghosts from other users (keyed by user ID).
   final Map<String, RemoteGhost> remoteGhosts;
 
@@ -99,6 +102,7 @@ class BarsCollectionPainter extends CustomPainter {
     this.draggedTaskId,
     this.ghostTaskStart,
     this.ghostTaskEnd,
+    this.drawingTask,
     this.remoteGhosts = const {},
     required this.theme,
     this.hoveredRowId,
@@ -469,10 +473,15 @@ class BarsCollectionPainter extends CustomPainter {
     // Draw the in-progress dependency line.
     _drawInprogressDependencyLine(canvas, size);
 
-    // 4. Draw ghost bar on top of everything if a task is being dragged
-    if (draggedTaskId != null && ghostTaskStart != null && ghostTaskEnd != null) {
-      final originalTask = data.firstWhere((t) => t.id == draggedTaskId,
-          orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+    // 4. Draw ghost bar on top of everything if a task is being dragged or drawn
+    if ((draggedTaskId != null || drawingTask != null) && ghostTaskStart != null && ghostTaskEnd != null) {
+      final LegacyGanttTask originalTask;
+      if (drawingTask != null) {
+        originalTask = drawingTask!;
+      } else {
+        originalTask = data.firstWhere((t) => t.id == draggedTaskId,
+            orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+      }
 
       // Only draw if we found the valid task
       if (originalTask.id.isNotEmpty) {
@@ -500,8 +509,10 @@ class BarsCollectionPainter extends CustomPainter {
             // to get a semi-transparent effect.
             _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
           } else {
-            final double barStartX = scale(ghostTaskStart!);
-            final double barEndX = scale(ghostTaskEnd!);
+            final double startX = scale(ghostTaskStart!);
+            final double endX = scale(ghostTaskEnd!);
+            final double barStartX = min(startX, endX);
+            final double barEndX = max(startX, endX);
             final double barWidth = max(0, barEndX - barStartX);
             final RRect barRRect = RRect.fromRectAndRadius(
               Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
@@ -1035,6 +1046,7 @@ class BarsCollectionPainter extends CustomPainter {
       !listEquals(oldDelegate.domain, domain) ||
       oldDelegate.rowHeight != rowHeight ||
       oldDelegate.draggedTaskId != draggedTaskId ||
+      oldDelegate.drawingTask != drawingTask ||
       oldDelegate.ghostTaskStart != ghostTaskStart ||
       oldDelegate.ghostTaskEnd != ghostTaskEnd ||
       oldDelegate.theme != theme ||

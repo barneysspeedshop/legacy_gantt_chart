@@ -15,7 +15,7 @@ import 'legacy_gantt_controller.dart';
 
 enum DragMode { none, move, resizeStart, resizeEnd }
 
-enum PanType { none, vertical, horizontal, selection }
+enum PanType { none, vertical, horizontal, selection, draw }
 
 enum TaskPart { body, startHandle, endHandle }
 
@@ -101,6 +101,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// A callback invoked when an empty space on the chart is clicked.
   final Function(String rowId, DateTime time)? onEmptySpaceClick;
+
+  /// A callback invoked when a user completes a draw action for a new task.
+  final Function(DateTime start, DateTime end, String rowId)? onTaskDrawEnd;
 
   /// A function to format the date/time shown in the resize/drag tooltip.
   String Function(DateTime)? resizeTooltipDateFormat;
@@ -307,6 +310,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onTaskDoubleClick,
     this.onTaskDelete,
     this.onEmptySpaceClick,
+    this.onTaskDrawEnd,
     this.onPressTask,
     this.scrollController,
     this.ganttHorizontalScrollController,
@@ -1214,6 +1218,37 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
+    if (_currentTool == GanttTool.draw) {
+      // Find row at position
+      final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
+      if (rowId != null && time != null) {
+        _panType = PanType.draw;
+        _hoveredRowId = rowId;
+        _ghostTaskStart = time;
+        _ghostTaskEnd = time;
+        _dragStartGlobalX = details.globalPosition.dx;
+        // Optionally create a temporary "ghost" task to visualize drawing immediately?
+        // For now, _ghostTaskStart/End might be enough if passed to painter.
+        // But painter needs a task ID to draw ghost? Or just start/end?
+        // Painter uses `draggedTaskId` + `ghostTaskStart/End`.
+        // If we don't have a task ID, we might need a dummy one or update painter.
+        // Let's create a dummy task for visualization if needed, or just rely on selection box style?
+        // Re-using ghost bar logic requires `draggedTaskId`.
+        // Let's rely on a new `drawGhost` state or just selection box logic?
+        // The request says "drag to draw a task".
+        // Let's try to set `_draggedTask` to a temporary dummy task.
+        _draggedTask = LegacyGanttTask(
+          id: 'drawing_ghost',
+          rowId: rowId,
+          start: time,
+          end: time,
+          name: 'New Task',
+        );
+        notifyListeners();
+      }
+      return;
+    }
+
     // Otherwise heuristic based - this is risky with conflicting recognizers.
     // We'll leave it simple:
     _panType = PanType.none;
@@ -1234,6 +1269,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
         final newRect = Rect.fromPoints(_initialLocalPosition, currentPoint);
         _selectionRect = newRect;
         _updateSelectionFromRect(newRect);
+        notifyListeners();
+      }
+    } else if (_panType == PanType.draw) {
+      final (_, time) = _getRowAndTimeAtPosition(details.localPosition);
+      if (time != null && _ghostTaskStart != null) {
+        _ghostTaskEnd = time;
         notifyListeners();
       }
     } else if (_panType == PanType.vertical) {
@@ -1273,6 +1314,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
     } else if (_panType == PanType.selection) {
       _panType = PanType.none;
       _selectionRect = null; // Hide box but keep selection
+      notifyListeners();
+    } else if (_panType == PanType.draw) {
+      if (_ghostTaskStart != null && _ghostTaskEnd != null && _draggedTask != null) {
+        final start = _ghostTaskStart!.isBefore(_ghostTaskEnd!) ? _ghostTaskStart! : _ghostTaskEnd!;
+        final end = _ghostTaskStart!.isBefore(_ghostTaskEnd!) ? _ghostTaskEnd! : _ghostTaskStart!;
+        if (start != end) {
+          onTaskDrawEnd?.call(start, end, _draggedTask!.rowId);
+        }
+      }
+      _panType = PanType.none;
+      _draggedTask = null;
+      _ghostTaskStart = null;
+      _ghostTaskEnd = null;
       notifyListeners();
     } else {
       onVerticalPanEnd(details);
@@ -1383,6 +1437,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
       // Clear any empty space hover highlight from move mode
       _clearEmptySpaceHover();
+    } else if (_currentTool == GanttTool.draw) {
+      newCursor = SystemMouseCursors.precise; // Pencil-like cursor
+      if (onEmptySpaceClick != null || onTaskDrawEnd != null) {
+        // We still want to identify row for potential drawing, but suppress the visual "+" icon?
+        // The user request said "prevent the emptySpaceIcon from being populated".
+        // We can do this by NOT setting _hoveredRowId/_hoveredDate for the purpose of the icon,
+        // OR by updating the painter to check the tool.
+        // Clearing it here is safest for "no icon".
+        _clearEmptySpaceHover();
+      }
     } else {
       if (hit != null) {
         switch (hit.part) {

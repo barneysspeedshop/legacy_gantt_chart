@@ -1180,6 +1180,7 @@ class _GanttViewState extends State<GanttView> {
                                                 // allowing for the creation of new tasks.
                                                 onEmptySpaceClick: (rowId, time) =>
                                                     vm.handleEmptySpaceClick(context, rowId, time),
+                                                onTaskDrawEnd: vm.handleTaskDrawEnd,
                                                 onPressTask: (task) {
                                                   vm.setFocusedTaskId(task.id);
                                                   _showSnackbar('Selected task: ${task.name}');

@@ -172,6 +172,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// chart. This can be used to initiate the creation of a new task.
   final Function(String rowId, DateTime time)? onEmptySpaceClick;
 
+  /// A callback that is triggered when a user completes a draw action (drag) in the chart
+  /// while the Draw tool is active.
+  ///
+  /// Provides the start and end times of the drawn range, and the row ID.
+  final Function(DateTime start, DateTime end, String rowId)? onTaskDrawEnd;
+
   /// The background color of the tooltip that appears during drag or resize operations.
   /// If not provided, it defaults to the theme's `barColorPrimary`.
   final Color? resizeTooltipBackgroundColor;
@@ -348,6 +354,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.onTaskDelete,
     this.resizeTooltipDateFormat,
     this.onEmptySpaceClick,
+    this.onTaskDrawEnd,
     this.resizeTooltipBackgroundColor,
     this.resizeTooltipFontColor,
     this.resizeHandleWidth = 10.0,
@@ -568,6 +575,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onTaskDoubleClick: widget.onTaskDoubleClick,
             onTaskDelete: widget.onTaskDelete,
             onEmptySpaceClick: widget.onEmptySpaceClick,
+            onTaskDrawEnd: widget.onTaskDrawEnd,
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
             taskBarBuilder: widget.taskBarBuilder,
@@ -715,6 +723,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                               scale: vm.totalScale,
                                               rowHeight: widget.rowHeight,
                                               draggedTaskId: vm.draggedTask?.id,
+                                              drawingTask: vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
                                               ghostTaskStart: vm.ghostTaskStart,
                                               ghostTaskEnd: vm.ghostTaskEnd,
                                               remoteGhosts: vm.remoteGhosts,

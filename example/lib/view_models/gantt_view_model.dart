@@ -2213,38 +2213,79 @@ class GanttViewModel extends ChangeNotifier {
 
   /// A callback from the Gantt chart widget when the user clicks on an empty
   /// space in a row. This method shows a dialog to create a new task.
-  void handleEmptySpaceClick(BuildContext context, String rowId, DateTime time) {
+
+  Future<void> handleEmptySpaceClick(BuildContext context, String rowId, DateTime time) async {
     if (!_createTasksEnabled) return;
 
-    // Find the resource name from the grid data.
-    String resourceName = 'Unknown Resource';
-    for (final parent in _gridData) {
-      if (parent.id == rowId) {
-        resourceName = parent.name;
-        break;
-      }
-      for (final child in parent.children) {
-        if (child.id == rowId) {
-          resourceName = '${parent.name} - ${child.name}';
-          break;
-        }
-      }
-    }
+    final resource = _localResources.firstWhereOrNull((r) => r.id == rowId);
+    if (resource == null) return;
 
-    showDialog<void>(
+    // Show dialog to create a new task
+    await showDialog(
       context: context,
       builder: (context) => CreateTaskAlertDialog(
         initialTime: time,
-        resourceName: resourceName,
+        resourceName: resource.name ?? 'Unknown',
         rowId: rowId,
         defaultStartTime: _defaultStartTime,
         defaultEndTime: _defaultEndTime,
         onCreate: (newTask) {
-          _addNewTask(newTask);
-          Navigator.pop(context);
+          _createTask(newTask);
+          Navigator.pop(context); // Close the dialog after creation
         },
       ),
     );
+  }
+
+  /// A callback from the Gantt chart widget when the user draws a new task.
+  Future<void> handleTaskDrawEnd(DateTime start, DateTime end, String rowId) async {
+    if (!_createTasksEnabled) return;
+
+    final resource = _localResources.firstWhereOrNull((r) => r.id == rowId);
+    if (resource == null) return;
+
+    // Create the task directly
+    final newTask = LegacyGanttTask(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      rowId: rowId,
+      name: 'New Task',
+      start: start,
+      end: end,
+      color: Colors.blue, // Default color
+      isSummary: false,
+    );
+
+    await _createTask(newTask);
+  }
+
+  /// Helper method to add a new task, handle persistence, and update UI.
+  Future<void> _createTask(LegacyGanttTask newTask) async {
+    // Optimistic update
+    _allGanttTasks.add(newTask);
+    _recalculateStackingAndNotify();
+
+    // Persist to local DB if enabled
+    if (_useLocalDatabase) {
+      await _localRepository.insertOrUpdateTask(newTask);
+    }
+
+    // Sync with remote if connected
+    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
+      _syncClient!.sendOperation(Operation(
+        type: 'INSERT_TASK', // Use INSERT_TASK for clarity
+        data: {
+          'id': newTask.id,
+          'name': newTask.name,
+          'start_date': newTask.start.millisecondsSinceEpoch,
+          'end_date': newTask.end.millisecondsSinceEpoch,
+          'rowId': newTask.rowId,
+          'is_summary': newTask.isSummary,
+          'color': newTask.color?.toARGB32().toRadixString(16), // Send color as hex string
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
   }
 
   /// A generic helper to show a dialog with a single text input field.
@@ -2411,32 +2452,6 @@ class GanttViewModel extends ChangeNotifier {
         _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
     _dependencies = nextDependencies;
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-  }
-
-  /// Adds a new task to the list and recalculates stacking.
-  void _addNewTask(LegacyGanttTask newTask) {
-    if (_syncClient != null) {
-      _syncClient!.sendOperation(Operation(
-        type: 'INSERT',
-        data: {
-          'id': newTask.id,
-          'name': newTask.name,
-          'start_date': newTask.start.millisecondsSinceEpoch,
-          'end_date': newTask.end.millisecondsSinceEpoch,
-          'rowId': newTask.rowId,
-          'is_summary': newTask.isSummary,
-        },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-        actorId: 'local-user',
-      ));
-    }
-
-    if (_useLocalDatabase) {
-      _localRepository.insertOrUpdateTask(newTask);
-    } else {
-      _allGanttTasks.add(newTask);
-      _recalculateStackingAndNotify();
-    }
   }
 
   /// Calculates the total width of the Gantt chart's content area based on the

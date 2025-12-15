@@ -288,4 +288,7 @@ enum GanttTool {
 
   /// The select tool for box-selecting multiple tasks.
   select,
+
+  /// The draw tool for creating new tasks by dragging.
+  draw,
 }

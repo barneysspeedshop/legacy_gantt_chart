@@ -29,14 +29,22 @@ class LegacyGanttToolbar extends StatelessWidget {
                 isSelected: [
                   controller.currentTool == GanttTool.move,
                   controller.currentTool == GanttTool.select,
+                  controller.currentTool == GanttTool.draw,
                 ],
                 onPressed: (index) {
-                  controller.setTool(index == 0 ? GanttTool.move : GanttTool.select);
+                  if (index == 0) {
+                    controller.setTool(GanttTool.move);
+                  } else if (index == 1) {
+                    controller.setTool(GanttTool.select);
+                  } else {
+                    controller.setTool(GanttTool.draw);
+                  }
                 },
                 borderRadius: BorderRadius.circular(8),
                 children: const [
-                  Tooltip(message: 'Move Tool', child: Icon(Icons.pan_tool)),
+                  Tooltip(message: 'Move Tool', child: Icon(Icons.open_with)),
                   Tooltip(message: 'Select Tool (Box Selection)', child: Icon(Icons.select_all)),
+                  Tooltip(message: 'Draw Tool (Create Task)', child: Icon(Icons.edit)),
                 ],
               ),
             ),

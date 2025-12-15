@@ -1,3 +1,7 @@
+## 4.4.0
+
+* **FEATURE**: Implemented the ability to draw tasks using a draw tool
+
 ## 4.3.2
 
 * **FIX**: Fix for an issue that prevented the options menu on a task from being clicked

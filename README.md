@@ -462,6 +462,49 @@ LegacyGanttChartWidget(
 )
 ```
 
+### User Interaction Modes (Draw & Select)
+
+The package now supports specialized interaction modes, managed via the `LegacyGanttController`.
+
+-   **`GanttTool.move` (Default):** Standard interaction. Pan the chart, drag-and-drop tasks, and resize tasks.
+-   **`GanttTool.select`:** Click and drag to draw a selection box and select multiple tasks at once.
+-   **`GanttTool.draw`:** Click and drag on an empty row to visually "draw" a new task.
+
+#### Implementing the Draw Tool
+
+To enable the draw tool, you need to provide a UI for switching tools and handle the drawing completion event.
+
+1.  **Toolbar:** Use the `LegacyGanttToolbar` widget to allow users to switch between modes.
+    ```dart
+    Column(
+      children: [
+        LegacyGanttToolbar(controller: _controller),
+        Expanded(child: LegacyGanttChartWidget(...)),
+      ],
+    )
+    ```
+
+2.  **Handle Drawing:** Implement the `onTaskDrawEnd` callback. This is triggered when the user finishes dragging in draw mode.
+    ```dart
+    LegacyGanttChartWidget(
+      controller: _controller,
+      // ... other props
+      onTaskDrawEnd: (start, end, rowId) {
+        // Logic to create a new task
+        final newTask = LegacyGanttTask(
+          id: Uuid().v4(),
+          rowId: rowId,
+          name: 'New Task',
+          start: start,
+          end: end,
+        );
+        setState(() {
+          _tasks.add(newTask);
+        });
+      },
+    )
+    ```
+
 ### Theming
 
 Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You can create one from scratch or modify the default theme derived from your app's `ThemeData`.
