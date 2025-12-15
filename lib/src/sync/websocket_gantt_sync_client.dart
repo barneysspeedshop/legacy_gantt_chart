@@ -76,6 +76,37 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             final type = envelope['type'] as String;
             final dataMap = envelope['data'];
 
+            if (type == 'BATCH_UPDATE') {
+              final ops = dataMap!['operations'] as List;
+              for (final opEnv in ops) {
+                try {
+                  final opMap = opEnv as Map<String, dynamic>;
+                  final opType = opMap['type'] as String;
+                  var opData = opMap['data'] as Map<String, dynamic>;
+                  final opTs = opMap['timestamp'] as int;
+                  final opActor = opMap['actorId'] as String;
+
+                  // Auto-unwrap logic similar to single op
+                  if (opData.containsKey('data') && opData['data'] is Map) {
+                    final innerData = opData['data'] as Map<String, dynamic>;
+                    opData = innerData;
+                  }
+
+                  final op = Operation(
+                    type: opType,
+                    data: opData,
+                    timestamp: opTs,
+                    actorId: opActor,
+                  );
+                  _operationController.add(op);
+                } catch (e) {
+                  print('Error parsing batch operation: $e');
+                }
+              }
+              return;
+            }
+
+            // Normal single operation logic
             final timestamp = envelope['timestamp'];
             final actorId = envelope['actorId'];
 
@@ -175,9 +206,43 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperations(List<Operation> operations) async {
-    for (final op in operations) {
-      await sendOperation(op);
+    if (_channel == null) {
+      throw Exception('Not connected');
     }
+
+    if (operations.isEmpty) return;
+
+    // Convert operations to envelopes
+    final envelopes = operations.map((operation) {
+      String envelopeType;
+      if (operation.type == 'INSERT') {
+        envelopeType = 'INSERT_TASK';
+      } else if (operation.type == 'DELETE') {
+        envelopeType = 'DELETE_TASK';
+      } else if (operation.type == 'UPDATE') {
+        envelopeType = 'UPDATE_TASK';
+      } else {
+        envelopeType = operation.type;
+      }
+
+      return {
+        'type': envelopeType,
+        'data': operation.data,
+        'timestamp': operation.timestamp,
+        'actorId': operation.actorId,
+      };
+    }).toList();
+
+    final batchEnvelope = {
+      'type': 'BATCH_UPDATE',
+      'data': {'operations': envelopes},
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'actorId': operations.first.actorId, // Use first actor or generic
+    };
+
+    final encodedEnvelope = jsonEncode(batchEnvelope);
+    print('WebSocketClient Sending Batch: ${operations.length} ops');
+    _channel!.sink.add(encodedEnvelope);
   }
 
   Future<void> dispose() async {

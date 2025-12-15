@@ -1,3 +1,7 @@
+## 4.3.0
+
+* **FEATURE**: Implement bulk update over websocket
+
 ## 4.2.0
 
 * **FEATURE**: Implement web worker for offline database
