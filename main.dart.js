@@ -49377,7 +49377,7 @@ i=m.d
 h=i==null
 g=h?null:B.f.c1(i.a,1000)
 f=Date.now()
-e.dL("          UPDATE dependencies SET\n            type = ?3,\n            lag_ms = ?4,\n            last_updated = ?5,\n            deleted_at = NULL\n          WHERE from_id = ?1 AND to_id = ?2\n          ",[l,k,j,g,f])
+e.dL("          UPDATE dependencies SET\n            type = ?3,\n            lag_ms = ?4,\n            last_updated = ?5,\n            deleted_at = NULL,\n            is_deleted = 0\n          WHERE from_id = ?1 AND to_id = ?2\n          ",[l,k,j,g,f])
 i=h?null:B.f.c1(i.a,1000)
 h=Date.now()
 e.dL("          INSERT OR IGNORE INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)\n          VALUES (?1, ?2, ?3, ?4, ?5, NULL)\n          ",[l,k,j,i,h])}s=3
@@ -49400,7 +49400,7 @@ p=l==null
 o=p?null:B.f.c1(l.a,1000)
 n=Date.now()
 s=3
-return A.m(m.dL("        UPDATE dependencies SET\n          type = ?3,\n          lag_ms = ?4,\n          last_updated = ?5,\n          deleted_at = NULL\n        WHERE from_id = ?1 AND to_id = ?2\n        ",[k,j,i,o,n]),$async$$0)
+return A.m(m.dL("        UPDATE dependencies SET\n          type = ?3,\n          lag_ms = ?4,\n          last_updated = ?5,\n          deleted_at = NULL,\n          is_deleted = 0\n        WHERE from_id = ?1 AND to_id = ?2\n        ",[k,j,i,o,n]),$async$$0)
 case 3:l=p?null:B.f.c1(l.a,1000)
 p=Date.now()
 s=4
@@ -49471,7 +49471,7 @@ i=m.d
 h=i?1:0
 g=m.e
 f=g==null
-e.dL("          UPDATE resources SET\n            name = ?2,\n            parent_id = ?3,\n            is_expanded = ?4,\n            last_updated = ?5,\n            deleted_at = NULL\n          WHERE id = ?1\n          ",[l,k,j,h,f?Date.now():g])
+e.dL("          UPDATE resources SET\n            name = ?2,\n            parent_id = ?3,\n            is_expanded = ?4,\n            last_updated = ?5,\n            deleted_at = NULL,\n            is_deleted = 0\n          WHERE id = ?1\n          ",[l,k,j,h,f?Date.now():g])
 i=i?1:0
 e.dL("          INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)\n          VALUES (?1, ?2, ?3, ?4, ?5, NULL)\n          ",[l,k,j,i,f?Date.now():g])}s=3
 return A.m(e.mP(),$async$$0)
@@ -49493,7 +49493,7 @@ i=j?1:0
 n=n.e
 p=n==null
 s=3
-return A.m(o.dL("        UPDATE resources SET\n          name = ?2,\n          parent_id = ?3,\n          is_expanded = ?4,\n          last_updated = ?5,\n          deleted_at = NULL\n        WHERE id = ?1\n        ",[m,l,k,i,p?Date.now():n]),$async$$0)
+return A.m(o.dL("        UPDATE resources SET\n          name = ?2,\n          parent_id = ?3,\n          is_expanded = ?4,\n          last_updated = ?5,\n          deleted_at = NULL,\n          is_deleted = 0\n        WHERE id = ?1\n        ",[m,l,k,i,p?Date.now():n]),$async$$0)
 case 3:j=j?1:0
 s=4
 return A.m(o.dL("        INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)\n        VALUES (?1, ?2, ?3, ?4, ?5, NULL)\n        ",[m,l,k,j,p?Date.now():n]),$async$$0)
