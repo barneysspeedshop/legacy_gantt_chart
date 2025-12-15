@@ -1610,10 +1610,16 @@ class GanttViewModel extends ChangeNotifier {
       var innerData = taskData;
       String? ganttType;
 
+      // Try reading gantt_type from top level first
+      ganttType = innerData['gantt_type'] as String?;
+
       // Unwrap if nested (gantt_type present or just nested data)
       if (innerData.containsKey('data') && innerData['data'] is Map) {
-        ganttType = innerData['gantt_type'] as String?;
+        ganttType ??= innerData['gantt_type'] as String?;
         innerData = innerData['data'] as Map<String, dynamic>;
+        // If inner data has it (e.g. from flattening), give it precedence or fallback?
+        // Usually top-level wrapper is authoritative, but flattening puts it in inner.
+        ganttType ??= innerData['gantt_type'] as String?;
       }
 
       final taskIdRaw = innerData['id'];
@@ -1659,6 +1665,10 @@ class GanttViewModel extends ChangeNotifier {
           start: newStart ?? existingTask.start,
           end: newEnd ?? existingTask.end,
           lastUpdated: op.timestamp,
+          isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
+          isSummary: ganttType != null
+              ? (ganttType == 'summary')
+              : (innerData['is_summary'] == true ? true : existingTask.isSummary),
           // Update other fields if present in payload
         );
 
@@ -1714,10 +1724,14 @@ class GanttViewModel extends ChangeNotifier {
       var data = op.data;
       String? ganttType;
 
+      // Try reading gantt_type from top level first
+      ganttType = data['gantt_type'] as String?;
+
       // Unwrap if nested (gantt_type present)
       if (data.containsKey('data') && data['data'] is Map) {
-        ganttType = data['gantt_type'] as String?;
+        ganttType ??= data['gantt_type'] as String?;
         data = data['data'] as Map<String, dynamic>;
+        ganttType ??= data['gantt_type'] as String?;
       }
 
       final newTask = LegacyGanttTask(
@@ -1789,7 +1803,7 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         await _localRepository.insertOrUpdateDependency(newDep);
-        notifyListeners(); // Force UI update
+        await _processLocalData();
       } else {
         if (!_dependencies.contains(newDep)) {
           _dependencies.add(newDep);
@@ -1803,7 +1817,7 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         await _localRepository.deleteDependency(pred, succ);
-        notifyListeners(); // Force UI update
+        await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
         notifyListeners();
@@ -1814,7 +1828,7 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         await _localRepository.deleteDependenciesForTask(taskId);
-        notifyListeners();
+        await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
         notifyListeners();

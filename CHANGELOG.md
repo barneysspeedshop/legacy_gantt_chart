@@ -1,3 +1,7 @@
+## 4.0.11
+
+* **FIX**: Fix for an issue that caused dependency sync to fail
+
 ## 4.0.10
 
 * **FIX**: Fix milestone sync
