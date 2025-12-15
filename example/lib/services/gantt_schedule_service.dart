@@ -304,9 +304,13 @@ class GanttScheduleService {
     final Map<String, int> rowMaxDepth = {};
 
     eventTasksByRow.forEach((rowId, rowTasks) {
-      rowTasks.sort((a, b) => a.start.compareTo(b.start));
+      // Create a sorted copy for calculating stack depth
+      final sortedRowTasks = List<LegacyGanttTask>.from(rowTasks)..sort((a, b) => a.start.compareTo(b.start));
+
+      final Map<String, int> taskStackIndices = {};
       final List<DateTime> stackEndTimes = [];
-      for (var currentTask in rowTasks) {
+
+      for (var currentTask in sortedRowTasks) {
         int currentStackIndex = -1;
         for (int i = 0; i < stackEndTimes.length; i++) {
           if (stackEndTimes[i].isBefore(currentTask.start) || stackEndTimes[i] == currentTask.start) {
@@ -322,9 +326,15 @@ class GanttScheduleService {
           stackEndTimes[currentStackIndex] = currentTask.end;
         }
 
-        stackedTasks.add(currentTask.copyWith(stackIndex: currentStackIndex));
+        taskStackIndices[currentTask.id] = currentStackIndex;
       }
       rowMaxDepth[rowId] = stackEndTimes.length;
+
+      // Add tasks to the final list in their ORIGINAL order
+      for (var task in rowTasks) {
+        final stackIndex = taskStackIndices[task.id] ?? 0;
+        stackedTasks.add(task.copyWith(stackIndex: stackIndex));
+      }
     });
 
     final Map<String, String> lineItemToContactMap = {

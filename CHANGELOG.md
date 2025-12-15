@@ -1,3 +1,7 @@
+## 4.3.1
+
+* **FIX**: Fix bulk websocket sync executed sequentially
+
 ## 4.3.0
 
 * **FEATURE**: Implement bulk update over websocket

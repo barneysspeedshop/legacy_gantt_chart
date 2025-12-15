@@ -11,60 +11,84 @@ class CRDTEngine {
     final taskMap = {for (var t in currentTasks) t.id: t};
 
     for (var op in operations) {
-      final opData = op.data;
-      // Handle both 'id' and 'taskId' for robustness
-      final String? taskId = opData['id'] as String? ?? opData['taskId'] as String?;
-
-      if (taskId == null) {
-        // Skip operations without a valid task ID
-        print('CRDTEngine Warning: Operation ${op.type} missing id. Data: $opData');
-        continue;
-      }
-
-      if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
-        final existingTask = taskMap[taskId];
-
-        // LWW check
-        if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
-          // Apply update
-          // We need to reconstruct the task from the operation data
-          // This assumes the operation data contains the full task or a partial update
-          // For simplicity, let's assume it contains the fields that changed or the full task
-
-          // If it's a full replacement (simplest for now):
-          // UPDATE: Also checking for name or rowId as partial updates might not have start/end
-          // but _createTaskFromOp handles basic merging.
-          if (op.data.containsKey('start') || op.data.containsKey('end') || op.data.containsKey('name')) {
-            taskMap[taskId] = _createTaskFromOp(op, existingTask);
+      if (op.type == 'BATCH_UPDATE') {
+        final subOpsList = op.data['operations'] as List? ?? [];
+        for (final subOpMaps in subOpsList) {
+          try {
+            final opMap = subOpMaps as Map<String, dynamic>;
+            final subOp = Operation(
+              type: opMap['type'],
+              data: opMap['data'],
+              timestamp: opMap['timestamp'],
+              actorId: opMap['actorId'] ?? op.actorId,
+            );
+            _applyOp(taskMap, subOp);
+          } catch (e) {
+            print('CRDTEngine Error processing batch op: $e');
           }
         }
-      } else if (op.type == 'DELETE_TASK') {
-        final existingTask = taskMap[taskId];
-        if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
-          taskMap.remove(taskId);
-        }
+      } else {
+        _applyOp(taskMap, op);
       }
     }
 
     return taskMap.values.toList();
   }
 
-  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing) {
-    // This is a simplified reconstruction. In a real app, you'd probably
-    // have a more robust fromJson or copyWithFromMap method.
-    // Here we assume the operation carries the essential data.
+  void _applyOp(Map<String, LegacyGanttTask> taskMap, Operation op) {
+    final opData = op.data;
+    // Handle both 'id' and 'taskId' for robustness
+    // Also handle nested 'data' wrapper if present (common in deserialization)
+    var effectiveData = opData;
+    if (effectiveData.containsKey('data') && effectiveData['data'] is Map) {
+      effectiveData = effectiveData['data'];
+    }
 
-    final data = op.data;
+    final String? taskId = effectiveData['id'] as String? ?? effectiveData['taskId'] as String?;
 
+    if (taskId == null) {
+      // Skip operations without a valid task ID
+      // print('CRDTEngine Warning: Operation ${op.type} missing id. Data: $opData');
+      return;
+    }
+
+    if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
+      final existingTask = taskMap[taskId];
+
+      // LWW check
+      if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
+        // Apply update
+        if (effectiveData.containsKey('start') ||
+            effectiveData.containsKey('end') ||
+            effectiveData.containsKey('name') ||
+            effectiveData.containsKey('start_date')) {
+          taskMap[taskId] = _createTaskFromOp(op, existingTask, effectiveData);
+        }
+      }
+    } else if (op.type == 'DELETE_TASK') {
+      final existingTask = taskMap[taskId];
+      if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
+        taskMap.remove(taskId);
+      }
+    }
+  }
+
+  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) {
     return LegacyGanttTask(
       id: data['id'],
       rowId: data['rowId'] ?? existing?.rowId ?? '',
-      start: data['start'] != null ? DateTime.parse(data['start']) : (existing?.start ?? DateTime.now()),
+      start: data['start'] != null
+          ? DateTime.parse(data['start'])
+          : (data['start_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(data['start_date'])
+              : (existing?.start ?? DateTime.now())),
       end: data['end'] != null
           ? DateTime.parse(data['end'])
-          : (existing?.end ?? DateTime.now().add(const Duration(days: 1))),
+          : (data['end_date'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(data['end_date'])
+              : (existing?.end ?? DateTime.now().add(const Duration(days: 1)))),
       name: data['name'] ?? existing?.name,
-      color: existing?.color, // Color serialization is tricky, skipping for brevity
+      color: existing?.color,
       textColor: existing?.textColor,
       stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
       originalId: data['originalId'] ?? existing?.originalId,

@@ -77,32 +77,17 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             final dataMap = envelope['data'];
 
             if (type == 'BATCH_UPDATE') {
-              final ops = dataMap!['operations'] as List;
-              for (final opEnv in ops) {
-                try {
-                  final opMap = opEnv as Map<String, dynamic>;
-                  final opType = opMap['type'] as String;
-                  var opData = opMap['data'] as Map<String, dynamic>;
-                  final opTs = opMap['timestamp'] as int;
-                  final opActor = opMap['actorId'] as String;
-
-                  // Auto-unwrap logic similar to single op
-                  if (opData.containsKey('data') && opData['data'] is Map) {
-                    final innerData = opData['data'] as Map<String, dynamic>;
-                    opData = innerData;
-                  }
-
-                  final op = Operation(
-                    type: opType,
-                    data: opData,
-                    timestamp: opTs,
-                    actorId: opActor,
-                  );
-                  _operationController.add(op);
-                } catch (e) {
-                  print('Error parsing batch operation: $e');
-                }
-              }
+              // OPTIMIZATION: Emit BATCH_UPDATE as a single operation so the UI can process it in bulk
+              // instead of receiving hundreds of individual updates that trigger repaints.
+              final op = Operation(
+                type: 'BATCH_UPDATE',
+                data: dataMap ?? {},
+                timestamp: envelope['timestamp'] != null
+                    ? envelope['timestamp'] as int
+                    : DateTime.now().millisecondsSinceEpoch,
+                actorId: envelope['actorId'] as String? ?? 'unknown',
+              );
+              _operationController.add(op);
               return;
             }
 
@@ -211,6 +196,12 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     }
 
     if (operations.isEmpty) return;
+
+    // OPTIMIZATION: If only one operation, send it directly to avoid batch overhead
+    if (operations.length == 1) {
+      await sendOperation(operations.first);
+      return;
+    }
 
     // Convert operations to envelopes
     final envelopes = operations.map((operation) {

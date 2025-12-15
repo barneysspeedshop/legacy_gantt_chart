@@ -14,20 +14,20 @@ class LocalGanttRepository {
   Stream<List<LegacyGanttTask>> watchTasks() async* {
     final db = await GanttDb.db;
     yield* db
-        .watch('SELECT * FROM tasks WHERE is_deleted = 0')
+        .watch('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY rowid ASC')
         .map((rows) => rows.map((row) => _rowToTask(row)).toList());
   }
 
   Future<List<LegacyGanttTask>> getAllTasks() async {
     final db = await GanttDb.db;
-    final rows = await db.query('SELECT * FROM tasks WHERE is_deleted = 0');
+    final rows = await db.query('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY rowid ASC');
     return rows.map((row) => _rowToTask(row)).toList();
   }
 
   Stream<List<LegacyGanttTaskDependency>> watchDependencies() async* {
     final db = await GanttDb.db;
     yield* db
-        .watch('SELECT * FROM dependencies WHERE deleted_at IS NULL')
+        .watch('SELECT * FROM dependencies WHERE is_deleted = 0 ORDER BY rowid ASC')
         .map((rows) => rows.map((row) => _rowToDependency(row)).toList());
   }
 
@@ -36,25 +36,46 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final task in tasks) {
+        // SPLIT INTO UPDATE + INSERT OR IGNORE to avoid parser crash on ON CONFLICT
         batch.execute(
           '''
-        INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
-        ON CONFLICT(id) DO UPDATE SET
-          row_id = ?2,
-          start_date = ?3,
-          end_date = ?4,
-          name = ?5,
-          color = ?6,
-          text_color = ?7,
-          stack_index = ?8,
-          is_summary = ?9,
-          is_milestone = ?10,
-          resource_id = ?11,
-          last_updated = ?12,
-          deleted_at = NULL,
-          is_deleted = 0
-        ''',
+          UPDATE tasks SET
+            row_id = ?2,
+            start_date = ?3,
+            end_date = ?4,
+            name = ?5,
+            color = ?6,
+            text_color = ?7,
+            stack_index = ?8,
+            is_summary = ?9,
+            is_milestone = ?10,
+            resource_id = ?11,
+            last_updated = ?12,
+            deleted_at = NULL,
+            is_deleted = 0
+          WHERE id = ?1
+          ''',
+          [
+            task.id,
+            task.rowId,
+            task.start.toIso8601String(),
+            task.end.toIso8601String(),
+            task.name,
+            task.color?.toARGB32().toRadixString(16),
+            task.textColor?.toARGB32().toRadixString(16),
+            task.stackIndex,
+            task.isSummary ? 1 : 0,
+            task.isMilestone ? 1 : 0,
+            task.originalId,
+            task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
+
+        batch.execute(
+          '''
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
+          ''',
           [
             task.id,
             task.rowId,
@@ -79,25 +100,49 @@ class LocalGanttRepository {
     // Use lock to prevent concurrent writes that cause "database is locked" errors
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
+      // SPLIT INTO UPDATE + INSERT OR IGNORE to avoid parser crash on ON CONFLICT
+      // Note: For single execution we *could* check results, but db.execute return value is implementation dependent for affected rows.
+      // So we use the same robust double-statement pattern essentially.
+      // Actually, since this is not a batch, we can be slightly more optimized if we want, but for consistency:
       await db.execute(
         '''
-      INSERT INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
-      ON CONFLICT(id) DO UPDATE SET
-        row_id = ?2,
-        start_date = ?3,
-        end_date = ?4,
-        name = ?5,
-        color = ?6,
-        text_color = ?7,
-        stack_index = ?8,
-        is_summary = ?9,
-        is_milestone = ?10,
-        resource_id = ?11,
-        last_updated = ?12,
-        deleted_at = NULL,
-        is_deleted = 0
-      ''',
+        UPDATE tasks SET
+          row_id = ?2,
+          start_date = ?3,
+          end_date = ?4,
+          name = ?5,
+          color = ?6,
+          text_color = ?7,
+          stack_index = ?8,
+          is_summary = ?9,
+          is_milestone = ?10,
+          resource_id = ?11,
+          last_updated = ?12,
+          deleted_at = NULL,
+          is_deleted = 0
+        WHERE id = ?1
+        ''',
+        [
+          task.id,
+          task.rowId,
+          task.start.toIso8601String(),
+          task.end.toIso8601String(),
+          task.name,
+          task.color?.toARGB32().toRadixString(16),
+          task.textColor?.toARGB32().toRadixString(16),
+          task.stackIndex,
+          task.isSummary ? 1 : 0,
+          task.isMilestone ? 1 : 0,
+          task.originalId,
+          task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+        ],
+      );
+
+      await db.execute(
+        '''
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
+        ''',
         [
           task.id,
           task.rowId,
@@ -131,16 +176,30 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final dependency in dependencies) {
+        // SPLIT INTO UPDATE + INSERT OR IGNORE
         batch.execute(
           '''
-        INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
-        ON CONFLICT(from_id, to_id) DO UPDATE SET
-          type = ?3,
-          lag_ms = ?4,
-          last_updated = ?5,
-          deleted_at = NULL
-        ''',
+          UPDATE dependencies SET
+            type = ?3,
+            lag_ms = ?4,
+            last_updated = ?5,
+            deleted_at = NULL
+          WHERE from_id = ?1 AND to_id = ?2
+          ''',
+          [
+            dependency.predecessorTaskId,
+            dependency.successorTaskId,
+            dependency.type.index,
+            dependency.lag?.inMilliseconds,
+            dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
+
+        batch.execute(
+          '''
+          INSERT OR IGNORE INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+          ''',
           [
             dependency.predecessorTaskId,
             dependency.successorTaskId,
@@ -157,16 +216,30 @@ class LocalGanttRepository {
   Future<void> insertOrUpdateDependency(LegacyGanttTaskDependency dependency) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
+      // SPLIT INTO UPDATE + INSERT OR IGNORE
       await db.execute(
         '''
-      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, NULL)
-      ON CONFLICT(from_id, to_id) DO UPDATE SET
-        type = ?3,
-        lag_ms = ?4,
-        last_updated = ?5,
-        deleted_at = NULL
-      ''',
+        UPDATE dependencies SET
+          type = ?3,
+          lag_ms = ?4,
+          last_updated = ?5,
+          deleted_at = NULL
+        WHERE from_id = ?1 AND to_id = ?2
+        ''',
+        [
+          dependency.predecessorTaskId,
+          dependency.successorTaskId,
+          dependency.type.index,
+          dependency.lag?.inMilliseconds,
+          dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+        ],
+      );
+
+      await db.execute(
+        '''
+        INSERT OR IGNORE INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+        ''',
         [
           dependency.predecessorTaskId,
           dependency.successorTaskId,
@@ -246,7 +319,9 @@ class LocalGanttRepository {
   // Resources CRUD
   Stream<List<LocalResource>> watchResources() async* {
     final db = await GanttDb.db;
-    yield* db.watch('SELECT * FROM resources').map((rows) => rows.map((row) => _rowToResource(row)).toList());
+    yield* db
+        .watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY rowid ASC')
+        .map((rows) => rows.map((row) => _rowToResource(row)).toList());
   }
 
   Future<void> insertResources(List<LocalResource> resources) async {
@@ -254,17 +329,31 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final resource in resources) {
+        // SPLIT INTO UPDATE + INSERT OR IGNORE
         batch.execute(
           '''
-        INSERT INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
-        ON CONFLICT(id) DO UPDATE SET
-          name = ?2,
-          parent_id = ?3,
-          is_expanded = ?4,
-          last_updated = ?5,
-          deleted_at = NULL
-        ''',
+          UPDATE resources SET
+            name = ?2,
+            parent_id = ?3,
+            is_expanded = ?4,
+            last_updated = ?5,
+            deleted_at = NULL
+          WHERE id = ?1
+          ''',
+          [
+            resource.id,
+            resource.name,
+            resource.parentId,
+            resource.isExpanded ? 1 : 0,
+            resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          ],
+        );
+
+        batch.execute(
+          '''
+          INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+          ''',
           [
             resource.id,
             resource.name,
@@ -281,17 +370,31 @@ class LocalGanttRepository {
   Future<void> insertOrUpdateResource(LocalResource resource) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
+      // SPLIT INTO UPDATE + INSERT OR IGNORE
       await db.execute(
         '''
-      INSERT INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, NULL)
-      ON CONFLICT(id) DO UPDATE SET
-        name = ?2,
-        parent_id = ?3,
-        is_expanded = ?4,
-        last_updated = ?5,
-        deleted_at = NULL
-      ''',
+        UPDATE resources SET
+          name = ?2,
+          parent_id = ?3,
+          is_expanded = ?4,
+          last_updated = ?5,
+          deleted_at = NULL
+        WHERE id = ?1
+        ''',
+        [
+          resource.id,
+          resource.name,
+          resource.parentId,
+          resource.isExpanded ? 1 : 0,
+          resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+        ],
+      );
+
+      await db.execute(
+        '''
+        INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+        ''',
         [
           resource.id,
           resource.name,

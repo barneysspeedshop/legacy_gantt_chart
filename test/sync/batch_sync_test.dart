@@ -135,7 +135,7 @@ void main() {
       await subscription.cancel();
     });
 
-    test('receiving BATCH_UPDATE emits multiple operations', () async {
+    test('receiving BATCH_UPDATE emits single batch operation', () async {
       client.connect('test_tenant');
 
       final updateOps = <Operation>[];
@@ -168,11 +168,13 @@ void main() {
       // Wait for stream processing
       await Future.delayed(const Duration(milliseconds: 10));
 
-      expect(updateOps, hasLength(2));
-      expect(updateOps[0].type, 'INSERT_TASK');
-      expect(updateOps[0].data['id'], '1');
-      expect(updateOps[1].type, 'UPDATE_TASK');
-      expect(updateOps[1].data['id'], '2');
+      expect(updateOps, hasLength(1));
+      expect(updateOps[0].type, 'BATCH_UPDATE');
+      expect(updateOps[0].data['operations'], hasLength(2));
+
+      final opsList = updateOps[0].data['operations'] as List;
+      expect(opsList[0]['type'], 'INSERT_TASK');
+      expect(opsList[1]['type'], 'UPDATE_TASK');
 
       await sub.cancel();
     });

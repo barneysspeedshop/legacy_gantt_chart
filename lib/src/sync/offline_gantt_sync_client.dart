@@ -110,7 +110,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _performFlush() async {
-    // Only flush if we think we are connected.
     if (!_isConnected || _innerClient == null) {
       print('OfflineClient: Aborting flush because not connected or no inner client.');
       return;
@@ -124,45 +123,22 @@ class OfflineGanttSyncClient implements GanttSyncClient {
         await _dbInitFuture;
       }
 
-      // Read next batch (with lock)
-
-      // WAIT. If I create the table here, SqliteCrdt might not have picked it up if it was opened BEFORE this execute?
-      // No, SqliteCrdt hooks `onCreate` and `onUpgrade`. If _db is already open, and I run `execute`, does it hook it?
-      // SqliteCrdt wraps the db. `execute` calls `_db.execute`.
-      // The CRDT logic (triggers) are usually set up on creation.
-      // If I add a table dynamically, I might need to ensure triggers are added.
-      // However, `offline_queue` is LOCAL ONLY. We don't want to sync the queue itself. We want to sync constraints.
-      // Actually, we probably DON'T want `offline_queue` to be a CRDT table because we don't sync IT.
-      // But if `SqliteCrdt` wrapper keeps it that way, we have to live with it.
-      // If `SqliteCrdt` adds overhead, we might want to avoid it.
-      // But we are passing `SqliteCrdt` object.
-      // Ideally, we should check if `is_deleted` column exists or just select all.
-      // Since it's a queue, we delete rows after sending.
-      // If it's a CRDT, `DELETE` sets `is_deleted=1`. So we MUST filter.
-      // If it's NOT a CRDT, `DELETE` removes the row. `is_deleted` column won't exist.
-      // Strategy: Try catching the query error, or check table info.
-      // BETTER: Just try query with `is_deleted = 0`. If it fails, fallback to `SELECT *`.
-
-      // OR: Since this is specific to `OfflineGanttSyncClient`, maybe we assume the user sets up the table correctly?
-      // My `_initDb` tries to create it.
-      // If I use `SqliteCrdt`, any table created via `execute` MIGHT be instrumented.
-      // Let's stick to the code from example which used `is_deleted = 0`. It implies it WAS instrumented.
-
       List<Map<String, Object?>> rows;
       try {
-        rows = await _lock
-            .synchronized(() => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 50'));
+        rows = await _lock.synchronized(
+            () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'));
       } catch (e) {
-        // Fallback if is_deleted doesn't exist (not a CRDT table)
-        rows = await _lock.synchronized(() => _db.query('SELECT * FROM offline_queue ORDER BY id ASC LIMIT 50'));
+        rows = await _lock.synchronized(() => _db.query('SELECT * FROM offline_queue ORDER BY id ASC LIMIT 500'));
       }
 
       if (rows.isEmpty) break;
 
       print('Flushing ${rows.length} offline operations...');
 
+      final opsToSend = <Operation>[];
+      final idsToDelete = <int>[];
+
       for (final row in rows) {
-        // Double check connection before each send to allow abort
         if (!_isConnected || _innerClient == null) break;
 
         final id = row['id'] as int;
@@ -170,7 +146,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           final dataDynamic = jsonDecode(row['data'] as String);
           if (dataDynamic == null) {
             print('Skipping queued op with null data: $id');
-            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
+            idsToDelete.add(id);
             continue;
           }
           final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
@@ -181,21 +157,38 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             timestamp: row['timestamp'] as int,
             actorId: row['actor_id'] as String,
           );
-
-          print('Flushing OP: ${op.type}, Timestamp: ${op.timestamp}');
-          if (_innerClient != null) {
-            await _innerClient!.sendOperation(op);
-            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
-          }
+          opsToSend.add(op);
+          idsToDelete.add(id);
         } catch (e) {
-          print('Failed to convert/send queued op id $id: $e');
+          print('Failed to convert queued op id $id: $e');
           if (e.toString().contains('FormatException') || e.toString().contains('subtype')) {
             print('Deleting malformed op $id');
-            await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id = ?', [id]));
-          } else {
-            break;
+            idsToDelete.add(id);
           }
         }
+      }
+
+      if (opsToSend.isNotEmpty && _innerClient != null && _isConnected) {
+        try {
+          print('Flushing batch of ${opsToSend.length} operations...');
+          // Send as batch
+          await _innerClient!.sendOperations(opsToSend);
+
+          if (idsToDelete.isNotEmpty) {
+            final placeholder = List.filled(idsToDelete.length, '?').join(',');
+            await _lock
+                .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+          }
+        } catch (e) {
+          print('Error flushing batch: $e');
+          // If send failed, do not delete. Break loop.
+          break;
+        }
+      } else if (idsToDelete.isNotEmpty) {
+        // Should clean up skipped/malformed ones even if no valid ops to send
+        final placeholder = List.filled(idsToDelete.length, '?').join(',');
+        await _lock
+            .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
       }
     }
   }
@@ -234,6 +227,14 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
     // Then attempt to flush (send to server)
     _flushQueue();
+  }
+
+  Future<void> clearQueue() async {
+    if (!_isDbReady) await _dbInitFuture;
+    await _lock.synchronized(() async {
+      await _db.execute('DELETE FROM offline_queue');
+      print('OfflineClient: Cleared offline queue.');
+    });
   }
 
   @override

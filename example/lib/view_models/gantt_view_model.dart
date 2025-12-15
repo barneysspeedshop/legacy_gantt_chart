@@ -368,6 +368,10 @@ class GanttViewModel extends ChangeNotifier {
     await _localRepository.deleteAllTasks();
     await _localRepository.deleteAllResources();
 
+    if (_syncClient is OfflineGanttSyncClient) {
+      await (_syncClient as OfflineGanttSyncClient).clearQueue();
+    }
+
     // Generate new data using the mock service logic
     final processedData = await _scheduleService.fetchAndProcessSchedule(
       startDate: _startDate,
@@ -1718,12 +1722,88 @@ class GanttViewModel extends ChangeNotifier {
     print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
 
     // Persist the latest sync timestamp from the server, independent of local edits
+    // This serves as a checkpoint. For batch, we update it once.
     if (_useLocalDatabase) {
       await _localRepository.setLastServerSyncTimestamp(op.timestamp);
     }
 
+    if (op.type == 'BATCH_UPDATE') {
+      final operations = op.data['operations'] as List? ?? [];
+      // print('Processing BATCH_UPDATE with ${operations.length} operations');
+
+      // Use a transaction or batch process if possible.
+      // Current architecture relies on _processLocalData triggers, so we just run them without notifying.
+      // Ideally, we'd pause the stream or use a batch DB insert method.
+      // But passing notify: false prevents the heavy _processLocalData() call until the end.
+
+      final batchTasks = <LegacyGanttTask>[];
+      final batchDependencies = <LegacyGanttTaskDependency>[];
+      final batchResources = <LocalResource>[];
+
+      for (final opEnv in operations) {
+        try {
+          final opMap = opEnv as Map<String, dynamic>;
+          final opType = opMap['type'] as String;
+          var opData = opMap['data'] as Map<String, dynamic>;
+          final opTs = opMap['timestamp'] as int;
+          final opActor = opMap['actorId'] as String;
+
+          // Auto-unwrap logic similar to Single Op
+          if (opData.containsKey('data') && opData['data'] is Map) {
+            final innerData = opData['data'] as Map<String, dynamic>;
+            if (opData.containsKey('gantt_type')) {
+              innerData['gantt_type'] = opData['gantt_type'];
+            }
+            opData = innerData;
+          }
+
+          final subOp = Operation(
+            type: opType,
+            data: opData,
+            timestamp: opTs,
+            actorId: opActor,
+          );
+
+          await _processOperationInternal(
+            subOp,
+            notify: false,
+            batchTasks: batchTasks,
+            batchDependencies: batchDependencies,
+            batchResources: batchResources,
+          );
+        } catch (e) {
+          print('Error processing batch item: $e');
+        }
+      }
+
+      // Final flush of remaining batch items
+      if (_useLocalDatabase) {
+        if (batchTasks.isNotEmpty) {
+          await _localRepository.insertTasks(batchTasks);
+        }
+        if (batchDependencies.isNotEmpty) {
+          await _localRepository.insertDependencies(batchDependencies);
+        }
+        if (batchResources.isNotEmpty) {
+          await _localRepository.insertResources(batchResources);
+        }
+      }
+
+      // Final notify after batch
+      await _processLocalData();
+    } else {
+      await _processOperationInternal(op, notify: true);
+    }
+  }
+
+  Future<void> _processOperationInternal(
+    Operation op, {
+    bool notify = true,
+    List<LegacyGanttTask>? batchTasks,
+    List<LegacyGanttTaskDependency>? batchDependencies,
+    List<LocalResource>? batchResources,
+  }) async {
     final data = op.data;
-    // Task data is directly in data
     final taskData = data;
 
     if (op.type == 'UPDATE_TASK') {
@@ -1737,18 +1817,15 @@ class GanttViewModel extends ChangeNotifier {
       if (innerData.containsKey('data') && innerData['data'] is Map) {
         ganttType ??= innerData['gantt_type'] as String?;
         innerData = innerData['data'] as Map<String, dynamic>;
-        // If inner data has it (e.g. from flattening), give it precedence or fallback?
-        // Usually top-level wrapper is authoritative, but flattening puts it in inner.
         ganttType ??= innerData['gantt_type'] as String?;
       }
 
       final taskIdRaw = innerData['id'];
       if (taskIdRaw == null) {
-        print('Warning: UPDATE_TASK received without ID');
+        // print('Warning: UPDATE_TASK received without ID');
         return;
       }
       final taskId = taskIdRaw.toString().trim();
-      print('Processing UPDATE_TASK. ID: "$taskId" (Raw Type: ${taskIdRaw.runtimeType})');
 
       // 1. Check if task exists
       final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
@@ -1757,18 +1834,10 @@ class GanttViewModel extends ChangeNotifier {
         // UPDATE Existing
         final existingTask = _allGanttTasks[sourceIndex];
 
-        // LWW Check: If local task is newer than incoming operation, ignore it.
-        // We use a small buffer (e.g. 0ms, or maybe 100ms if clocks drift, but simple > is usually enough)
-        // If lastUpdated is null (legacy data), we accept the update.
         if (existingTask.lastUpdated != null && op.timestamp < existingTask.lastUpdated!) {
-          print(
-              'Ignoring stale UPDATE_TASK for ${existingTask.id}. Local: ${existingTask.lastUpdated}, Remote: ${op.timestamp}');
+          // Stale update
           return;
         }
-
-        // Robust parsing handling:
-        // 1. Support both 'start_date' (int) and 'start' (String/ISO) keys.
-        // 2. Update 'lastUpdated' to the operation timestamp to respect LWW.
 
         DateTime? parseDate(dynamic value) {
           if (value == null) return null;
@@ -1789,36 +1858,33 @@ class GanttViewModel extends ChangeNotifier {
           isSummary: ganttType != null
               ? (ganttType == 'summary')
               : (innerData['is_summary'] == true ? true : existingTask.isSummary),
-          // Update other fields if present in payload
         );
 
         try {
           if (_useLocalDatabase) {
-            await _localRepository.insertOrUpdateTask(updatedTask);
+            if (batchTasks != null) {
+              batchTasks.add(updatedTask);
+            } else {
+              await _localRepository.insertOrUpdateTask(updatedTask);
+            }
           }
 
-          // Force new list reference to ensure CustomPainter detects change
           _allGanttTasks = List.from(_allGanttTasks);
           _allGanttTasks[sourceIndex] = updatedTask;
 
-          // Also update visible tasks immediately to avoid flicker before full process
           final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
           if (visibleIndex != -1) {
             _ganttTasks[visibleIndex] = updatedTask;
           }
-          await _processLocalData();
-          print('Processing UPDATE_TASK complete for $taskId');
-        } catch (e, st) {
-          print('Error processing UPDATE_TASK for $taskId: $e\n$st');
+          if (notify) await _processLocalData();
+        } catch (e) {
+          print('Error processing UPDATE_TASK for $taskId: $e');
         }
       } else {
-        // UPSERT (Treat as INSERT)
-        // This handles valid initial sync data sent as UPDATE_TASK
-        print('Upserting new task from UPDATE_TASK: $taskId');
-
+        // UPSERT
         final newTask = LegacyGanttTask(
           id: taskId,
-          rowId: innerData['rowId'] ?? 'unknown_row', // Fallback if rowId missing, though important
+          rowId: innerData['rowId'] ?? 'unknown_row',
           name: innerData['name'] ?? 'Unnamed Task',
           start: innerData['start_date'] != null
               ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
@@ -1833,21 +1899,22 @@ class GanttViewModel extends ChangeNotifier {
         );
 
         if (_useLocalDatabase) {
-          await _localRepository.insertOrUpdateTask(newTask);
+          if (batchTasks != null) {
+            batchTasks.add(newTask);
+          } else {
+            await _localRepository.insertOrUpdateTask(newTask);
+          }
         }
 
-        // Add to in-memory list immediately
         _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
-        await _processLocalData();
+        if (notify) await _processLocalData();
       }
     } else if (op.type == 'INSERT_TASK') {
       var data = op.data;
       String? ganttType;
 
-      // Try reading gantt_type from top level first
       ganttType = data['gantt_type'] as String?;
 
-      // Unwrap if nested (gantt_type present)
       if (data.containsKey('data') && data['data'] is Map) {
         ganttType ??= data['gantt_type'] as String?;
         data = data['data'] as Map<String, dynamic>;
@@ -1867,29 +1934,35 @@ class GanttViewModel extends ChangeNotifier {
       );
 
       if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateTask(newTask);
+        if (batchTasks != null) {
+          batchTasks.add(newTask);
+        } else {
+          await _localRepository.insertOrUpdateTask(newTask);
+        }
       }
 
       _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
-      await _processLocalData();
+      if (notify) await _processLocalData();
     } else if (op.type == 'DELETE_TASK') {
-      // Handle DELETE_TASK
       final taskId = taskData['id'];
       if (taskId == null) return;
 
       if (_useLocalDatabase) {
+        // FLUSH BATCH before delete to ensure order
+        if (batchTasks != null && batchTasks.isNotEmpty) {
+          await _localRepository.insertTasks(batchTasks);
+          batchTasks.clear();
+        }
         await _localRepository.deleteTask(taskId);
       }
 
       _ganttTasks.removeWhere((t) => t.id == taskId);
       _allGanttTasks.removeWhere((t) => t.id == taskId);
-      // Also remove dependencies involving this task
       _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-      await _processLocalData();
+      if (notify) await _processLocalData();
     } else if (op.type == 'PRESENCE_UPDATE') {
       final data = op.data;
       final userId = op.actorId;
-      print('Received Presence Update from $userId');
 
       final viewportStartMs = data['viewportStart'] as int?;
       final viewportEndMs = data['viewportEnd'] as int?;
@@ -1903,14 +1976,14 @@ class GanttViewModel extends ChangeNotifier {
         userName: data['userName'] as String?,
         userColor: data['userColor'] as String?,
       );
-      notifyListeners();
+      if (notify) notifyListeners();
 
       if (followedUserId == userId) {
         _applyFollowedUserView(_connectedUsers[userId]!);
       }
     } else if (op.type == 'INSERT_DEPENDENCY') {
       final data = op.data;
-      final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String; // Handle both keys
+      final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String;
       final dependencyType = DependencyType.values.firstWhere(
         (e) => e.name == dependencyTypeString,
         orElse: () => DependencyType.finishToStart,
@@ -1922,12 +1995,16 @@ class GanttViewModel extends ChangeNotifier {
       );
 
       if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateDependency(newDep);
-        await _processLocalData();
+        if (batchDependencies != null) {
+          batchDependencies.add(newDep);
+        } else {
+          await _localRepository.insertOrUpdateDependency(newDep);
+        }
+        if (notify) await _processLocalData();
       } else {
         if (!_dependencies.contains(newDep)) {
           _dependencies.add(newDep);
-          notifyListeners();
+          if (notify) notifyListeners();
         }
       }
     } else if (op.type == 'DELETE_DEPENDENCY') {
@@ -1936,22 +2013,32 @@ class GanttViewModel extends ChangeNotifier {
       final succ = data['successorTaskId'];
 
       if (_useLocalDatabase) {
+        // FLUSH BATCH before delete
+        if (batchDependencies != null && batchDependencies.isNotEmpty) {
+          await _localRepository.insertDependencies(batchDependencies);
+          batchDependencies.clear();
+        }
         await _localRepository.deleteDependency(pred, succ);
-        await _processLocalData();
+        if (notify) await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
-        notifyListeners();
+        if (notify) notifyListeners();
       }
     } else if (op.type == 'CLEAR_DEPENDENCIES') {
       final taskId = op.data['taskId'];
       if (taskId == null) return;
 
       if (_useLocalDatabase) {
+        // FLUSH BATCH before delete
+        if (batchDependencies != null && batchDependencies.isNotEmpty) {
+          await _localRepository.insertDependencies(batchDependencies);
+          batchDependencies.clear();
+        }
         await _localRepository.deleteDependenciesForTask(taskId);
-        await _processLocalData();
+        if (notify) await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-        notifyListeners();
+        if (notify) notifyListeners();
       }
     } else if (op.type == 'INSERT_RESOURCE' || op.type == 'UPDATE_RESOURCE') {
       var data = op.data;
@@ -1962,15 +2049,18 @@ class GanttViewModel extends ChangeNotifier {
       final resource = LocalResource(
         id: data['id'],
         name: data['name'],
-        parentId: data['parent_id'] ?? data['parentId'], // Handle both casing
+        parentId: data['parent_id'] ?? data['parentId'],
         isExpanded: data['isExpanded'] == true || data['is_expanded'] == true,
       );
 
       if (_useLocalDatabase) {
-        await _localRepository.insertOrUpdateResource(resource);
+        if (batchResources != null) {
+          batchResources.add(resource);
+        } else {
+          await _localRepository.insertOrUpdateResource(resource);
+        }
       }
 
-      // Update in-memory state explicitly (Upsert)
       final index = _localResources.indexWhere((r) => r.id == resource.id);
       if (index != -1) {
         _localResources[index] = resource;
@@ -1978,25 +2068,35 @@ class GanttViewModel extends ChangeNotifier {
         _localResources = List.from(_localResources)..add(resource);
       }
 
-      await _processLocalData();
+      if (notify) await _processLocalData();
     } else if (op.type == 'DELETE_RESOURCE') {
       final id = op.data['id'];
       if (id != null) {
         if (_useLocalDatabase) {
+          // FLUSH BATCH before delete
+          if (batchResources != null && batchResources.isNotEmpty) {
+            await _localRepository.insertResources(batchResources);
+            batchResources.clear();
+          }
           await _localRepository.deleteResource(id);
         }
         _localResources.removeWhere((r) => r.id == id);
-        await _processLocalData();
+        if (notify) await _processLocalData();
       }
     } else if (op.type == 'RESET_DATA') {
-      // Unconditionally clear local DB
       await _localRepository.deleteAllDependencies();
       await _localRepository.deleteAllTasks();
       await _localRepository.deleteAllResources();
 
-      // Unconditionally clear in-memory state
-      // Note: LegacyGanttViewModel (package) handles clearing its own state if connected,
-      // but we clear our local mirror here too.
+      // Clear batch lists too if we reset?
+      // Technically RESET_DATA should probably clear pending batch lists too as they are now stale/deleted.
+      // But RESET_DATA usually shouldn't happen inside a mixed batch.
+      // If it does, we assume it nullifies everything before it.
+      // But clearing them avoids inserting stale data after delete.
+      batchTasks?.clear();
+      batchDependencies?.clear();
+      batchResources?.clear();
+
       _dependencies.clear();
       _ganttTasks.clear();
       _allGanttTasks.clear();
@@ -2004,7 +2104,7 @@ class GanttViewModel extends ChangeNotifier {
       _cachedFlatGridData = null;
       _conflictIndicators.clear();
 
-      notifyListeners();
+      if (notify) notifyListeners();
     }
   }
 
