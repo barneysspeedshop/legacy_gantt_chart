@@ -364,8 +364,8 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
 
     // Clear existing data
-    await _localRepository.deleteAllTasks();
     await _localRepository.deleteAllDependencies();
+    await _localRepository.deleteAllTasks();
     await _localRepository.deleteAllResources();
 
     // Generate new data using the mock service logic
@@ -1990,14 +1990,16 @@ class GanttViewModel extends ChangeNotifier {
       }
     } else if (op.type == 'RESET_DATA') {
       // Unconditionally clear local DB
-      await _localRepository.deleteAllTasks();
       await _localRepository.deleteAllDependencies();
+      await _localRepository.deleteAllTasks();
       await _localRepository.deleteAllResources();
 
       // Unconditionally clear in-memory state
+      // Note: LegacyGanttViewModel (package) handles clearing its own state if connected,
+      // but we clear our local mirror here too.
+      _dependencies.clear();
       _ganttTasks.clear();
       _allGanttTasks.clear();
-      _dependencies.clear();
       _gridData.clear();
       _cachedFlatGridData = null;
       _conflictIndicators.clear();

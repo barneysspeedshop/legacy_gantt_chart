@@ -282,19 +282,19 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing ${operations.length} operations');
     await _lock.synchronized(() async {
-      await _db.transaction((txn) async {
-        for (final operation in operations) {
-          await txn.execute(
-            'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-            [
-              operation.type,
-              jsonEncode(operation.data),
-              operation.timestamp,
-              operation.actorId,
-            ],
-          );
-        }
-      });
+      final batch = _db.batch();
+      for (final operation in operations) {
+        batch.execute(
+          'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
+          [
+            operation.type,
+            jsonEncode(operation.data),
+            operation.timestamp,
+            operation.actorId,
+          ],
+        );
+      }
+      await batch.commit();
     });
   }
 

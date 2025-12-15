@@ -1,3 +1,8 @@
+## 4.2.0
+
+* **FEATURE**: Implement web worker for offline database
+* **FEATURE**: Implement message queuing for offline database
+
 ## 4.1.1
 
 * **FIX**: Fix for an issue that caused a range error when calculating offsets on visible rows during data reset
