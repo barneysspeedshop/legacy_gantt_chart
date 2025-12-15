@@ -667,7 +667,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                           onPanStart: (details) => vm.onPanStart(details),
                           onPanUpdate: (details) => vm.onPanUpdate(details),
                           onPanEnd: (details) => vm.onPanEnd(details),
-                          onTapUp: (details) => vm.onTapUp(details),
+                          onTapDown: (details) => vm.onTapDown(details),
+                          onTap: () => vm.onTap(),
                           onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
                           child: MouseRegion(
                             cursor: vm.cursor,
@@ -746,17 +747,19 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                             widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
                                         // 1.5 Cursors
                                         if (vm.showRemoteCursors)
-                                          RepaintBoundary(
-                                            child: CustomPaint(
-                                              size:
-                                                  Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                              painter: CursorPainter(
-                                                remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
-                                                totalScale: vm.totalScale,
-                                                visibleRows: widget.visibleRows,
-                                                rowMaxStackDepth: widget.rowMaxStackDepth,
-                                                rowHeight: widget.rowHeight,
-                                                translateY: vm.translateY,
+                                          IgnorePointer(
+                                            child: RepaintBoundary(
+                                              child: CustomPaint(
+                                                size: Size(
+                                                    constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                                painter: CursorPainter(
+                                                  remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
+                                                  totalScale: vm.totalScale,
+                                                  visibleRows: widget.visibleRows,
+                                                  rowMaxStackDepth: widget.rowMaxStackDepth,
+                                                  rowHeight: widget.rowHeight,
+                                                  translateY: vm.translateY,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -978,10 +981,12 @@ List<Widget> _buildFocusedTaskWidgets(
       top: top,
       width: width,
       height: vm.rowHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.barColorSecondary, width: 2),
-          borderRadius: BorderRadius.circular(4.0),
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.barColorSecondary, width: 2),
+            borderRadius: BorderRadius.circular(4.0),
+          ),
         ),
       ),
     )

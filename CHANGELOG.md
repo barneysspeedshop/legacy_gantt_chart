@@ -1,3 +1,7 @@
+## 4.3.2
+
+* **FIX**: Fix for an issue that prevented the options menu on a task from being clicked
+
 ## 4.3.1
 
 * **FIX**: Fix bulk actions performance in web browsers

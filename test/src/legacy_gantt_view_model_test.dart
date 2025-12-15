@@ -121,11 +121,12 @@ void main() {
       // 3. Simulate tap. Should NOT throw RangeError.
       // 50px down would have been Row 1 or 2 previously.
       try {
-        viewModel.onTapUp(TapUpDetails(
+        viewModel.onTapDown(TapDownDetails(
           kind: PointerDeviceKind.touch,
           globalPosition: const Offset(100, 25),
           localPosition: const Offset(100, 25),
         ));
+        viewModel.onTap();
       } catch (e) {
         fail('Should not throw exception after clearing rows: $e');
       }
@@ -261,7 +262,7 @@ void main() {
           DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble());
     });
 
-    test('onTapUp hitting a task', () {
+    test('onTap hitting a task', () {
       LegacyGanttTask? tappedTask;
       viewModel = LegacyGanttViewModel(
         conflictIndicators: [],
@@ -279,16 +280,17 @@ void main() {
       // Task 1 is at 8:00 (800px) to 12:00 (1200px).
       // Row 1 is at y=50 (axis) to y=100.
       // Tap at (810, 75).
-      viewModel.onTapUp(TapUpDetails(
+      viewModel.onTapDown(TapDownDetails(
         kind: PointerDeviceKind.touch,
         globalPosition: const Offset(810, 75),
         localPosition: const Offset(810, 75),
       ));
+      viewModel.onTap();
 
       expect(tappedTask, equals(task1));
     });
 
-    test('onTapUp hitting empty space', () {
+    test('onTap hitting empty space', () {
       String? clickedRowId;
       DateTime? clickedTime;
       viewModel = LegacyGanttViewModel(
@@ -308,11 +310,12 @@ void main() {
           DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble());
 
       // Tap at (100, 75). 100px = 1 hour -> 1:00.
-      viewModel.onTapUp(TapUpDetails(
+      viewModel.onTapDown(TapDownDetails(
         kind: PointerDeviceKind.touch,
         globalPosition: const Offset(100, 75),
         localPosition: const Offset(100, 75),
       ));
+      viewModel.onTap();
 
       expect(clickedRowId, 'r1');
       expect(clickedTime, isNotNull);

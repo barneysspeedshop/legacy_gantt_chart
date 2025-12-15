@@ -1255,20 +1255,29 @@ class _GanttViewState extends State<GanttView> {
                                                               top: 0,
                                                               bottom: 0,
                                                               child: Builder(
-                                                                builder: (context) => IconButton(
-                                                                  padding: EdgeInsets.zero,
-                                                                  icon:
-                                                                      Icon(Icons.more_vert, color: textColor, size: 18),
-                                                                  tooltip: 'Task Options',
-                                                                  onPressed: () {
-                                                                    final RenderBox button =
-                                                                        context.findRenderObject() as RenderBox;
-                                                                    final Offset offset =
-                                                                        button.localToGlobal(Offset.zero);
-                                                                    final tapPosition =
-                                                                        offset.translate(button.size.width, 0);
-                                                                    _showTaskContextMenu(context, task, tapPosition);
-                                                                  },
+                                                                builder: (context) => MouseRegion(
+                                                                  cursor: SystemMouseCursors.click,
+                                                                  child: GestureDetector(
+                                                                    behavior: HitTestBehavior.opaque,
+                                                                    onPanStart: (_) {}, // Consumes the drag gesture
+                                                                    onPanUpdate: (_) {},
+                                                                    child: IconButton(
+                                                                      padding: EdgeInsets.zero,
+                                                                      icon: Icon(Icons.more_vert,
+                                                                          color: textColor, size: 18),
+                                                                      tooltip: 'Task Options',
+                                                                      onPressed: () {
+                                                                        final RenderBox button =
+                                                                            context.findRenderObject() as RenderBox;
+                                                                        final Offset offset =
+                                                                            button.localToGlobal(Offset.zero);
+                                                                        final tapPosition =
+                                                                            offset.translate(button.size.width, 0);
+                                                                        _showTaskContextMenu(
+                                                                            context, task, tapPosition);
+                                                                      },
+                                                                    ),
+                                                                  ),
                                                                 ),
                                                               ),
                                                             ),

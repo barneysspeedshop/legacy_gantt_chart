@@ -1287,12 +1287,21 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  Offset? _lastTapDownPosition;
+
+  void onTapDown(TapDownDetails details) {
+    _lastTapDownPosition = details.localPosition;
+  }
+
   /// Gesture handler for a tap gesture. Determines if a task or empty space
   /// was tapped and invokes the appropriate callback.
-  void onTapUp(TapUpDetails details) {
+  void onTap() {
+    if (_lastTapDownPosition == null) return;
+    final localPosition = _lastTapDownPosition!;
+
     // If in select mode, handle selection logic
     if (_currentTool == GanttTool.select) {
-      final hit = _getTaskPartAtPosition(details.localPosition);
+      final hit = _getTaskPartAtPosition(localPosition);
       if (hit != null) {
         // Toggle selection for this task
         if (_selectedTaskIds.contains(hit.task.id)) {
@@ -1324,14 +1333,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
-    final hit = _getTaskPartAtPosition(details.localPosition);
+    final hit = _getTaskPartAtPosition(localPosition);
     if (hit != null) {
       onPressTask?.call(hit.task);
       return; // Don't process empty space click if a task was hit
     }
 
     if (onEmptySpaceClick != null) {
-      final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
+      final (rowId, time) = _getRowAndTimeAtPosition(localPosition);
       if (rowId != null && time != null) {
         onEmptySpaceClick!(rowId, time);
       }
