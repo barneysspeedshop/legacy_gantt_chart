@@ -73,31 +73,30 @@ class CRDTEngine {
     }
   }
 
-  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) {
-    return LegacyGanttTask(
-      id: data['id'],
-      rowId: data['rowId'] ?? existing?.rowId ?? '',
-      start: data['start'] != null
-          ? DateTime.parse(data['start'])
-          : (data['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(data['start_date'])
-              : (existing?.start ?? DateTime.now())),
-      end: data['end'] != null
-          ? DateTime.parse(data['end'])
-          : (data['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(data['end_date'])
-              : (existing?.end ?? DateTime.now().add(const Duration(days: 1)))),
-      name: data['name'] ?? existing?.name,
-      color: existing?.color,
-      textColor: existing?.textColor,
-      stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
-      originalId: data['originalId'] ?? existing?.originalId,
-      isSummary: data['isSummary'] ?? existing?.isSummary ?? false,
-      isTimeRangeHighlight: data['isTimeRangeHighlight'] ?? existing?.isTimeRangeHighlight ?? false,
-      isOverlapIndicator: data['isOverlapIndicator'] ?? existing?.isOverlapIndicator ?? false,
-      completion: (data['completion'] as num?)?.toDouble() ?? existing?.completion ?? 0.0,
-      lastUpdated: op.timestamp,
-      lastUpdatedBy: op.actorId,
-    );
-  }
+  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) =>
+      LegacyGanttTask(
+        id: data['id'],
+        rowId: data['rowId'] ?? existing?.rowId ?? '',
+        start: data['start'] != null
+            ? DateTime.parse(data['start'])
+            : (data['start_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(data['start_date'])
+                : (existing?.start ?? DateTime.now())),
+        end: data['end'] != null
+            ? DateTime.parse(data['end'])
+            : (data['end_date'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(data['end_date'])
+                : (existing?.end ?? DateTime.now().add(const Duration(days: 1)))),
+        name: data['name'] ?? existing?.name,
+        color: existing?.color,
+        textColor: existing?.textColor,
+        stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
+        originalId: data['originalId'] ?? existing?.originalId,
+        isSummary: data['isSummary'] ?? existing?.isSummary ?? false,
+        isTimeRangeHighlight: data['isTimeRangeHighlight'] ?? existing?.isTimeRangeHighlight ?? false,
+        isOverlapIndicator: data['isOverlapIndicator'] ?? existing?.isOverlapIndicator ?? false,
+        completion: (data['completion'] as num?)?.toDouble() ?? existing?.completion ?? 0.0,
+        lastUpdated: op.timestamp,
+        lastUpdatedBy: op.actorId,
+      );
 }
