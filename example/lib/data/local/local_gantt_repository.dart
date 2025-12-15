@@ -27,7 +27,7 @@ class LocalGanttRepository {
   Stream<List<LegacyGanttTaskDependency>> watchDependencies() async* {
     final db = await GanttDb.db;
     yield* db
-        .watch('SELECT * FROM dependencies WHERE is_deleted = 0')
+        .watch('SELECT * FROM dependencies WHERE deleted_at IS NULL')
         .map((rows) => rows.map((row) => _rowToDependency(row)).toList());
   }
 
@@ -87,14 +87,13 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       await db.execute(
         '''
-      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at, is_deleted)
-      VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0)
+      INSERT INTO dependencies (from_id, to_id, type, lag_ms, last_updated, deleted_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, NULL)
       ON CONFLICT(from_id, to_id) DO UPDATE SET
         type = ?3,
         lag_ms = ?4,
         last_updated = ?5,
-        deleted_at = NULL,
-        is_deleted = 0
+        deleted_at = NULL
       ''',
         [
           dependency.predecessorTaskId,

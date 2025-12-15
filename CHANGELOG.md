@@ -1,3 +1,7 @@
+## 4.0.12
+
+* **FIX**: Fix dependency persistence crash by using deleted_at instead of is_deleted
+
 ## 4.0.11
 
 * **FIX**: Fix for an issue that caused dependency sync to fail
