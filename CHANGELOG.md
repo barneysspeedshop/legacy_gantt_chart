@@ -1,3 +1,7 @@
+## 4.5.0
+
+* **FEATURE**: Implement a `GanttTool.drawDependencies` tool to enable the ability to draw dependency lines
+
 ## 4.4.2
 
 * **FIX**: Fix for an issue that caused milestone interactions to be missed on remote clients. 

@@ -258,6 +258,14 @@ class LegacyGanttController extends ChangeNotifier {
   /// The IDs of the currently selected tasks.
   Set<String> get selectedTaskIds => Set.unmodifiable(_selectedTaskIds);
 
+  /// Adds a new dependency to the controller's list.
+  void addDependency(LegacyGanttTaskDependency dependency) {
+    if (!_dependencies.contains(dependency)) {
+      _dependencies = List.from(_dependencies)..add(dependency);
+      notifyListeners();
+    }
+  }
+
   /// Sets the currently active tool.
   void setTool(GanttTool tool) {
     if (_currentTool != tool) {
@@ -291,4 +299,7 @@ enum GanttTool {
 
   /// The draw tool for creating new tasks by dragging.
   draw,
+
+  /// The draw dependencies tool for creating dependencies between tasks.
+  drawDependencies,
 }

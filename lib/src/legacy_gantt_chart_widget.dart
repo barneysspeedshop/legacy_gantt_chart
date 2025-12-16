@@ -178,6 +178,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Provides the start and end times of the drawn range, and the row ID.
   final Function(DateTime start, DateTime end, String rowId)? onTaskDrawEnd;
 
+  /// A callback that is invoked when a new dependency is created via the Draw Dependencies tool.
+  final Function(LegacyGanttTaskDependency dependency)? onDependencyAdd;
+
   /// The background color of the tooltip that appears during drag or resize operations.
   /// If not provided, it defaults to the theme's `barColorPrimary`.
   final Color? resizeTooltipBackgroundColor;
@@ -355,6 +358,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.resizeTooltipDateFormat,
     this.onEmptySpaceClick,
     this.onTaskDrawEnd,
+    this.onDependencyAdd,
     this.resizeTooltipBackgroundColor,
     this.resizeTooltipFontColor,
     this.resizeHandleWidth = 10.0,
@@ -576,6 +580,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onTaskDelete: widget.onTaskDelete,
             onEmptySpaceClick: widget.onEmptySpaceClick,
             onTaskDrawEnd: widget.onTaskDrawEnd,
+            onDependencyAdd: (dependency) {
+              if (widget.controller != null) {
+                widget.controller!.addDependency(dependency);
+              }
+              widget.onDependencyAdd?.call(dependency);
+            },
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
             taskBarBuilder: widget.taskBarBuilder,
@@ -735,6 +745,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                               translateY: vm.translateY,
                                               selectedTaskIds: vm.selectedTaskIds,
                                               bulkGhostTasks: vm.bulkGhostTasks,
+                                              enableDependencyCreation: vm.currentTool == GanttTool.drawDependencies,
+                                              dependencyDragStartTaskId: vm.dependencyStartTaskId,
+                                              dependencyDragStartIsFromStart:
+                                                  vm.dependencyStartSide == TaskPart.startHandle,
+                                              dependencyDragCurrentPosition: vm.currentDragPosition,
+                                              hoveredTaskForDependency: vm.dependencyHoveredTaskId,
                                             ),
                                           ),
                                         ),

@@ -30,14 +30,17 @@ class LegacyGanttToolbar extends StatelessWidget {
                   controller.currentTool == GanttTool.move,
                   controller.currentTool == GanttTool.select,
                   controller.currentTool == GanttTool.draw,
+                  controller.currentTool == GanttTool.drawDependencies,
                 ],
                 onPressed: (index) {
                   if (index == 0) {
                     controller.setTool(GanttTool.move);
                   } else if (index == 1) {
                     controller.setTool(GanttTool.select);
-                  } else {
+                  } else if (index == 2) {
                     controller.setTool(GanttTool.draw);
+                  } else {
+                    controller.setTool(GanttTool.drawDependencies);
                   }
                 },
                 borderRadius: BorderRadius.circular(8),
@@ -45,6 +48,7 @@ class LegacyGanttToolbar extends StatelessWidget {
                   Tooltip(message: 'Move Tool', child: Icon(Icons.open_with)),
                   Tooltip(message: 'Select Tool (Box Selection)', child: Icon(Icons.select_all)),
                   Tooltip(message: 'Draw Tool (Create Task)', child: Icon(Icons.edit)),
+                  Tooltip(message: 'Link Tool (Draw Dependencies)', child: Icon(Icons.account_tree)),
                 ],
               ),
             ),

@@ -3075,15 +3075,8 @@ class GanttViewModel extends ChangeNotifier {
         .toList();
   }
 
-  /// Adds a new dependency between two tasks.
-  void addDependency(String fromTaskId, String toTaskId) {
-    // For now, default to FinishToStart. This could be made configurable in the UI.
-    final newDependency = LegacyGanttTaskDependency(
-      predecessorTaskId: fromTaskId,
-      successorTaskId: toTaskId,
-      type: DependencyType.finishToStart,
-    );
-
+  /// Adds a new dependency object directly.
+  void addDependencyObject(LegacyGanttTaskDependency newDependency) {
     // Avoid adding duplicate dependencies
     if (!_dependencies.any((d) =>
         d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
@@ -3110,6 +3103,17 @@ class GanttViewModel extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Adds a new dependency between two tasks.
+  void addDependency(String fromTaskId, String toTaskId) {
+    // For now, default to FinishToStart. This could be made configurable in the UI.
+    final newDependency = LegacyGanttTaskDependency(
+      predecessorTaskId: fromTaskId,
+      successorTaskId: toTaskId,
+      type: DependencyType.finishToStart,
+    );
+    addDependencyObject(newDependency);
   }
 
   /// Returns a list of dependencies where the given task is either a predecessor or a successor.

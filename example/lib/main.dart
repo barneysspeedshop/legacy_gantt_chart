@@ -1188,6 +1188,7 @@ class _GanttViewState extends State<GanttView> {
                                                 },
                                                 onTaskHover: (task, globalPosition) =>
                                                     vm.onTaskHover(task, context, globalPosition),
+                                                onDependencyAdd: (dependency) => vm.addDependencyObject(dependency),
 
                                                 // --- Theming and Styling ---
                                                 theme: ganttTheme,

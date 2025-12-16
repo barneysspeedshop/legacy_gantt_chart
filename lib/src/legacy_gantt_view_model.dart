@@ -15,7 +15,7 @@ import 'legacy_gantt_controller.dart';
 
 enum DragMode { none, move, resizeStart, resizeEnd }
 
-enum PanType { none, vertical, horizontal, selection, draw }
+enum PanType { none, vertical, horizontal, selection, draw, dependency }
 
 enum TaskPart { body, startHandle, endHandle }
 
@@ -292,12 +292,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// This constructor takes all the relevant properties from the
   /// [LegacyGanttChartWidget] to initialize its state. It also adds a listener
   /// to the [scrollController] if one is provided, to synchronize vertical scrolling.
+  /// A callback that is invoked when a new dependency is created via the Draw Dependencies tool.
+  final Function(LegacyGanttTaskDependency dependency)? onDependencyAdd;
+
   LegacyGanttViewModel({
     required this.conflictIndicators,
     required List<LegacyGanttTask> data,
     required this.dependencies,
     required this.visibleRows,
     required this.rowMaxStackDepth,
+    this.onDependencyAdd,
     required this.rowHeight,
     double? axisHeight,
     this.gridMin,
@@ -352,6 +356,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           );
           if (!dependencies.contains(newDep)) {
             dependencies = List.from(dependencies)..add(newDep);
+            onDependencyAdd?.call(newDep);
             notifyListeners();
           }
         } else if (op.type == 'DELETE_DEPENDENCY') {
@@ -464,6 +469,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (!dependencies.contains(dependency)) {
       dependencies = List.from(dependencies)..add(dependency);
       _sendDependencyOp('INSERT_DEPENDENCY', dependency);
+      onDependencyAdd?.call(dependency);
       notifyListeners();
     }
   }
@@ -577,6 +583,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DateTime? _hoveredDate;
   String? _focusedTaskId;
 
+  // Dependency Drawing State
+  String? _dependencyStartTaskId;
+  TaskPart? _dependencyStartSide;
+  Offset? _currentDragPosition;
+  String? _dependencyHoveredTaskId;
+
+  String? get dependencyStartTaskId => _dependencyStartTaskId;
+  TaskPart? get dependencyStartSide => _dependencyStartSide;
+  Offset? get currentDragPosition => _currentDragPosition;
+  String? get dependencyHoveredTaskId => _dependencyHoveredTaskId;
+
   // Add this list to your class properties to cache row positions
   List<double> _rowVerticalOffsets = [];
   double _totalContentHeight = 0;
@@ -631,7 +648,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     // We only check tasks in visible rows to be safe? Or all?
     // "Select" usually means "visual selection", so selecting visible is prioritized.
     // But if we want to select *everything* in the box even if hidden?
-    // Let's stick to ALL tasks to support bulk actions on expanded/hidden items if the box covers them visually?
     // No, if they are hidden (collapsed parent), they have no Y position.
     // So we iterate `visibleRows`.
 
@@ -1218,6 +1234,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
+    if (_currentTool == GanttTool.drawDependencies) {
+      final hit = _getTaskPartAtPosition(details.localPosition);
+      if (hit != null && (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
+        _panType = PanType.dependency;
+        _dependencyStartTaskId = hit.task.id;
+        _dependencyStartSide = hit.part;
+        _currentDragPosition = details.localPosition;
+        notifyListeners();
+      }
+      return;
+    }
+
     if (_currentTool == GanttTool.draw) {
       // Find row at position
       final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
@@ -1277,6 +1305,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _ghostTaskEnd = time;
         notifyListeners();
       }
+    } else if (_panType == PanType.dependency) {
+      _currentDragPosition = details.localPosition;
+      final hit = _getTaskPartAtPosition(details.localPosition);
+      // Only highlight if it's a valid target (start/end handle of DIFFERENT task)
+      if (hit != null &&
+          hit.task.id != _dependencyStartTaskId &&
+          (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
+        _dependencyHoveredTaskId = hit.task.id;
+      } else {
+        _dependencyHoveredTaskId = null;
+      }
+      notifyListeners();
     } else if (_panType == PanType.vertical) {
       onVerticalPanUpdate(details);
     } else {
@@ -1327,6 +1367,49 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _draggedTask = null;
       _ghostTaskStart = null;
       _ghostTaskEnd = null;
+      notifyListeners();
+    } else if (_panType == PanType.dependency) {
+      if (_dependencyStartTaskId != null && _dependencyStartSide != null && _currentDragPosition != null) {
+        final hit = _getTaskPartAtPosition(_currentDragPosition!);
+        if (hit != null &&
+            hit.task.id != _dependencyStartTaskId &&
+            (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
+          // Determine dependency type
+          DependencyType type;
+          if (_dependencyStartSide == TaskPart.endHandle && hit.part == TaskPart.startHandle) {
+            type = DependencyType.finishToStart;
+          } else if (_dependencyStartSide == TaskPart.startHandle && hit.part == TaskPart.startHandle) {
+            type = DependencyType.startToStart;
+          } else if (_dependencyStartSide == TaskPart.endHandle && hit.part == TaskPart.endHandle) {
+            type = DependencyType.finishToFinish;
+          } else {
+            type = DependencyType.startToFinish;
+          }
+
+          // TODO: Add cycle detection here
+
+          if (!_wouldCreateCycle(_dependencyStartTaskId!, hit.task.id)) {
+            final newDep = LegacyGanttTaskDependency(
+              predecessorTaskId: _dependencyStartTaskId!,
+              successorTaskId: hit.task.id,
+              type: type,
+            );
+            // Notify listener (if provided) or update local list?
+            // The logic from `addDependency` was:
+            // if (onDependencyAdd != null) onDependencyAdd!(newDep);
+            // else _dependencies.add(newDep); notifyListeners();
+            //
+            // But existing addDependency call does:
+            // addDependency(newDep); (Method on VM?)
+            // Yes, I verified LegacyGanttViewModel has addDependency.
+            addDependency(newDep);
+          }
+        }
+      }
+      _panType = PanType.none;
+      _dependencyStartTaskId = null;
+      _dependencyStartSide = null;
+      _currentDragPosition = null;
       notifyListeners();
     } else {
       onVerticalPanEnd(details);
@@ -1670,10 +1753,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  @visibleForTesting
+  ({LegacyGanttTask task, TaskPart part})? getTaskPartAt(Offset localPosition) => _getTaskPartAtPosition(localPosition);
+
   /// Determines which part of which task is at a given local position.
   ///
   /// It checks for the start handle, end handle, or body of a task, respecting
   /// stacking order.
+  ///
+  /// This method iterates through the tasks in the tapped row and stack index, calculating
+  /// their bounds and handle areas to determine if a hit occurred. It iterates in reverse
+  /// order (drawing order) to ensure the topmost task is hit first.
+  ///
+  /// Returns a record containing the task and the part that was hit, or null if no task was hit.
+  ///
+  /// [localPosition] is the position of the pointer relative to the widget.
+  ///
+  /// Note: The visual drawing order determines which task is "on top" when checking for hits.
+  /// Conflicts should ideally be resolved by z-index or a defined stacking order.
   ({LegacyGanttTask task, TaskPart part})? _getTaskPartAtPosition(Offset localPosition) {
     if (localPosition.dy < timeAxisHeight) {
       return null;
@@ -1910,5 +2007,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Handles horizontal scroll events, e.g., from a mouse wheel or trackpad.
   void onHorizontalScroll(double delta) {
     _handleHorizontalScroll(delta);
+  }
+
+  bool _wouldCreateCycle(String fromId, String toId) {
+    if (fromId == toId) return true;
+
+    final visited = <String>{};
+    final queue = <String>[toId];
+
+    while (queue.isNotEmpty) {
+      final current = queue.removeAt(0);
+      if (current == fromId) return true;
+
+      if (visited.contains(current)) continue;
+      visited.add(current);
+
+      final nextSteps = dependencies.where((d) => d.predecessorTaskId == current).map((d) => d.successorTaskId);
+      queue.addAll(nextSteps);
+    }
+    return false;
   }
 }
