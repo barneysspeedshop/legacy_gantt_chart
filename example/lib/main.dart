@@ -88,6 +88,9 @@ class _GanttViewState extends State<GanttView> {
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
     _passwordController = TextEditingController(text: 'password');
+    _viewModel.onGridExpansionChange = (rowId, isExpanded) {
+      _gridKey.currentState?.setRowExpansion(rowId, isExpanded);
+    };
   }
 
   @override
@@ -916,7 +919,7 @@ class _GanttViewState extends State<GanttView> {
                                           allowSorting: false,
                                           // Combine seedVersion (for full resets) with expansionSignature (for remote/local toggles).
                                           // This ensures the grid is recreated, respecting the new initialExpandedRowIds.
-                                          key: ValueKey('local_grid_${vm.seedVersion}_${vm.expansionSignature}'),
+                                          key: ValueKey('local_grid_${vm.seedVersion}'),
                                           mode: DataGridMode.client,
                                           clientData: vm.flatGridData,
                                           toMap: (item) => item,

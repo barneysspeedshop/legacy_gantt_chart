@@ -158,6 +158,9 @@ class GanttViewModel extends ChangeNotifier {
   int get seedVersion => _seedVersion;
   bool _pendingSeedReset = false;
 
+  /// Callback to notify the grid widget to update expansion state row.
+  void Function(String rowId, bool isExpanded)? onGridExpansionChange;
+
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
 
@@ -745,6 +748,7 @@ class GanttViewModel extends ChangeNotifier {
         'name': parent.name,
         'completion': parent.completion,
         'parentId': null, // Explicitly set parentId to null for root nodes
+        'isExpanded': parent.isExpanded,
       });
       for (final child in parent.children) {
         flatList.add({
@@ -752,6 +756,7 @@ class GanttViewModel extends ChangeNotifier {
           'name': child.name,
           'completion': child.completion,
           'parentId': parent.id,
+          'isExpanded': child.isExpanded,
         });
       }
     }
@@ -2513,6 +2518,7 @@ class GanttViewModel extends ChangeNotifier {
 
         // We can now skip the top-down adjustment logic later on.
         item.isExpanded = !item.isExpanded; // Toggle state
+        onGridExpansionChange?.call(item.id, item.isExpanded);
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded);
         }
@@ -2543,6 +2549,7 @@ class GanttViewModel extends ChangeNotifier {
     // This path is taken for expansions or for top-down collapses.
     // 4. Toggle the expansion state.
     item.isExpanded = !item.isExpanded;
+    onGridExpansionChange?.call(item.id, item.isExpanded);
 
     if (_useLocalDatabase) {
       _localRepository.updateResourceExpansion(item.id, item.isExpanded);

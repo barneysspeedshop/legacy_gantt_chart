@@ -1,3 +1,7 @@
+## 4.4.1
+
+* **EXAMPLE FIX**: Fix for an issue that caused the grid to repaint excessively
+
 ## 4.4.0
 
 * **FEATURE**: Implemented the ability to draw tasks using a draw tool
