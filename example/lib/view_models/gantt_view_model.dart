@@ -42,6 +42,7 @@ class GanttViewModel extends ChangeNotifier {
   /// The main list of tasks displayed on the Gantt chart, including regular tasks,
   /// summary tasks, highlights, and conflict indicators.
   List<LegacyGanttTask> _ganttTasks = [];
+  List<LegacyGanttTask> get data => UnmodifiableListView(_ganttTasks);
 
   /// The complete source list of tasks from the database or API.
   /// Used for filtering visible rows without losing data.
@@ -80,6 +81,9 @@ class GanttViewModel extends ChangeNotifier {
   bool _showConflicts = true;
   bool _showEmptyParentRows = false;
   bool _showDependencies = true;
+
+  bool _showCriticalPath = false;
+  Map<String, CpmTaskStats> _cpmStats = {};
 
   /// The width of the resize handles on the edges of task bars.
   double _resizeHandleWidth = 10.0;
@@ -341,6 +345,163 @@ class GanttViewModel extends ChangeNotifier {
     _isLoading = false;
     _syncToController();
     notifyListeners();
+  }
+
+  Future<void> convertTaskType(LegacyGanttTask task, String newType) async {
+    LegacyGanttTask newTask = task;
+    String ganttType = 'task';
+
+    if (newType == 'milestone') {
+      ganttType = 'milestone';
+      // Milestones typically have 0 duration, or start == end.
+      // We'll set end = start.
+      newTask = task.copyWith(
+        isMilestone: true,
+        isSummary: false,
+        end: task.start,
+        // Optional: append (Milestone) to name? No, cleaner to keep name.
+      );
+    } else if (newType == 'summary') {
+      ganttType = 'summary';
+      // Summaries are parents. If this task has no children, it's just a container.
+      // Conversion doesn't strictly imply structure change here, just visualization style.
+      DateTime newEnd = task.end;
+      // If converting from milestone (0 duration), give it some duration so it's visible.
+      if (task.isMilestone && task.start == task.end) {
+        newEnd = task.start.add(const Duration(days: 1));
+      }
+      newTask = task.copyWith(
+        isMilestone: false,
+        isSummary: true,
+        end: newEnd,
+      );
+    } else if (newType == 'task') {
+      ganttType = 'task';
+      // Standard task.
+      DateTime newEnd = task.end;
+      // If converting from milestone (0 duration), give it some duration so it's visible.
+      if (task.isMilestone && task.start == task.end) {
+        newEnd = task.start.add(const Duration(days: 1));
+      }
+      newTask = task.copyWith(
+        isMilestone: false,
+        isSummary: false,
+        end: newEnd,
+      );
+    }
+
+    // Local Repository Update
+    await _localRepository.insertOrUpdateTask(newTask);
+
+    // Sync Update
+    if (_syncClient != null) {
+      await _syncClient!.sendOperation(Operation(
+        type: 'UPDATE_TASK',
+        data: {
+          'id': newTask.id,
+          'start_date': newTask.start.millisecondsSinceEpoch,
+          'end_date': newTask.end.millisecondsSinceEpoch,
+          'gantt_type': ganttType,
+          'is_summary': newTask.isSummary, // explicit field sometimes used
+          // 'is_milestone': newTask.isMilestone, // if used
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
+    }
+  }
+
+  Future<void> updateTask(LegacyGanttTask task) async {
+    // Local Repository Update
+    await _localRepository.insertOrUpdateTask(task);
+
+    // Sync Update
+    if (_syncClient != null) {
+      String ganttType = 'task';
+      if (task.isMilestone) {
+        ganttType = 'milestone';
+      } else if (task.isSummary) {
+        ganttType = 'summary';
+      }
+
+      await _syncClient!.sendOperation(Operation(
+        type: 'UPDATE_TASK',
+        data: {
+          'id': task.id,
+          'name': task.name,
+          'start_date': task.start.millisecondsSinceEpoch,
+          'end_date': task.end.millisecondsSinceEpoch,
+          'gantt_type': ganttType,
+          'is_summary': task.isSummary,
+        },
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user', // Should ideally represent the current user
+      ));
+    }
+  }
+
+  Map<String, dynamic> exportToJson() {
+    // 1. Convert Tasks
+    final exportedEvents = _ganttTasks
+        .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
+        .map((t) => GanttEventData(
+              id: t.id,
+              name: t.name,
+              utcStartDate: t.start.toUtc().toIso8601String(),
+              utcEndDate: t.end.toUtc().toIso8601String(),
+              resourceId: t.rowId,
+              referenceData: GanttReferenceData(
+                taskName: t.name,
+                taskColor: t.color?.toARGB32().toRadixString(16).padLeft(8, '0'),
+                taskTextColor: t.textColor?.toARGB32().toRadixString(16).padLeft(8, '0'),
+              ),
+            ))
+        .toList();
+
+    // 2. Convert Resources (from _localResources or _gridData)
+    // We'll use _localResources as it is the source of truth
+    final exportedResources = _localResources.where((r) => r.parentId == null).map((parent) {
+      final children = _localResources
+          .where((r) => r.parentId == parent.id)
+          .map((child) => GanttJobData(
+                id: child.id,
+                name: child.name ?? 'Unnamed',
+                status: 'Open',
+              ))
+          .toList();
+      return GanttResourceData(
+        id: parent.id,
+        name: parent.name ?? 'Unnamed',
+        children: children,
+      );
+    }).toList();
+
+    // 3. Construct Response
+    final response = GanttResponse(
+      success: true,
+      eventsData: exportedEvents,
+      resourcesData: exportedResources,
+      assignmentsData: [], // Re-generate if needed, but resourceId in event is usually sufficient
+      resourceTimeRangesData: _apiResponse?.resourceTimeRangesData ?? [],
+    );
+
+    // 4. Wrap with conflict indicators if desired, but typically we export the *source* data.
+    // The user requested "export to JSON" which implies the data structure they can load back in.
+    // So we stick to the GanttResponse structure.
+
+    // However, the original export included 'conflictIndicators' as a root key in the final map.
+    // We should preserve that pattern.
+    final json = response.toJson();
+    json['conflictIndicators'] = _conflictIndicators
+        .map((c) => {
+              'id': c.id,
+              'rowId': c.rowId,
+              'start': c.start.toIso8601String(),
+              'end': c.end.toIso8601String(),
+            })
+        .toList();
+
+    return json;
   }
 
   Future<void>? _activeSeedingFuture;
@@ -678,6 +839,7 @@ class GanttViewModel extends ChangeNotifier {
   bool get showConflicts => _showConflicts;
   bool get showEmptyParentRows => _showEmptyParentRows;
   bool get showDependencies => _showDependencies;
+  bool get showCriticalPath => _showCriticalPath;
   double get resizeHandleWidth => _resizeHandleWidth;
   DateTime get startDate => _startDate;
   GanttLoadingIndicatorType get loadingIndicatorType => _loadingIndicatorType;
@@ -805,6 +967,25 @@ class GanttViewModel extends ChangeNotifier {
     _gridScrollController.addListener(_broadcastPresence);
 
     _areScrollListenersAttached = true;
+  }
+
+  void _calculateCpm() {
+    if (!_showCriticalPath) {
+      _cpmStats = {};
+      return;
+    }
+    final calculator = CriticalPathCalculator();
+    final result = calculator.calculate(tasks: _ganttTasks, dependencies: _dependencies);
+    _cpmStats = result.taskStats;
+  }
+
+  Map<String, CpmTaskStats> get cpmStats => _cpmStats;
+
+  void setShowCriticalPath(bool value) {
+    if (_showCriticalPath == value) return;
+    _showCriticalPath = value;
+    _calculateCpm();
+    notifyListeners();
   }
 
   void _syncGanttScroll() {
@@ -2223,17 +2404,25 @@ class GanttViewModel extends ChangeNotifier {
     if (resource == null) return;
 
     // Show dialog to create a new task
+    // Show dialog to create a new task
     await showDialog(
       context: context,
-      builder: (context) => CreateTaskAlertDialog(
+      builder: (context) => TaskDialog(
         initialTime: time,
         resourceName: resource.name ?? 'Unknown',
         rowId: rowId,
         defaultStartTime: _defaultStartTime,
         defaultEndTime: _defaultEndTime,
-        onCreate: (newTask) {
+        onSubmit: (newTask) {
           _createTask(newTask);
-          Navigator.pop(context); // Close the dialog after creation
+          // Navigator pop handled inside dialog now? Wait, my TaskDialog implementation pops it.
+          // Let's check TaskDialog submit logic. Yes, it pops.
+          // So no need to pop here?
+          // Previous implementation: callback did creation then pop.
+          // New implementation: submits then pops itself.
+          // So I don't need to pop here?
+          // Let's reread TaskDialog. _submit calls widget.onSubmit(newTask); Navigator.pop(context);
+          // So callback just needs to create task.
         },
       ),
     );

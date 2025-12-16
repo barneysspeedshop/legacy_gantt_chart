@@ -1,3 +1,11 @@
+## 4.6.0
+
+* **FEATURE**: Implement basic Critical Path Analysis
+* **EXAMPLE FEATURE**: Implement the ability to convert task types
+* **EXAMPLE FEATURE**: Implement the ability to secondary click or long press a task to launch its context menu
+* **EXAMPLE FEATURE**: Implement the ability to set task color and task text color
+* **FIX**: Fix for an issue that caused JSON export data to be stale
+
 ## 4.5.0
 
 * **FEATURE**: Implement a `GanttTool.drawDependencies` tool to enable the ability to draw dependency lines

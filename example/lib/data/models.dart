@@ -173,27 +173,27 @@ class GanttEventData {
 class GanttReferenceData {
   final String? taskName;
   final String? taskColor; // Hex string without #
-  final String? statusOptionIcon; // URL or identifier for an icon
+  final String? taskIcon; // URL or identifier for an icon
   final String? taskTextColor; // Added: Text color for the status option
 
   GanttReferenceData({
     this.taskName,
     this.taskColor,
-    this.statusOptionIcon,
+    this.taskIcon,
     this.taskTextColor, // Added to constructor
   });
 
   static GanttReferenceData fromJson(Map<String, dynamic> json) => GanttReferenceData(
         taskName: json['taskName'] as String?,
         taskColor: json['taskColor'] as String?,
-        statusOptionIcon: json['statusOptionIcon'] as String?,
+        taskIcon: json['taskIcon'] as String?,
         taskTextColor: json['taskTextColor'] as String?, // Added fromJson
       );
 
   Map<String, dynamic> toJson() => {
         'taskName': taskName,
         'taskColor': taskColor,
-        'statusOptionIcon': statusOptionIcon,
+        'taskIcon': taskIcon,
         'taskTextColor': taskTextColor,
       };
 }

@@ -15,6 +15,7 @@ import 'ui/widgets/dashboard_header.dart';
 import 'ui/widgets/custom_header_painter.dart';
 import 'ui/widgets/dependency_dialog.dart';
 import 'view_models/gantt_view_model.dart';
+import 'ui/dialogs/create_task_dialog.dart';
 
 import 'platform/platform_init.dart'
     if (dart.library.io) 'platform/platform_init_io.dart'
@@ -74,6 +75,7 @@ class _GanttViewState extends State<GanttView> {
   bool _showCursors = true;
   Timer? _bulkUpdateTimer;
   int _bulkUpdateCount = 0;
+  OverlayEntry? _tooltipOverlay;
 
   late final TextEditingController _uriController;
   late final TextEditingController _tenantIdController;
@@ -245,6 +247,35 @@ class _GanttViewState extends State<GanttView> {
         caption: 'Delete',
         onTap: () => _handleDeleteTask(task),
       ),
+      ContextMenuItem(
+        caption: 'Convert to...',
+        submenuBuilder: (context) async {
+          final items = <ContextMenuItem>[];
+          if (!task.isMilestone && !task.isSummary) {
+            items.add(ContextMenuItem(
+              caption: 'Standard Task',
+              onTap: () => _viewModel.convertTaskType(task, 'task'),
+            ));
+          }
+          if (!task.isMilestone) {
+            items.add(ContextMenuItem(
+              caption: 'Milestone',
+              onTap: () => _viewModel.convertTaskType(task, 'milestone'),
+            ));
+          }
+          if (!task.isSummary) {
+            items.add(ContextMenuItem(
+              caption: 'Summary Task',
+              onTap: () => _viewModel.convertTaskType(task, 'summary'),
+            ));
+          }
+          return items;
+        },
+      ),
+      ContextMenuItem(
+        caption: 'Edit...',
+        onTap: () => _showEditTaskDialog(context, task),
+      ),
       if (_viewModel.dependencyCreationEnabled) ContextMenuItem.divider,
       if (_viewModel.dependencyCreationEnabled)
         ContextMenuItem(
@@ -255,7 +286,7 @@ class _GanttViewState extends State<GanttView> {
             }
             return availableTasks
                 .map((otherTask) => ContextMenuItem(
-                      caption: otherTask.name ?? 'Unnamed Task',
+                      caption: otherTask.name,
                       onTap: () {
                         _viewModel.addDependency(otherTask.id, task.id);
                         _showSnackbar('Added dependency for ${task.name}');
@@ -273,7 +304,7 @@ class _GanttViewState extends State<GanttView> {
             }
             return availableTasks
                 .map((otherTask) => ContextMenuItem(
-                      caption: otherTask.name ?? 'Unnamed Task',
+                      caption: otherTask.name,
                       onTap: () {
                         _viewModel.addDependency(task.id, otherTask.id);
                         _showSnackbar('Added dependency for ${task.name}');
@@ -641,6 +672,16 @@ class _GanttViewState extends State<GanttView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('Show Critical Path'),
+                Switch(
+                  value: vm.showCriticalPath,
+                  onChanged: vm.setShowCriticalPath,
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 const Text('Show Cursors'),
                 Switch(
                   value: _showCursors,
@@ -754,8 +795,8 @@ class _GanttViewState extends State<GanttView> {
   /// This demonstrates how you might extract the data from the chart for saving or sharing.
   void _showJsonExportDialog(GanttViewModel vm) {
     // This function builds the JSON structure from the original API response data.
-    final apiResponse = vm.apiResponse;
-    if (apiResponse == null) {
+    // We now use the live data from the view model.
+    if (vm.data.isEmpty) {
       // Handle case where data hasn't been loaded yet.
       showDialog<void>(
         context: context,
@@ -774,18 +815,7 @@ class _GanttViewState extends State<GanttView> {
       return;
     }
 
-    // We will rebuild the JSON from the stored API response,
-    // which matches the structure you provided.
-    final exportData = {
-      'success': apiResponse.success,
-      'eventsData': apiResponse.eventsData
-          .map((e) => e.toJson()) // Assuming toJson exists on your models
-          .toList(),
-      'resourcesData': apiResponse.resourcesData.map((r) => r.toJson()).toList(),
-      'assignmentsData': apiResponse.assignmentsData.map((a) => a.toJson()).toList(),
-      'resourceTimeRangesData': apiResponse.resourceTimeRangesData.map((r) => r.toJson()).toList(),
-      'conflictIndicators': vm.conflictIndicators.map((c) => c.toJson()).toList(),
-    };
+    final exportData = vm.exportToJson();
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(
       // Instead of converting internal GanttTask objects,
@@ -1112,6 +1142,92 @@ class _GanttViewState extends State<GanttView> {
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,
                                                 syncClient: vm.syncClient,
                                                 showCursors: _showCursors,
+                                                showCriticalPath: vm.showCriticalPath,
+                                                onTaskSecondaryTap: (task, position) =>
+                                                    _showTaskContextMenu(context, task, position),
+                                                onTaskLongPress: (task, position) =>
+                                                    _showTaskContextMenu(context, task, position),
+                                                onTaskHover: (task, globalPosition) {
+                                                  // Show tooltip overlay
+                                                  if (task == null) {
+                                                    _tooltipOverlay?.remove();
+                                                    _tooltipOverlay = null;
+                                                    return;
+                                                  }
+
+                                                  // Format content
+                                                  final sb = StringBuffer();
+                                                  sb.writeln(task.name);
+                                                  sb.writeln('Start: ${task.start.toString().substring(0, 16)}');
+                                                  sb.writeln('End: ${task.end.toString().substring(0, 16)}');
+
+                                                  if (vm.showCriticalPath) {
+                                                    final stats = vm.cpmStats[task.id];
+                                                    if (stats != null) {
+                                                      sb.writeln('');
+                                                      sb.writeln('Critical: ${stats.float <= 0 ? "YES" : "NO"}');
+                                                      sb.writeln(
+                                                          'Float: ${Duration(minutes: stats.float).inDays} days');
+
+                                                      if (vm.totalStartDate != null) {
+                                                        final esDate =
+                                                            vm.totalStartDate!.add(Duration(minutes: stats.earlyStart));
+                                                        final lfDate =
+                                                            vm.totalStartDate!.add(Duration(minutes: stats.lateFinish));
+                                                        final dateFormat = DateFormat('MM/dd HH:mm');
+                                                        sb.writeln('Early Start: ${dateFormat.format(esDate)}');
+                                                        sb.writeln('Late Finish: ${dateFormat.format(lfDate)}');
+                                                      }
+                                                    }
+                                                  }
+
+                                                  if (_tooltipOverlay == null) {
+                                                    _tooltipOverlay = OverlayEntry(
+                                                        builder: (context) => Positioned(
+                                                              left: globalPosition.dx + 10,
+                                                              top: globalPosition.dy + 10,
+                                                              child: Material(
+                                                                elevation: 4,
+                                                                color: Colors.black87,
+                                                                borderRadius: BorderRadius.circular(4),
+                                                                child: Padding(
+                                                                  padding: const EdgeInsets.all(8.0),
+                                                                  child: Text(
+                                                                    sb.toString().trim(),
+                                                                    style: const TextStyle(
+                                                                        color: Colors.white, fontSize: 12),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ));
+                                                    Overlay.of(context).insert(_tooltipOverlay!);
+                                                  } else {
+                                                    // Rebuild/reposition if needed, but for simplicity we assume
+                                                    // the overlay might need to be removed and re-added or we use a sophisticated tooltip.
+                                                    // For this quick fix, let's just remove and re-add to update position/content
+                                                    _tooltipOverlay?.remove();
+                                                    _tooltipOverlay = OverlayEntry(
+                                                        builder: (context) => Positioned(
+                                                              left: globalPosition.dx + 10,
+                                                              top: globalPosition.dy + 10,
+                                                              child: Material(
+                                                                elevation: 4,
+                                                                color: Colors.black87,
+                                                                borderRadius: BorderRadius.circular(4),
+                                                                child: Padding(
+                                                                  padding: const EdgeInsets.all(8.0),
+                                                                  child: Text(
+                                                                    sb.toString().trim(),
+                                                                    style: const TextStyle(
+                                                                        color: Colors.white, fontSize: 12),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ));
+                                                    Overlay.of(context).insert(_tooltipOverlay!);
+                                                  }
+                                                },
+
                                                 taskGrouper: (task) => task.rowId,
                                                 // --- Custom Builders ---
                                                 timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
@@ -1186,8 +1302,7 @@ class _GanttViewState extends State<GanttView> {
                                                   vm.setFocusedTaskId(task.id);
                                                   _showSnackbar('Selected task: ${task.name}');
                                                 },
-                                                onTaskHover: (task, globalPosition) =>
-                                                    vm.onTaskHover(task, context, globalPosition),
+
                                                 onDependencyAdd: (dependency) => vm.addDependencyObject(dependency),
 
                                                 // --- Theming and Styling ---
@@ -1391,147 +1506,18 @@ class _GanttViewState extends State<GanttView> {
           ),
         ),
       ));
-}
 
-/// A stateful widget for the "Create Task" dialog.
-class _CreateTaskAlertDialog extends StatefulWidget {
-  final DateTime initialTime;
-  final String resourceName;
-  final String rowId;
-  final Function(LegacyGanttTask) onCreate;
-  final TimeOfDay defaultStartTime;
-  final TimeOfDay defaultEndTime;
-
-  const _CreateTaskAlertDialog({
-    required this.initialTime,
-    required this.resourceName,
-    required this.rowId,
-    required this.onCreate,
-    required this.defaultStartTime,
-    required this.defaultEndTime,
-  });
-
-  @override
-  State<_CreateTaskAlertDialog> createState() => _CreateTaskAlertDialogState();
-}
-
-class _CreateTaskAlertDialogState extends State<_CreateTaskAlertDialog> {
-  late final TextEditingController _nameController;
-  late DateTime _startDate;
-  late DateTime _endDate;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: 'New Task for ${widget.resourceName}');
-    // Select the default text so the user can easily overwrite it.
-    _nameController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: _nameController.text.length,
-    );
-
-    // Use the date part from where the user clicked, but apply the default times.
-    final datePart = widget.initialTime;
-    _startDate = DateTime(
-      datePart.year,
-      datePart.month,
-      datePart.day,
-      widget.defaultStartTime.hour,
-      widget.defaultStartTime.minute,
-    );
-    _endDate = DateTime(
-      datePart.year,
-      datePart.month,
-      datePart.day,
-      widget.defaultEndTime.hour,
-      widget.defaultEndTime.minute,
-    );
-
-    // Handle overnight case where end time is on the next day.
-    if (_endDate.isBefore(_startDate)) {
-      _endDate = _endDate.add(const Duration(days: 1));
-    }
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (_nameController.text.trim().isNotEmpty) {
-      final newTask = LegacyGanttTask(
-          id: 'new_task_${DateTime.now().millisecondsSinceEpoch}',
-          rowId: widget.rowId,
-          name: _nameController.text.trim(),
-          start: _startDate,
-          end: _endDate);
-      widget.onCreate(newTask);
-      Navigator.pop(context); // Close the dialog on successful creation
-    }
-  }
-
-  Future<void> _selectDateTime(BuildContext context, bool isStart) async {
-    final initialDate = isStart ? _startDate : _endDate;
-
-    final pickedDate = await showDatePicker(
+  Future<void> _showEditTaskDialog(BuildContext context, LegacyGanttTask task) async {
+    await showDialog(
       context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2030),
+      builder: (context) => TaskDialog(
+        task: task,
+        onSubmit: (updatedTask) {
+          _viewModel.updateTask(updatedTask);
+        },
+        defaultStartTime: const TimeOfDay(hour: 9, minute: 0),
+        defaultEndTime: const TimeOfDay(hour: 17, minute: 0),
+      ),
     );
-
-    if (pickedDate == null || !context.mounted) return;
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initialDate),
-    );
-
-    if (pickedTime == null) return;
-
-    setState(() {
-      final newDateTime =
-          DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
-      if (isStart) {
-        _startDate = newDateTime;
-        if (_endDate.isBefore(_startDate)) _endDate = _startDate.add(const Duration(hours: 1));
-      } else {
-        _endDate = newDateTime;
-        if (_startDate.isAfter(_endDate)) _startDate = _endDate.subtract(const Duration(hours: 1));
-      }
-    });
   }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        key: const Key('createTaskDialog'),
-        title: Text('Create Task for ${widget.resourceName}'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: _nameController,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Task Name'),
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('Start:'),
-            TextButton(
-                onPressed: () => _selectDateTime(context, true),
-                child: Text(DateFormat.yMd().add_jm().format(_startDate)))
-          ]),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('End:'),
-            TextButton(
-                onPressed: () => _selectDateTime(context, false),
-                child: Text(DateFormat.yMd().add_jm().format(_endDate)))
-          ]),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(onPressed: _submit, child: const Text('Create')),
-        ],
-      );
 }

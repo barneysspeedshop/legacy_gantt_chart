@@ -39,6 +39,9 @@ class LegacyGanttTheme {
   final bool showRowBorders;
   final Color? rowBorderColor;
 
+  /// The color used to highlight tasks and dependencies on the critical path.
+  final Color criticalPathColor;
+
   LegacyGanttTheme({
     required this.barColorPrimary,
     required this.barColorSecondary,
@@ -60,6 +63,7 @@ class LegacyGanttTheme {
     this.weekendColor = const Color.fromRGBO(0, 0, 0, 0.04), // Colors.black.withAlpha(0.04)
     this.barHeightRatio = 0.7,
     this.barCornerRadius = const Radius.circular(4.0),
+    this.criticalPathColor = const Color.fromRGBO(244, 67, 54, 1.0), // Colors.red
   }) : axisTextStyle = axisTextStyle ?? TextStyle(fontSize: 12, color: textColor);
 
   LegacyGanttTheme copyWith({
@@ -83,6 +87,7 @@ class LegacyGanttTheme {
     bool? showRowBorders,
     Color? rowBorderColor,
     Color? weekendColor,
+    Color? criticalPathColor,
   }) =>
       LegacyGanttTheme(
         barColorPrimary: barColorPrimary ?? this.barColorPrimary,
@@ -106,6 +111,7 @@ class LegacyGanttTheme {
         showRowBorders: showRowBorders ?? this.showRowBorders,
         rowBorderColor: rowBorderColor ?? this.rowBorderColor,
         weekendColor: weekendColor ?? this.weekendColor,
+        criticalPathColor: criticalPathColor ?? this.criticalPathColor,
       );
 
   /// Creates a default theme based on the application's [ThemeData].
@@ -128,5 +134,6 @@ class LegacyGanttTheme {
         axisTextStyle: theme.textTheme.bodySmall ?? TextStyle(fontSize: 12, color: theme.colorScheme.onSurface),
         taskTextStyle: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onPrimary) ??
             const TextStyle(fontSize: 12, color: Colors.white),
+        criticalPathColor: Colors.red, // Default critical path color
       );
 }

@@ -181,6 +181,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// A callback that is invoked when a new dependency is created via the Draw Dependencies tool.
   final Function(LegacyGanttTaskDependency dependency)? onDependencyAdd;
 
+  /// Callback when a task is secondary tapped (e.g. right click).
+  final Function(LegacyGanttTask task, Offset position)? onTaskSecondaryTap;
+
+  /// Callback when a task is long pressed.
+  final Function(LegacyGanttTask task, Offset position)? onTaskLongPress;
+
   /// The background color of the tooltip that appears during drag or resize operations.
   /// If not provided, it defaults to the theme's `barColorPrimary`.
   final Color? resizeTooltipBackgroundColor;
@@ -327,6 +333,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Whether to show cursors from other users when connected via [syncClient].
   final bool showCursors;
 
+  /// Whether to highlight the critical path on the chart.
+  final bool showCriticalPath;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -359,6 +368,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.onEmptySpaceClick,
     this.onTaskDrawEnd,
     this.onDependencyAdd,
+    this.onTaskSecondaryTap,
+    this.onTaskLongPress,
     this.resizeTooltipBackgroundColor,
     this.resizeTooltipFontColor,
     this.resizeHandleWidth = 10.0,
@@ -381,6 +392,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.syncClient,
     this.taskGrouper,
     this.showCursors = true,
+    this.showCriticalPath = false,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -427,6 +439,15 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       if (oldWidget.axisHeight != widget.axisHeight) {
         _internalViewModel!.updateAxisHeight(widget.axisHeight);
       }
+
+      if (oldWidget.showCriticalPath != widget.showCriticalPath) {
+        _internalViewModel!.showCriticalPath = widget.showCriticalPath;
+      }
+
+      // Ensure callback is fresh (captures latest scope/closures)
+      _internalViewModel!.onTaskHover = widget.onTaskHover;
+      _internalViewModel!.onTaskSecondaryTap = widget.onTaskSecondaryTap;
+      _internalViewModel!.onTaskLongPress = widget.onTaskLongPress;
     }
   }
 
@@ -588,6 +609,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             },
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
+            onTaskSecondaryTap: widget.onTaskSecondaryTap,
+            onTaskLongPress: widget.onTaskLongPress,
             taskBarBuilder: widget.taskBarBuilder,
             resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
             scrollController: widget.scrollController,
@@ -610,7 +633,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 widget.controller!.setSelectedTaskIds(ids);
               }
             },
-          )..showRemoteCursors = widget.showCursors;
+          )
+            ..showRemoteCursors = widget.showCursors
+            ..showCriticalPath = widget.showCriticalPath;
           return _internalViewModel!;
         },
         child: Consumer<LegacyGanttViewModel>(
@@ -687,6 +712,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                           onPanEnd: (details) => vm.onPanEnd(details),
                           onTapDown: (details) => vm.onTapDown(details),
                           onTap: () => vm.onTap(),
+                          onSecondaryTapUp: (details) =>
+                              vm.onSecondaryTap(details.localPosition, details.globalPosition),
+                          onLongPressStart: (details) => vm.onLongPress(details.localPosition, details.globalPosition),
                           onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
                           child: MouseRegion(
                             cursor: vm.cursor,
@@ -751,6 +779,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   vm.dependencyStartSide == TaskPart.startHandle,
                                               dependencyDragCurrentPosition: vm.currentDragPosition,
                                               hoveredTaskForDependency: vm.dependencyHoveredTaskId,
+                                              criticalTaskIds: vm.criticalTaskIds,
+                                              criticalDependencies: vm.criticalDependencies,
                                             ),
                                           ),
                                         ),

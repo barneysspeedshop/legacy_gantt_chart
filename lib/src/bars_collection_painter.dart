@@ -90,6 +90,8 @@ class BarsCollectionPainter extends CustomPainter {
   final String? hoveredTaskForDependency;
   final Set<String> selectedTaskIds;
   final Map<String, (DateTime, DateTime)> bulkGhostTasks;
+  final Set<String> criticalTaskIds;
+  final Set<LegacyGanttTaskDependency> criticalDependencies;
 
   BarsCollectionPainter({
     required this.conflictIndicators,
@@ -118,6 +120,8 @@ class BarsCollectionPainter extends CustomPainter {
     this.hoveredTaskForDependency,
     this.selectedTaskIds = const {},
     this.bulkGhostTasks = const {},
+    this.criticalTaskIds = const {},
+    this.criticalDependencies = const {},
   });
 
   @override
@@ -411,6 +415,12 @@ class BarsCollectionPainter extends CustomPainter {
               ..strokeWidth = 2.0;
             // Inflate slightly so it surrounds the bar
             canvas.drawRRect(barRRect.inflate(1.0), selectionPaint);
+          } else if (criticalTaskIds.contains(task.id)) {
+            final Paint criticalPaint = Paint()
+              ..color = theme.criticalPathColor
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.0;
+            canvas.drawRRect(barRRect, criticalPaint);
           }
 
           // --- Draw dependency handles ---
@@ -800,6 +810,11 @@ class BarsCollectionPainter extends CustomPainter {
       ..color = theme.dependencyLineColor
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
+
+    if (criticalDependencies.contains(dependency)) {
+      paint.color = theme.criticalPathColor;
+      paint.strokeWidth = 2.0;
+    }
 
     final path = Path();
     path.moveTo(startX, startY);
