@@ -926,6 +926,7 @@ class _GanttViewState extends State<GanttView> {
                                           rowIdKey: 'id',
                                           isTree: true,
                                           parentIdKey: 'parentId',
+                                          isExpandedKey: 'isExpanded',
                                           rowHeightBuilder: (data) {
                                             final rowId = data['id'] as String;
                                             return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
