@@ -239,9 +239,36 @@ class GanttViewModel extends ChangeNotifier {
       return;
     }
 
-    // 1. Build Grid Data first to determine hierarchy and visibility (expansion state)
+    // 1. Capture previous expansion state
+    final oldExpansionState = <String, bool>{};
+    void captureExpansion(List<GanttGridData> nodes) {
+      for (final node in nodes) {
+        oldExpansionState[node.id] = node.isExpanded;
+        captureExpansion(node.children);
+      }
+    }
+
+    captureExpansion(_gridData);
+
+    // 2. Build Grid Data first to determine hierarchy and visibility (expansion state)
     _gridData = _buildGridDataFromResources(_localResources, _allGanttTasks);
     _cachedFlatGridData = null; // Invalidate cache
+
+    // 3. Detect and notify differences for existing rows
+    // This allows the UnifiedDataGrid to update its internal state without a full rebuild/key change.
+    void checkExpansionDiff(List<GanttGridData> nodes) {
+      for (final node in nodes) {
+        if (oldExpansionState.containsKey(node.id)) {
+          final oldExpanded = oldExpansionState[node.id]!;
+          if (oldExpanded != node.isExpanded) {
+            onGridExpansionChange?.call(node.id, node.isExpanded);
+          }
+        }
+        checkExpansionDiff(node.children);
+      }
+    }
+
+    checkExpansionDiff(_gridData);
 
     if (_pendingSeedReset) {
       _seedVersion++;
