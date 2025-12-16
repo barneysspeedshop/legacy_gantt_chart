@@ -88,9 +88,6 @@ class _GanttViewState extends State<GanttView> {
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
     _passwordController = TextEditingController(text: 'password');
-    _viewModel.onGridExpansionChange = (rowId, isExpanded) {
-      _gridKey.currentState?.setRowExpansion(rowId, isExpanded);
-    };
   }
 
   @override

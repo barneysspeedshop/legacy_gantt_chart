@@ -564,9 +564,15 @@ class BarsCollectionPainter extends CustomPainter {
 
           // Generate a color for the user if possible, or use ghost color with unique opacity/shade
           final userColor = Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
-          final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
 
-          canvas.drawRRect(barRRect, barPaint);
+          if (originalTask.isMilestone) {
+            final double milestoneX = scale(ghost.start!);
+            final double milestoneY = barTop + barVerticalCenterOffset;
+            _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
+          } else {
+            final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
+            canvas.drawRRect(barRRect, barPaint);
+          }
 
           // Optional: Draw user name or Label? For now, just the bar.
         }
@@ -629,7 +635,7 @@ class BarsCollectionPainter extends CustomPainter {
   }
 
   void _drawMilestone(Canvas canvas, LegacyGanttTask task, double x, double y, double height, bool isBeingDragged) {
-    final paint = Paint()..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.3 : 1.0);
+    final paint = Paint()..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.5 : 1.0);
 
     final double diamondSize = height;
     final path = Path();

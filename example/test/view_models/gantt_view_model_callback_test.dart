@@ -11,7 +11,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('GanttViewModel calls onGridExpansionChange on remote update', () async {
+  test('GanttViewModel updates flatGridData on remote update', () async {
     // 1. Setup DB
     GanttDb.overridePath = ':memory:';
     await GanttDb.reset();
@@ -35,24 +35,20 @@ void main() {
     // Wait for init
     await Future.delayed(const Duration(milliseconds: 200));
 
-    // 4. Setup callback tracker
-    String? callbackRowId;
-    bool? callbackIsExpanded;
-    vm.onGridExpansionChange = (rowId, isExpanded) {
-      callbackRowId = rowId;
-      callbackIsExpanded = isExpanded;
-    };
+    // 4. Verify initial state
+    var p1 = vm.flatGridData.firstWhere((item) => item['id'] == 'p1');
+    expect(p1['isExpanded'], isFalse);
 
-    // 5. Simulate Remote Update
-    // Directly update the repository. This should trigger the stream listener -> _processLocalData -> diff logic.
+    // 5. Simulate Remote Update (Expand p1)
+    // Directly update the repository. This should trigger the stream listener -> _processLocalData.
     await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: true));
 
     // Wait for stream to process
     await Future.delayed(const Duration(milliseconds: 200));
 
-    // 6. Verify callback fired
-    expect(callbackRowId, equals('p1'), reason: 'Remote Row ID mismatch');
-    expect(callbackIsExpanded, isTrue, reason: 'Remote Expansion state mismatch');
+    // 6. Verify ViewModel state updated
+    p1 = vm.flatGridData.firstWhere((item) => item['id'] == 'p1');
+    expect(p1['isExpanded'], isTrue, reason: 'Remote Expansion state mismatch in flatGridData');
 
     vm.dispose();
   });

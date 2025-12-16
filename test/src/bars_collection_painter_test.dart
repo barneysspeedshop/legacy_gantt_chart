@@ -5,6 +5,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_theme.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
+import 'package:legacy_gantt_chart/src/models/remote_ghost.dart';
 
 void main() {
   group('BarsCollectionPainter', () {
@@ -763,6 +764,45 @@ void main() {
               conflictIndicators: [],
               enableDependencyCreation: true,
               hoveredTaskForDependency: 't1',
+            ),
+          ),
+        ),
+      ));
+      expect(findPainter(), findsWidgets);
+    });
+
+    testWidgets('paints remote ghost milestone', (WidgetTester tester) async {
+      final milestoneTask = LegacyGanttTask(
+        id: 'm1',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 5),
+        end: DateTime(2023, 1, 5),
+        isMilestone: true,
+      );
+
+      final ghost = RemoteGhost(
+        userId: 'user2',
+        taskId: 'm1',
+        start: DateTime(2023, 1, 6),
+        end: DateTime(2023, 1, 6),
+        lastUpdated: DateTime.now(),
+        // other fields optional/defaulted
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: CustomPaint(
+            size: const Size(500, 500),
+            painter: BarsCollectionPainter(
+              data: [milestoneTask],
+              visibleRows: [row1],
+              rowMaxStackDepth: {'r1': 1},
+              domain: [DateTime(2023, 1, 1), DateTime(2023, 1, 10)],
+              scale: mockScale,
+              rowHeight: 50.0,
+              theme: theme,
+              conflictIndicators: [],
+              remoteGhosts: {'user2': ghost},
             ),
           ),
         ),

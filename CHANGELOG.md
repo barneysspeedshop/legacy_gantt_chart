@@ -1,3 +1,7 @@
+## 4.4.2
+
+* **FIX**: Fix for an issue that caused milestone interactions to be missed on remote clients. 
+
 ## 4.4.1
 
 * **EXAMPLE FIX**: Fix for an issue that caused the grid to repaint excessively
