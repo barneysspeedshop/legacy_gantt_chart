@@ -362,6 +362,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
             predecessorTaskId: data['predecessorTaskId'],
             successorTaskId: data['successorTaskId'],
             type: depType,
+            lag: data['lag'] != null ? Duration(milliseconds: data['lag']) : null,
           );
           if (!dependencies.contains(newDep)) {
             dependencies = List.from(dependencies)..add(newDep);
@@ -553,6 +554,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         'predecessorTaskId': dep.predecessorTaskId,
         'successorTaskId': dep.successorTaskId,
         'type': dep.type.name,
+        'lag': dep.lag?.inMilliseconds,
       },
       timestamp: DateTime.now().millisecondsSinceEpoch,
       actorId: 'user',

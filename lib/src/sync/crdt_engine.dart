@@ -64,7 +64,13 @@ class CRDTEngine {
             effectiveData.containsKey('name') ||
             effectiveData.containsKey('start_date') ||
             effectiveData.containsKey('color') ||
-            effectiveData.containsKey('text_color')) {
+            effectiveData.containsKey('color') ||
+            effectiveData.containsKey('text_color') ||
+            effectiveData.containsKey('completion') ||
+            effectiveData.containsKey('resourceId') ||
+            effectiveData.containsKey('baselineStart') ||
+            effectiveData.containsKey('baselineEnd') ||
+            effectiveData.containsKey('notes')) {
           taskMap[taskId] = _createTaskFromOp(op, existingTask, effectiveData);
         }
       }
@@ -117,5 +123,17 @@ class CRDTEngine {
         completion: (data['completion'] as num?)?.toDouble() ?? existing?.completion ?? 0.0,
         lastUpdated: op.timestamp,
         lastUpdatedBy: op.actorId,
+        resourceId: data['resourceId'] ?? existing?.resourceId,
+        baselineStart: data['baselineStart'] != null
+            ? DateTime.parse(data['baselineStart'])
+            : (data['baseline_start'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(data['baseline_start'])
+                : existing?.baselineStart),
+        baselineEnd: data['baselineEnd'] != null
+            ? DateTime.parse(data['baselineEnd'])
+            : (data['baseline_end'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'])
+                : existing?.baselineEnd),
+        notes: data['notes'] ?? existing?.notes,
       );
 }

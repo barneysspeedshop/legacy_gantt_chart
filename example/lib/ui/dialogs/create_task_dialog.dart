@@ -35,6 +35,9 @@ class _TaskDialogState extends State<TaskDialog> {
   String _selectedType = 'task';
   Color? _selectedColor;
   Color? _selectedTextColor;
+  double _completion = 0.0;
+  final TextEditingController _resourceController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
 
   @override
   void initState() {
@@ -46,7 +49,11 @@ class _TaskDialogState extends State<TaskDialog> {
       _startDate = widget.task!.start;
       _endDate = widget.task!.end;
       _selectedColor = widget.task!.color;
+      _selectedColor = widget.task!.color;
       _selectedTextColor = widget.task!.textColor;
+      _completion = widget.task!.completion;
+      _resourceController.text = widget.task!.resourceId ?? '';
+      _notesController.text = widget.task!.notes ?? '';
 
       if (widget.task!.isMilestone) {
         _selectedType = 'milestone';
@@ -93,6 +100,9 @@ class _TaskDialogState extends State<TaskDialog> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+    super.dispose();
+    _resourceController.dispose();
+    _notesController.dispose();
   }
 
   void _submit() {
@@ -107,6 +117,9 @@ class _TaskDialogState extends State<TaskDialog> {
           isSummary: _selectedType == 'summary',
           color: _selectedColor,
           textColor: _selectedTextColor,
+          completion: _completion,
+          resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
+          notes: _notesController.text.isEmpty ? null : _notesController.text,
         );
 
         // Enforce milestone duration logic if type changed to milestone
@@ -130,6 +143,9 @@ class _TaskDialogState extends State<TaskDialog> {
           isSummary: _selectedType == 'summary',
           color: _selectedColor,
           textColor: _selectedTextColor,
+          completion: _completion,
+          resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
+          notes: _notesController.text.isEmpty ? null : _notesController.text,
         );
         widget.onSubmit(newTask);
       }
@@ -286,6 +302,29 @@ class _TaskDialogState extends State<TaskDialog> {
           const SizedBox(height: 16),
           _buildColorSelector(
               'Text Color', _selectedTextColor, (val) => setState(() => _selectedTextColor = val), textColors),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          const Text('Progress', style: TextStyle(fontWeight: FontWeight.bold)),
+          Slider(
+            value: _completion,
+            min: 0.0,
+            max: 1.0,
+            divisions: 20,
+            label: '${(_completion * 100).round()}%',
+            onChanged: (value) => setState(() => _completion = value),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _resourceController,
+            decoration: const InputDecoration(labelText: 'Resource ID', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _notesController,
+            decoration: const InputDecoration(labelText: 'Notes', border: OutlineInputBorder()),
+            maxLines: 3,
+          ),
         ]),
       ),
       actions: [

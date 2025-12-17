@@ -1,3 +1,12 @@
+## 4.7.0
+
+* **FEATURE**: Implemented support for task completion (progress bars).
+* **FEATURE**: Implemented support for task baselines (visual comparison of planned vs actual).
+* **FEATURE**: Implemented support for assigning resources to tasks.
+* **FEATURE**: Implemented support for task notes.
+* **FEATURE**: Implemented support for dependency lag.
+* **FEATURE**: Updated `CreateTaskDialog` to include inputs for progress, resource, and notes.
+
 ## 4.6.1
 
 * **FIX**: Fix for an issue that led to color changes being ignored on task updates

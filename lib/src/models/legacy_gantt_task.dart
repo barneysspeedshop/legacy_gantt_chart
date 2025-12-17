@@ -70,6 +70,11 @@ class LegacyGanttTask {
   final int? lastUpdated;
   final String? lastUpdatedBy;
 
+  final String? resourceId;
+  final DateTime? baselineStart;
+  final DateTime? baselineEnd;
+  final String? notes;
+
   const LegacyGanttTask({
     required this.id,
     required this.rowId,
@@ -89,6 +94,10 @@ class LegacyGanttTask {
     this.isMilestone = false,
     this.lastUpdated,
     this.lastUpdatedBy,
+    this.resourceId,
+    this.baselineStart,
+    this.baselineEnd,
+    this.notes,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -120,6 +129,10 @@ class LegacyGanttTask {
         'hasCellBuilder': cellBuilder != null,
         'lastUpdated': lastUpdated,
         'lastUpdatedBy': lastUpdatedBy,
+        'resourceId': resourceId,
+        'baselineStart': baselineStart?.toIso8601String(),
+        'baselineEnd': baselineEnd?.toIso8601String(),
+        'notes': notes,
       };
 
   @override
@@ -144,7 +157,11 @@ class LegacyGanttTask {
           isMilestone == other.isMilestone &&
           cellBuilder == other.cellBuilder &&
           lastUpdated == other.lastUpdated &&
-          lastUpdatedBy == other.lastUpdatedBy;
+          lastUpdatedBy == other.lastUpdatedBy &&
+          resourceId == other.resourceId &&
+          baselineStart == other.baselineStart &&
+          baselineEnd == other.baselineEnd &&
+          notes == other.notes;
 
   @override
   int get hashCode =>
@@ -165,7 +182,11 @@ class LegacyGanttTask {
       isMilestone.hashCode ^
       cellBuilder.hashCode ^
       lastUpdated.hashCode ^
-      lastUpdatedBy.hashCode;
+      lastUpdatedBy.hashCode ^
+      resourceId.hashCode ^
+      baselineStart.hashCode ^
+      baselineEnd.hashCode ^
+      notes.hashCode;
 
   LegacyGanttTask copyWith({
     String? id,
@@ -186,6 +207,10 @@ class LegacyGanttTask {
     Widget Function(DateTime cellDate)? cellBuilder,
     int? lastUpdated,
     String? lastUpdatedBy,
+    String? resourceId,
+    DateTime? baselineStart,
+    DateTime? baselineEnd,
+    String? notes,
   }) =>
       LegacyGanttTask(
         id: id ?? this.id,
@@ -206,5 +231,9 @@ class LegacyGanttTask {
         cellBuilder: cellBuilder ?? this.cellBuilder,
         lastUpdated: lastUpdated ?? this.lastUpdated,
         lastUpdatedBy: lastUpdatedBy ?? this.lastUpdatedBy,
+        resourceId: resourceId ?? this.resourceId,
+        baselineStart: baselineStart ?? this.baselineStart,
+        baselineEnd: baselineEnd ?? this.baselineEnd,
+        notes: notes ?? this.notes,
       );
 }

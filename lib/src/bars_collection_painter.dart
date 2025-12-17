@@ -360,6 +360,28 @@ class BarsCollectionPainter extends CustomPainter {
             if (task.isSummary) {
               _drawSummaryPattern(canvas, barRRect);
             }
+
+            // Draw Baseline
+            if (task.baselineStart != null && task.baselineEnd != null) {
+              final double baselineStartX = scale(task.baselineStart!);
+              final double baselineEndX = scale(task.baselineEnd!);
+
+              if (baselineEndX > 0 && baselineStartX < size.width && baselineEndX > baselineStartX) {
+                final double baselineTop = barRRect.bottom + 2; // 2px gap below main bar
+                final double baselineHeight = barHeight * 0.3; // Thinner than main bar
+
+                final RRect baselineRRect = RRect.fromRectAndRadius(
+                  Rect.fromLTWH(baselineStartX, baselineTop, baselineEndX - baselineStartX, baselineHeight),
+                  const Radius.circular(2.0),
+                );
+
+                final baselinePaint = Paint()
+                  ..color = Colors.grey.withValues(alpha: 0.6)
+                  ..style = PaintingStyle.fill;
+
+                canvas.drawRRect(baselineRRect, baselinePaint);
+              }
+            }
           }
         }
       }
