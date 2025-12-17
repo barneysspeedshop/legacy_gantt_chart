@@ -1,3 +1,7 @@
+## 4.7.1
+
+* **FIX**: Fix for an issue that caused a lifecycle error when saving task edits
+
 ## 4.7.0
 
 * **FEATURE**: Implemented support for task completion (progress bars).

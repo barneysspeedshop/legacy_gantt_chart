@@ -99,10 +99,9 @@ class _TaskDialogState extends State<TaskDialog> {
   @override
   void dispose() {
     _nameController.dispose();
-    super.dispose();
-    super.dispose();
     _resourceController.dispose();
     _notesController.dispose();
+    super.dispose();
   }
 
   void _submit() {
