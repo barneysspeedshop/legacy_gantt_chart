@@ -1996,10 +1996,31 @@ class LegacyGanttViewModel extends ChangeNotifier {
     switch (_dragMode) {
       case DragMode.move:
         newStart = _originalTaskStart!.add(durationDelta);
-        if (_draggedTask?.isMilestone ?? false) {
-          newEnd = newStart;
+
+        if (_workCalendar != null) {
+          // Smart Duration Logic
+          // 1. Calculate original working duration
+          final int workingDuration = _workCalendar!.getWorkingDuration(_originalTaskStart!, _originalTaskEnd!);
+
+          // 2. Snap newStart to next working day if needed
+          while (!_workCalendar!.isWorkingDay(newStart)) {
+            newStart = newStart.add(const Duration(days: 1));
+          }
+
+          // 3. Calculate newEnd to preserve working duration
+          newEnd = _workCalendar!.addWorkingDays(newStart, workingDuration);
+
+          // Milestones: Ensure start == end if it was a milestone
+          if (_draggedTask?.isMilestone ?? false) {
+            newEnd = newStart;
+          }
         } else {
-          newEnd = _originalTaskEnd!.add(durationDelta);
+          // Standard Logic
+          if (_draggedTask?.isMilestone ?? false) {
+            newEnd = newStart;
+          } else {
+            newEnd = _originalTaskEnd!.add(durationDelta);
+          }
         }
 
         if (resizeTooltipDateFormat != null) {

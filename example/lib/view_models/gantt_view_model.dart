@@ -153,6 +153,17 @@ class GanttViewModel extends ChangeNotifier {
   void setEnableWorkCalendar(bool value) {
     if (_enableWorkCalendar == value) return;
     _enableWorkCalendar = value;
+
+    // Update all existing tasks to reflect the new setting
+    if (_allGanttTasks.isNotEmpty) {
+      final updatedTasks = _allGanttTasks.map((t) => t.copyWith(usesWorkCalendar: value)).toList();
+      _allGanttTasks = updatedTasks;
+      _localRepository.insertTasks(updatedTasks); // Batch update local DB
+
+      // We also need to recalculate stacking to ensure the VM state is consistent
+      _processLocalData();
+    }
+
     notifyListeners();
   }
 
@@ -433,6 +444,7 @@ class GanttViewModel extends ChangeNotifier {
           'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
           'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
           'notes': newTask.notes,
+          'uses_work_calendar': newTask.usesWorkCalendar,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
@@ -469,6 +481,7 @@ class GanttViewModel extends ChangeNotifier {
           'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
           'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
           'notes': task.notes,
+          'uses_work_calendar': task.usesWorkCalendar,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
@@ -2554,6 +2567,7 @@ class GanttViewModel extends ChangeNotifier {
           'end_date': newTask.end.millisecondsSinceEpoch,
           'rowId': newTask.rowId,
           'is_summary': newTask.isSummary,
+          'uses_work_calendar': newTask.usesWorkCalendar,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',

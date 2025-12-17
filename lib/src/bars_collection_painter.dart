@@ -1094,9 +1094,9 @@ class BarsCollectionPainter extends CustomPainter {
     final ranges = workCalendar!.getNonWorkingRanges(start, end);
     if (ranges.isEmpty) return;
 
-    final shadingPaint = Paint()
-      ..color = theme.backgroundColor.withValues(alpha: 0.5)
-      ..style = PaintingStyle.fill;
+    // Use a hatch pattern for better visibility.
+    // Using backgroundColor with high alpha creates effective "negative space" stripes.
+    final patternColor = theme.backgroundColor.withValues(alpha: 0.6);
 
     canvas.save();
     canvas.clipRRect(clipRRect);
@@ -1109,9 +1109,12 @@ class BarsCollectionPainter extends CustomPainter {
 
       if (rEnd <= rStart) continue;
 
-      // Draw rect covering the full height of the bar
+      // Create a rect for the non-working period
       final rect = Rect.fromLTRB(rStart, clipRRect.top, rEnd, clipRRect.bottom);
-      canvas.drawRect(rect, shadingPaint);
+      final rrect = RRect.fromRectAndRadius(rect, Radius.zero);
+
+      // Draw the angled pattern
+      _drawAngledPattern(canvas, rrect, patternColor, 2.0);
     }
 
     canvas.restore();
