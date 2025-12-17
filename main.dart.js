@@ -51279,7 +51279,7 @@ n=n==null?null:B.f.f4(n.q(),16)
 m=a.r
 m=m==null?null:B.f.f4(m.q(),16)
 s=5
-return A.m(p.ea(new A.cr("UPDATE_TASK",A.a3(["id",a.a,"name",a.e,"start_date",a.c.a,"end_date",a.d.a,"gantt_type",o,"is_summary",a.y,"color",n,"text_color",m],t.N,t.z),Date.now(),"local-user")),$async$Bi)
+return A.m(p.ea(new A.cr("UPDATE_TASK",A.a3(["id",a.a,"color",n,"text_color",m,"name",a.e,"start_date",a.c.a,"end_date",a.d.a,"gantt_type",o,"is_summary",a.y],t.N,t.z),Date.now(),"local-user")),$async$Bi)
 case 5:case 4:return A.z(null,r)}})
 return A.A($async$Bi,r)},
 aFR(){var s,r,q=this,p=q.f,o=A.U(p),n=o.i("df<1,fh>"),m=A.R(new A.df(new A.an(p,new A.alW(),o.i("an<1>")),new A.alX(),n),n.i("D.E"))
@@ -52303,7 +52303,7 @@ if(p!=null){o=a.f
 o=o==null?null:B.f.f4(o.q(),16)
 n=a.r
 n=n==null?null:B.f.f4(n.q(),16)
-p.ea(new A.cr("INSERT_TASK",A.a3(["id",a.a,"name",a.e,"start_date",a.c.a,"end_date",a.d.a,"rowId",a.b,"is_summary",a.y,"color",o,"text_color",n],t.N,t.z),Date.now(),"local-user"))}return A.z(null,r)}})
+p.ea(new A.cr("INSERT_TASK",A.a3(["id",a.a,"color",o,"text_color",n,"name",a.e,"start_date",a.c.a,"end_date",a.d.a,"rowId",a.b,"is_summary",a.y],t.N,t.z),Date.now(),"local-user"))}return A.z(null,r)}})
 return A.A($async$xN,r)},
 a_N(a,b,c){var s=null
 return A.kd(s,s,!0,s,new A.ali(c,new A.fv(B.fg,$.ao()),b),a,s,!0,t.N)},
