@@ -428,13 +428,13 @@ class GanttViewModel extends ChangeNotifier {
         type: 'UPDATE_TASK',
         data: {
           'id': task.id,
+          'color': task.color?.toARGB32().toRadixString(16),
+          'text_color': task.textColor?.toARGB32().toRadixString(16),
           'name': task.name,
           'start_date': task.start.millisecondsSinceEpoch,
           'end_date': task.end.millisecondsSinceEpoch,
           'gantt_type': ganttType,
           'is_summary': task.isSummary,
-          'color': task.color?.toARGB32().toRadixString(16),
-          'text_color': task.textColor?.toARGB32().toRadixString(16),
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
@@ -2468,13 +2468,13 @@ class GanttViewModel extends ChangeNotifier {
         type: 'INSERT_TASK', // Use INSERT_TASK for clarity
         data: {
           'id': newTask.id,
+          'color': newTask.color?.toARGB32().toRadixString(16),
+          'text_color': newTask.textColor?.toARGB32().toRadixString(16),
           'name': newTask.name,
           'start_date': newTask.start.millisecondsSinceEpoch,
           'end_date': newTask.end.millisecondsSinceEpoch,
           'rowId': newTask.rowId,
           'is_summary': newTask.isSummary,
-          'color': newTask.color?.toARGB32().toRadixString(16),
-          'text_color': newTask.textColor?.toARGB32().toRadixString(16),
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
