@@ -433,6 +433,8 @@ class GanttViewModel extends ChangeNotifier {
           'end_date': task.end.millisecondsSinceEpoch,
           'gantt_type': ganttType,
           'is_summary': task.isSummary,
+          'color': task.color?.toARGB32().toRadixString(16),
+          'text_color': task.textColor?.toARGB32().toRadixString(16),
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
@@ -2471,7 +2473,8 @@ class GanttViewModel extends ChangeNotifier {
           'end_date': newTask.end.millisecondsSinceEpoch,
           'rowId': newTask.rowId,
           'is_summary': newTask.isSummary,
-          'color': newTask.color?.toARGB32().toRadixString(16), // Send color as hex string
+          'color': newTask.color?.toARGB32().toRadixString(16),
+          'text_color': newTask.textColor?.toARGB32().toRadixString(16),
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',

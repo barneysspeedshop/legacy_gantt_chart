@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../models/legacy_gantt_task.dart';
 import 'gantt_sync_client.dart';
 
@@ -61,7 +62,9 @@ class CRDTEngine {
         if (effectiveData.containsKey('start') ||
             effectiveData.containsKey('end') ||
             effectiveData.containsKey('name') ||
-            effectiveData.containsKey('start_date')) {
+            effectiveData.containsKey('start_date') ||
+            effectiveData.containsKey('color') ||
+            effectiveData.containsKey('text_color')) {
           taskMap[taskId] = _createTaskFromOp(op, existingTask, effectiveData);
         }
       }
@@ -71,6 +74,22 @@ class CRDTEngine {
         taskMap.remove(taskId);
       }
     }
+  }
+
+  Color? _parseColor(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return Color(value);
+    if (value is String) {
+      try {
+        if (value.startsWith('#')) {
+          return Color(int.parse(value.substring(1), radix: 16));
+        }
+        return Color(int.parse(value, radix: 16));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) =>
@@ -88,8 +107,8 @@ class CRDTEngine {
                 ? DateTime.fromMillisecondsSinceEpoch(data['end_date'])
                 : (existing?.end ?? DateTime.now().add(const Duration(days: 1)))),
         name: data['name'] ?? existing?.name,
-        color: existing?.color,
-        textColor: existing?.textColor,
+        color: _parseColor(data['color']) ?? existing?.color,
+        textColor: _parseColor(data['text_color']) ?? existing?.textColor,
         stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
         originalId: data['originalId'] ?? existing?.originalId,
         isSummary: data['isSummary'] ?? existing?.isSummary ?? false,
