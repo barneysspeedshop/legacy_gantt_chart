@@ -32,8 +32,6 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Legacy Gantt Chart Example',
-        // The localizations delegates and supported locales are required for the
-        // `intl` package, which is used for formatting dates and times.
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
-// Defining the typedef for LegacyGanttTaskCellBuilder
 typedef LegacyGanttTaskCellBuilder = Widget Function(LegacyGanttTask task);
 
-// Extension to add copyWith to LegacyGanttTask (required for updates)
 extension LegacyGanttTaskCopyWith on LegacyGanttTask {
   LegacyGanttTask copyWith({
     String? id,

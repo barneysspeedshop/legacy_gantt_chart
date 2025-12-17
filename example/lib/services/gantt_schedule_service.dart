@@ -4,7 +4,6 @@ import '../data/mock_api_service.dart';
 import '../data/models.dart';
 import '../ui/gantt_grid_data.dart';
 
-// A view model to hold the processed data ready for the UI
 class ProcessedScheduleData {
   final List<LegacyGanttTask> ganttTasks;
   final List<LegacyGanttTask> conflictIndicators;
@@ -66,24 +65,18 @@ class GanttScheduleService {
       throw Exception(apiResponse.error ?? 'Failed to load schedule data');
     }
 
-    // 1. Create a map of all events for quick lookup
     final eventMap = {for (var event in apiResponse.eventsData) event.id: event};
     final jobMap = {
       for (var resource in apiResponse.resourcesData)
         for (var job in resource.children) job.id: job
     };
 
-    // 2. Identify top-level person resource IDs
     final parentResourceIds = apiResponse.resourcesData.map((r) => r.id).toSet();
-
-    // 3. Process assignments to create Gantt tasks for child resources (jobs).
-    //    Summary tasks for parent resources will be calculated and created next.
     final List<LegacyGanttTask> fetchedTasks = [];
     for (var assignment in apiResponse.assignmentsData) {
       final event = eventMap[assignment.event];
       final isParentAssignment = parentResourceIds.contains(assignment.resource);
 
-      // Skip assignments for parent resources, as their summary bars will be calculated from their children.
       if (event != null && event.utcStartDate != null && event.utcEndDate != null && !isParentAssignment) {
         final colorHex = event.referenceData?.taskColor;
         final textColorHex = event.referenceData?.taskTextColor;
@@ -103,7 +96,6 @@ class GanttScheduleService {
         ));
       }
     }
-    // Create summary tasks for each parent resource based on the span of its children's tasks.
     for (final resource in apiResponse.resourcesData) {
       final childRowIds = resource.children.map((child) => child.id).toSet();
       final childrenTasks = fetchedTasks.where((task) => childRowIds.contains(task.rowId)).toList();
@@ -127,7 +119,6 @@ class GanttScheduleService {
       }
     }
 
-    // Create a map of job assignments to their events' durations
     final Map<String, List<Duration>> jobEventDurations = {};
     for (final assignment in apiResponse.assignmentsData) {
       final event = eventMap[assignment.event];
@@ -140,28 +131,22 @@ class GanttScheduleService {
       }
     }
 
-    // Get a set of all row IDs that have tasks assigned to them.
     final activeRowIds = fetchedTasks.map((task) => task.rowId).toSet();
 
-    // 4. Process resources to build the hierarchical grid data, filtering out rows with no tasks.
     final List<GanttGridData> processedGridData = [];
     bool isFirstParent = isFirstLoad;
     for (final resource in apiResponse.resourcesData) {
-      // Filter children to only include those that have tasks.
       final visibleChildren = resource.children
           .where((job) => activeRowIds.contains(job.id))
           .map((job) => GanttGridData.fromJob(job))
           .toList();
 
       final bool hasDirectTask = activeRowIds.contains(resource.id);
-      // A parent row is visible if it has a direct summary task, visible children, or if we're explicitly showing empty parents.
       if (showEmptyParentRows || hasDirectTask || visibleChildren.isNotEmpty) {
-        // Calculate the parent's completion percentage based on its visible children.
         double totalWeightedDurationMs = 0;
         double totalDurationMs = 0;
 
         for (final job in resource.children) {
-          // Only consider jobs that are visible when calculating parent completion
           if (activeRowIds.contains(job.id)) {
             final durations = jobEventDurations[job.id] ?? [];
             final jobCompletion = job.completion ?? 0.0;
@@ -187,7 +172,6 @@ class GanttScheduleService {
       }
     }
 
-    // 5. Process resource time ranges for background highlights
     for (var timeRange in apiResponse.resourceTimeRangesData) {
       if (timeRange.utcStartDate.isNotEmpty && timeRange.utcEndDate.isNotEmpty) {
         fetchedTasks.add(LegacyGanttTask(
@@ -200,7 +184,6 @@ class GanttScheduleService {
       }
     }
 
-    // Add highlights for parent summary events
     for (var resource in apiResponse.resourcesData) {
       final summaryEvent = apiResponse.eventsData.firstWhere(
         (event) => event.id == 'event-${resource.id}-summary',
@@ -217,11 +200,9 @@ class GanttScheduleService {
       }
     }
 
-    // Add weekend highlights
     final allRows = processedGridData.expand((e) => [e, ...e.children]).map((e) => LegacyGanttRow(id: e.id)).toList();
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
 
-    // 6. Calculate task stacking and conflicts
     final (stackedTasks, maxDepthPerRow, conflictIndicators) =
         _calculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
 
@@ -293,7 +274,6 @@ class GanttScheduleService {
       } else if (!task.isOverlapIndicator) {
         actualEventTasks.add(task);
       }
-      // Intentionally ignoring existing overlap indicators so they are regenerated.
     }
 
     for (var task in actualEventTasks) {
@@ -304,7 +284,6 @@ class GanttScheduleService {
     final Map<String, int> rowMaxDepth = {};
 
     eventTasksByRow.forEach((rowId, rowTasks) {
-      // Create a sorted copy for calculating stack depth
       final sortedRowTasks = List<LegacyGanttTask>.from(rowTasks)..sort((a, b) => a.start.compareTo(b.start));
 
       final Map<String, int> taskStackIndices = {};
@@ -330,7 +309,6 @@ class GanttScheduleService {
       }
       rowMaxDepth[rowId] = stackEndTimes.length;
 
-      // Add tasks to the final list in their ORIGINAL order
       for (var task in rowTasks) {
         final stackIndex = taskStackIndices[task.id] ?? 0;
         stackedTasks.add(task.copyWith(stackIndex: stackIndex));
@@ -346,11 +324,6 @@ class GanttScheduleService {
     List<LegacyGanttTask> conflictIndicators = [];
     if (showConflicts) {
       final conflictDetector = LegacyGanttConflictDetector();
-      // If visibleRowIds is provided, filter the tasks before running conflict detection.
-      // This prevents generating conflicts for tasks in collapsed rows.
-      // FIX: We MUST run conflict detection on ALL tasks, even hidden ones, because
-      // the conflict detector needs to see child tasks to generate summary indicators
-      // on the parent row.
       final tasksForConflictDetection = stackedTasks;
       conflictIndicators = conflictDetector.run<String>(
         tasks: tasksForConflictDetection,
@@ -367,17 +340,6 @@ class GanttScheduleService {
     var finalTasks = [...stackedTasks, ...nonStackableTasks];
     var finalConflictIndicators = conflictIndicators;
     var finalRowMaxDepth = Map<String, int>.from(rowMaxDepth);
-
-    // Disable filtering by visibleRowIds to ensure conflicts are always calculated.
-    // The renderer handles visibility; calculating extra conflicts is safer than missing them due to stale grid data.
-    /*
-    if (visibleRowIds != null) {
-      finalTasks = finalTasks.where((t) => visibleRowIds.contains(t.rowId)).toList();
-      finalConflictIndicators = finalConflictIndicators.where((t) => visibleRowIds.contains(t.rowId)).toList();
-      finalRowMaxDepth.removeWhere((key, _) => !visibleRowIds.contains(key));
-    }
-    */
-
     return (finalTasks, finalRowMaxDepth, finalConflictIndicators);
   }
 }

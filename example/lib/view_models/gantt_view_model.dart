@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// other imports...
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/offline_sync.dart';
 
@@ -32,7 +31,6 @@ enum TimelineAxisFormat {
 }
 
 class GanttViewModel extends ChangeNotifier {
-  // --- Core Data State ---
   final LocalGanttRepository _localRepository = LocalGanttRepository();
   bool _useLocalDatabase = false;
   StreamSubscription<List<LegacyGanttTask>>? _tasksSubscription;
@@ -69,7 +67,6 @@ class GanttViewModel extends ChangeNotifier {
   /// A map for quick lookups of original event data by task ID, used for tooltips.
   Map<String, GanttEventData> _eventMap = {};
 
-  // --- UI and Feature Control State ---
   /// The currently selected theme preset.
   ThemePreset _selectedTheme = ThemePreset.standard;
 
@@ -108,7 +105,6 @@ class GanttViewModel extends ChangeNotifier {
   /// The position of the linear progress indicator.
   GanttLoadingIndicatorPosition _loadingIndicatorPosition = GanttLoadingIndicatorPosition.top;
 
-  // --- Data Generation Parameters ---
   /// The start date for fetching schedule data.
   DateTime _startDate = DateTime.now();
 
@@ -125,7 +121,6 @@ class GanttViewModel extends ChangeNotifier {
   /// The number of "jobs" (child rows) to generate in the sample data.
   int _jobCount = 16;
 
-  // --- Date Range and Scrolling State ---
   /// The start and end dates of the entire dataset.
   DateTime? _totalStartDate;
   DateTime? _totalEndDate;
@@ -154,20 +149,17 @@ class GanttViewModel extends ChangeNotifier {
     if (_enableWorkCalendar == value) return;
     _enableWorkCalendar = value;
 
-    // Update all existing tasks to reflect the new setting
     if (_allGanttTasks.isNotEmpty) {
       final updatedTasks = _allGanttTasks.map((t) => t.copyWith(usesWorkCalendar: value)).toList();
       _allGanttTasks = updatedTasks;
       _localRepository.insertTasks(updatedTasks); // Batch update local DB
 
-      // We also need to recalculate stacking to ensure the VM state is consistent
       _processLocalData();
     }
 
     notifyListeners();
   }
 
-  // Define a static work calendar for the example
   WorkCalendar? get workCalendar => _enableWorkCalendar
       ? WorkCalendar(
           weekendDays: const {DateTime.saturday, DateTime.sunday},
@@ -177,7 +169,6 @@ class GanttViewModel extends ChangeNotifier {
   final ScrollController _gridScrollController = ScrollController();
   final ScrollController _ganttHorizontalScrollController = ScrollController();
 
-  // Flags to prevent listener feedback loops during programmatic scrolling.
   bool _isSyncingGridScroll = false;
   bool _isSyncingGanttScroll = false;
   bool _areScrollListenersAttached = false;
@@ -228,16 +219,13 @@ class GanttViewModel extends ChangeNotifier {
     _dependenciesSubscription?.cancel();
     _resourcesSubscription?.cancel();
 
-    // Listen to resources
     _resourcesSubscription = _localRepository.watchResources().listen((resources) {
       _localResources = resources;
-      // processing triggered by tasks usually, but we might need to trigger if resources change
       if (_ganttTasks.isNotEmpty) {
         _processLocalData();
       }
     });
 
-    // Listen to tasks
     _tasksSubscription = _localRepository.watchTasks().listen((tasks) async {
       if (tasks.isEmpty && _shouldAutoSeed) {
         _shouldAutoSeed = false;
@@ -250,17 +238,14 @@ class GanttViewModel extends ChangeNotifier {
       await _processLocalData();
     });
 
-    // Listen to dependencies
     _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
       _dependencies = deps;
       _syncToController();
       notifyListeners();
     });
 
-    // Initialize Sync Client for Offline Queuing if not already present
     _syncClient ??= OfflineGanttSyncClient(GanttDb.db);
 
-    // Trigger reset on first load
     _pendingSeedReset = true;
     notifyListeners();
   }
@@ -275,7 +260,6 @@ class GanttViewModel extends ChangeNotifier {
       return;
     }
 
-    // 1. Build Grid Data first to determine hierarchy and visibility (expansion state)
     _gridData = _buildGridDataFromResources(_localResources, _allGanttTasks);
     _cachedFlatGridData = null; // Invalidate cache
 
@@ -284,7 +268,6 @@ class GanttViewModel extends ChangeNotifier {
       _pendingSeedReset = false;
     }
 
-    // 2. Determine visible (expanded) row IDs
     final visibleRowIds = <String>{};
     void collectVisible(List<GanttGridData> nodes) {
       for (final node in nodes) {
@@ -297,11 +280,7 @@ class GanttViewModel extends ChangeNotifier {
 
     collectVisible(_gridData);
 
-    // Build valid GanttResponse from _localResources for conflict detection
-    // Conflict detector needs to know which child rows belong to which parent resource
-    // to group them correctly.
     final List<GanttResourceData> resourcesData = [];
-    // We assume _localResources is flat list of all resources
     final parentResources = _localResources.where((r) => r.parentId == null);
 
     for (final parent in parentResources) {
@@ -344,7 +323,6 @@ class GanttViewModel extends ChangeNotifier {
     );
     _apiResponse = dummyResponse;
 
-    // 3. Calculate Stacking based on visible rows
     final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
         _allGanttTasks, dummyResponse,
         showConflicts: _showConflicts, visibleRowIds: visibleRowIds);
@@ -353,7 +331,6 @@ class GanttViewModel extends ChangeNotifier {
     _conflictIndicators = newConflictIndicators;
     _rowMaxStackDepth = newMaxDepth;
 
-    // Calculate total range
     if (_ganttTasks.isNotEmpty) {
       DateTime minStart = _ganttTasks.first.start;
       DateTime maxEnd = _ganttTasks.first.end;
@@ -364,16 +341,9 @@ class GanttViewModel extends ChangeNotifier {
       _totalStartDate = minStart;
       _totalEndDate = maxEnd;
 
-      // Initialize visible range if not set
       if (_visibleStartDate == null || _visibleEndDate == null) {
-        // Default to showing the whole range initially, or a sensible default window
         _visibleStartDate = _totalStartDate!.subtract(_ganttStartPadding);
         _visibleEndDate = _totalEndDate!.add(_ganttEndPadding);
-
-        // Or if you want a specific window (e.g. 1 month):
-        // if (_visibleEndDate!.difference(_visibleStartDate!).inDays > 30) {
-        //   _visibleEndDate = _visibleStartDate!.add(const Duration(days: 30));
-        // }
       }
     }
 
@@ -388,20 +358,14 @@ class GanttViewModel extends ChangeNotifier {
 
     if (newType == 'milestone') {
       ganttType = 'milestone';
-      // Milestones typically have 0 duration, or start == end.
-      // We'll set end = start.
       newTask = task.copyWith(
         isMilestone: true,
         isSummary: false,
         end: task.start,
-        // Optional: append (Milestone) to name? No, cleaner to keep name.
       );
     } else if (newType == 'summary') {
       ganttType = 'summary';
-      // Summaries are parents. If this task has no children, it's just a container.
-      // Conversion doesn't strictly imply structure change here, just visualization style.
       DateTime newEnd = task.end;
-      // If converting from milestone (0 duration), give it some duration so it's visible.
       if (task.isMilestone && task.start == task.end) {
         newEnd = task.start.add(const Duration(days: 1));
       }
@@ -412,9 +376,7 @@ class GanttViewModel extends ChangeNotifier {
       );
     } else if (newType == 'task') {
       ganttType = 'task';
-      // Standard task.
       DateTime newEnd = task.end;
-      // If converting from milestone (0 duration), give it some duration so it's visible.
       if (task.isMilestone && task.start == task.end) {
         newEnd = task.start.add(const Duration(days: 1));
       }
@@ -425,10 +387,8 @@ class GanttViewModel extends ChangeNotifier {
       );
     }
 
-    // Local Repository Update
     await _localRepository.insertOrUpdateTask(newTask);
 
-    // Sync Update
     if (_syncClient != null) {
       await _syncClient!.sendOperation(Operation(
         type: 'UPDATE_TASK',
@@ -438,7 +398,6 @@ class GanttViewModel extends ChangeNotifier {
           'end_date': newTask.end.millisecondsSinceEpoch,
           'gantt_type': ganttType,
           'is_summary': newTask.isSummary, // explicit field sometimes used
-          // 'is_milestone': newTask.isMilestone, // if used
           'completion': newTask.completion,
           'resourceId': newTask.resourceId,
           'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
@@ -453,10 +412,8 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> updateTask(LegacyGanttTask task) async {
-    // Local Repository Update
     await _localRepository.insertOrUpdateTask(task);
 
-    // Sync Update
     if (_syncClient != null) {
       String ganttType = 'task';
       if (task.isMilestone) {
@@ -490,7 +447,6 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Map<String, dynamic> exportToJson() {
-    // 1. Convert Tasks
     final exportedEvents = _ganttTasks
         .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
         .map((t) => GanttEventData(
@@ -507,8 +463,6 @@ class GanttViewModel extends ChangeNotifier {
             ))
         .toList();
 
-    // 2. Convert Resources (from _localResources or _gridData)
-    // We'll use _localResources as it is the source of truth
     final exportedResources = _localResources.where((r) => r.parentId == null).map((parent) {
       final children = _localResources
           .where((r) => r.parentId == parent.id)
@@ -525,7 +479,6 @@ class GanttViewModel extends ChangeNotifier {
       );
     }).toList();
 
-    // 3. Construct Response
     final response = GanttResponse(
       success: true,
       eventsData: exportedEvents,
@@ -534,12 +487,6 @@ class GanttViewModel extends ChangeNotifier {
       resourceTimeRangesData: _apiResponse?.resourceTimeRangesData ?? [],
     );
 
-    // 4. Wrap with conflict indicators if desired, but typically we export the *source* data.
-    // The user requested "export to JSON" which implies the data structure they can load back in.
-    // So we stick to the GanttResponse structure.
-
-    // However, the original export included 'conflictIndicators' as a root key in the final map.
-    // We should preserve that pattern.
     final json = response.toJson();
     json['conflictIndicators'] = _conflictIndicators
         .map((c) => {
@@ -556,7 +503,6 @@ class GanttViewModel extends ChangeNotifier {
   Future<void>? _activeSeedingFuture;
 
   Future<void> seedLocalDatabase() async {
-    // If a seed is already in progress, we can return it (or chain it, but usually we just want to wait for the current one).
     if (_activeSeedingFuture != null) {
       return _activeSeedingFuture;
     }
@@ -573,7 +519,6 @@ class GanttViewModel extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // Clear existing data
     await _localRepository.deleteAllDependencies();
     await _localRepository.deleteAllTasks();
     await _localRepository.deleteAllResources();
@@ -582,7 +527,6 @@ class GanttViewModel extends ChangeNotifier {
       await (_syncClient as OfflineGanttSyncClient).clearQueue();
     }
 
-    // Generate new data using the mock service logic
     final processedData = await _scheduleService.fetchAndProcessSchedule(
       startDate: _startDate,
       range: _range,
@@ -592,8 +536,6 @@ class GanttViewModel extends ChangeNotifier {
 
     final tasks = processedData.ganttTasks;
 
-    // --- Manually add a milestone for demonstration (Replicated from fetchScheduleData) ---
-    // Find a valid row to place the milestone on.
     if (processedData.gridData.isNotEmpty && processedData.gridData.first.children.isNotEmpty) {
       final firstChildRowId = processedData.gridData.first.children.first.id;
       final milestoneDate = _startDate.add(const Duration(days: 5));
@@ -610,9 +552,6 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     final dependencies = <LegacyGanttTaskDependency>[];
-
-    // Re-create sample dependencies similar to fetchScheduleData
-    // Find a suitable task to be the "successor" for all contained dependencies.
     final successorForContainedDemo = tasks.firstWhere(
       (t) => !t.isSummary && !t.isTimeRangeHighlight,
       orElse: () => tasks.first,
@@ -647,24 +586,16 @@ class GanttViewModel extends ChangeNotifier {
       );
     }
 
-    // Insert into local DB
-    // Insert into local DB
     await _localRepository.insertTasks(tasks);
     await _localRepository.insertDependencies(dependencies);
-
-    // Sync Client Notification (Broadcast re-seed)
     if (_syncClient != null) {
       final opsToSend = <Operation>[];
-
-      // 1. Send RESET_DATA
       opsToSend.add(Operation(
         type: 'RESET_DATA',
         data: {},
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
       ));
-
-      // 2. Send INSERT_TASK for all new tasks
       for (final task in tasks) {
         String ganttType = 'task';
         if (task.isMilestone) {
@@ -691,15 +622,12 @@ class GanttViewModel extends ChangeNotifier {
               'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
               'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
               'notes': task.notes,
-              // Add other fields if necessary
             }
           },
           timestamp: DateTime.now().millisecondsSinceEpoch,
           actorId: 'local-user',
         ));
       }
-
-      // 3. Send INSERT_DEPENDENCY for all new dependencies
       for (final dep in dependencies) {
         opsToSend.add(Operation(
           type: 'INSERT_DEPENDENCY',
@@ -716,7 +644,6 @@ class GanttViewModel extends ChangeNotifier {
       await _syncClient!.sendOperations(opsToSend);
     }
 
-    // Insert resources
     final expansionMap = <String, bool>{};
     void fillExpansion(List<GanttGridData> nodes) {
       for (final node in nodes) {
@@ -727,8 +654,6 @@ class GanttViewModel extends ChangeNotifier {
 
     fillExpansion(processedData.gridData);
 
-    // Insert resources with controlled expansion state (first one expanded, others collapsed)
-    // Insert resources with controlled expansion state (first one expanded, others collapsed)
     final resourcesToInsert = <LocalResource>[];
     for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
       final resource = processedData.apiResponse.resourcesData[i];
@@ -738,20 +663,17 @@ class GanttViewModel extends ChangeNotifier {
           .add(LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
 
       for (final child in resource.children) {
-        // Children expansion doesn't matter much if parent is collapsed, but let's keep them expanded by default
         resourcesToInsert.add(LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
       }
     }
     await _localRepository.insertResources(resourcesToInsert);
 
-    // 4. Send INSERT_RESOURCE for all new resources (Broadcast re-seed)
     if (_syncClient != null) {
       final resourceOps = <Operation>[];
       for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
         final resource = processedData.apiResponse.resourcesData[i];
         final isExpanded = i == 0; // Only expand the first one
 
-        // Send parent resource
         resourceOps.add(Operation(
           type: 'INSERT_RESOURCE',
           data: {
@@ -768,7 +690,6 @@ class GanttViewModel extends ChangeNotifier {
         ));
 
         for (final child in resource.children) {
-          // Send child resource
           resourceOps.add(Operation(
             type: 'INSERT_RESOURCE',
             data: {
@@ -788,7 +709,6 @@ class GanttViewModel extends ChangeNotifier {
       await _syncClient!.sendOperations(resourceOps);
     }
 
-    // _seedVersion++; // Handled in _processLocalData via _pendingSeedReset
     _pendingSeedReset = true;
     notifyListeners();
   }
@@ -796,7 +716,6 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> _exitLocalMode() async {
     _tasksSubscription?.cancel();
     _dependenciesSubscription?.cancel();
-    // Reload mock data
     await fetchScheduleData();
   }
 
@@ -810,8 +729,6 @@ class GanttViewModel extends ChangeNotifier {
     for (final res in resources) {
       byParent.putIfAbsent(res.parentId, () => []).add(res);
     }
-
-    // final expansionStates = {for (var item in _gridData) item.id: item.isExpanded}; // No longer needed for local mode as we use DB state
 
     List<GanttGridData> buildNodes(String? parentId) {
       final children = byParent[parentId] ?? [];
@@ -878,8 +795,6 @@ class GanttViewModel extends ChangeNotifier {
 
   double? _gridWidth;
   double? _controlPanelWidth = 300.0;
-
-  // Getters for the UI
   List<LegacyGanttTask> get ganttTasks => _ganttTasks;
   List<LegacyGanttTask> get conflictIndicators => _showConflicts ? _conflictIndicators : [];
   String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
@@ -888,8 +803,6 @@ class GanttViewModel extends ChangeNotifier {
   ThemePreset get selectedTheme => _selectedTheme;
   List<LegacyGanttTask> get tasks => _ganttTasks;
   List<LegacyGanttTask> get allGanttTasks => _allGanttTasks;
-  // dependencies already defined above
-
   bool get dragAndDropEnabled => _dragAndDropEnabled;
   bool get resizeEnabled => _resizeEnabled;
   bool get createTasksEnabled => _createTasksEnabled;
@@ -1020,8 +933,6 @@ class GanttViewModel extends ChangeNotifier {
     if (_areScrollListenersAttached) return;
     _gridScrollController.addListener(_syncGanttScroll);
     _ganttScrollController.addListener(_syncGridScroll);
-
-    // Ensure presence is broadcast even if the other controller is detached
     _gridScrollController.addListener(_broadcastPresence);
 
     _areScrollListenersAttached = true;
@@ -1076,15 +987,11 @@ class GanttViewModel extends ChangeNotifier {
     _tasksSubscription?.cancel();
     _dependenciesSubscription?.cancel();
     _resourcesSubscription?.cancel();
-
-    // Dispose sync client (important for Offline client to stop flush loop)
     if (_syncClient is OfflineGanttSyncClient) {
       (_syncClient as OfflineGanttSyncClient).dispose();
     } else if (_syncClient is WebSocketGanttSyncClient) {
       (_syncClient as WebSocketGanttSyncClient).dispose();
     }
-
-    // Remove listeners before disposing controllers.
     _gridScrollController.removeListener(_syncGanttScroll);
     _ganttScrollController.removeListener(_syncGridScroll);
     _gridScrollController.dispose();
@@ -1100,8 +1007,6 @@ class GanttViewModel extends ChangeNotifier {
   /// the method returns.
   Future<void> disposeAsync() async {
     _removeTooltip();
-
-    // Wait for any active seeding to complete before closing resources
     if (_activeSeedingFuture != null) {
       try {
         await _activeSeedingFuture;
@@ -1113,15 +1018,11 @@ class GanttViewModel extends ChangeNotifier {
     await _tasksSubscription?.cancel();
     await _dependenciesSubscription?.cancel();
     await _resourcesSubscription?.cancel();
-
-    // Dispose sync client (important for Offline client to stop flush loop)
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).dispose();
     } else if (_syncClient is WebSocketGanttSyncClient) {
       await (_syncClient as WebSocketGanttSyncClient).dispose();
     }
-
-    // Remove listeners before disposing controllers.
     _gridScrollController.removeListener(_syncGanttScroll);
     _ganttScrollController.removeListener(_syncGridScroll);
     _gridScrollController.dispose();
@@ -1131,7 +1032,6 @@ class GanttViewModel extends ChangeNotifier {
     super.dispose();
   }
 
-  // --- Setters for UI State ---
   void setGridWidth(double? value) {
     _gridWidth = value;
     notifyListeners();
@@ -1176,8 +1076,6 @@ class GanttViewModel extends ChangeNotifier {
 
   void setShowConflicts(bool value) {
     _showConflicts = value;
-    // Re-run the task stacking calculation with the new conflict visibility setting.
-    // This ensures that conflict indicators are added or removed correctly.
     _recalculateStackingAndNotify();
   }
 
@@ -1275,18 +1173,12 @@ class GanttViewModel extends ChangeNotifier {
         jobCount: _jobCount,
       );
 
-      // --- Create sample dependencies for demonstration ---
       final newDependencies = <LegacyGanttTaskDependency>[];
       final ganttTasks = processedData.ganttTasks;
-
-      // Find a suitable task to be the "successor" for all contained dependencies.
-      // For this visual effect, the successor doesn't matter, only the predecessor.
       final successorForContainedDemo = ganttTasks.firstWhere(
         (t) => !t.isSummary && !t.isTimeRangeHighlight,
         orElse: () => ganttTasks.first, // Fallback
       );
-
-      // 1. For every summary task, create a 'contained' dependency.
       for (final task in ganttTasks) {
         if (task.isSummary) {
           newDependencies.add(
@@ -1299,20 +1191,17 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // 2. Find two tasks to link with a 'finishToStart' dependency for demonstration.
       final validTasksForDependency = ganttTasks
           .where((task) => !task.isSummary && !task.isTimeRangeHighlight && !task.isOverlapIndicator)
           .toList();
 
       if (validTasksForDependency.length > 1) {
-        // Sort by start time, then by ID for a stable sort.
         validTasksForDependency.sort((a, b) {
           final startCompare = a.start.compareTo(b.start);
           if (startCompare != 0) return startCompare;
           return a.id.compareTo(b.id);
         });
 
-        // Create a dependency between the first two tasks in the sorted list.
         newDependencies.add(
           LegacyGanttTaskDependency(
             predecessorTaskId: validTasksForDependency[0].id,
@@ -1330,8 +1219,6 @@ class GanttViewModel extends ChangeNotifier {
       _eventMap = processedData.eventMap;
       _apiResponse = processedData.apiResponse;
 
-      // --- Manually add a milestone for demonstration ---
-      // Find a valid row to place the milestone on.
       if (_gridData.isNotEmpty && _gridData.first.children.isNotEmpty) {
         final firstChildRowId = _gridData.first.children.first.id;
         final milestoneDate = _startDate.add(const Duration(days: 5));
@@ -1340,13 +1227,12 @@ class GanttViewModel extends ChangeNotifier {
           rowId: firstChildRowId,
           name: 'Project Kick-off',
           start: milestoneDate,
-          end: milestoneDate, // start and end are the same for a milestone
+          end: milestoneDate,
           isMilestone: true,
-          color: Colors.deepPurple, // Give it a distinct color
+          color: Colors.deepPurple,
         );
         _ganttTasks.add(milestone);
       }
-      // Calculate total date range based on all tasks
       if (_ganttTasks.isNotEmpty) {
         DateTime minStart = _ganttTasks.first.start;
         DateTime maxEnd = _ganttTasks.first.end;
@@ -1366,19 +1252,12 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       _isLoading = false;
-
-      // Set the initial visible window. If a previous window existed, try to maintain it.
-      // Otherwise, default to the full effective range. This prevents the view from
-      // resetting its zoom level every time data is fetched.
       _visibleStartDate = _visibleStartDate ?? effectiveTotalStartDate;
       _visibleEndDate = _visibleEndDate ?? effectiveTotalEndDate;
-      // Ensure the visible range is not null if the total range is also null.
       if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
       notifyListeners();
 
-      // After the UI has been built with the new data, scroll the Gantt chart
-      // to the initial visible window.
       WidgetsBinding.instance.addPostFrameCallback((_) => _setInitialScroll());
       _syncToController();
     } catch (e) {
@@ -1397,7 +1276,6 @@ class GanttViewModel extends ChangeNotifier {
     _visibleEndDate = effectiveTotalEndDate;
   }
 
-  // Helper to parse hex color strings
   Color _parseColorHex(String? hexString, Color defaultColor) {
     if (hexString == null || hexString.isEmpty) {
       return defaultColor;
@@ -1421,7 +1299,7 @@ class GanttViewModel extends ChangeNotifier {
     if (newRange != null) {
       _range = newRange;
       notifyListeners();
-      fetchScheduleData(); // Re-fetch data for new range
+      fetchScheduleData();
     }
   }
 
@@ -1435,7 +1313,7 @@ class GanttViewModel extends ChangeNotifier {
     if (pickedDate != null && pickedDate != _startDate) {
       _startDate = pickedDate;
       notifyListeners();
-      fetchScheduleData(); // Re-fetch data for new date
+      fetchScheduleData();
     }
   }
 
@@ -1445,22 +1323,13 @@ class GanttViewModel extends ChangeNotifier {
   /// It updates the `_visibleStartDate` and `_visibleEndDate`, which causes the
   /// main Gantt chart to rebuild. It then programmatically scrolls the chart to the new position.
   void onScrubberWindowChanged(DateTime newStart, DateTime newEnd, [scrubber.ScrubberHandle? handle]) {
-    // Set a flag to prevent the scroll listener from firing and causing a loop.
     _isScrubberUpdating = true;
 
-    // Update the state with the new visible window from the scrubber.
-    // This will trigger a rebuild, which updates the Gantt chart's gridMin/gridMax
-    // and recalculates its total width.
     if (handle == scrubber.ScrubberHandle.left) {
-      // Left handle adjusts the start date
-      // When resizing from the left, only the start date changes.
       _visibleStartDate = newStart;
     } else if (handle == scrubber.ScrubberHandle.right) {
-      // Right handle adjusts the end date
-      // When resizing from the right, only the end date changes.
       _visibleEndDate = newEnd;
     } else {
-      // If the whole window is dragged (or handle is null/body), update both.
       _visibleStartDate = newStart;
       _visibleEndDate = newEnd;
     }
@@ -1468,12 +1337,8 @@ class GanttViewModel extends ChangeNotifier {
     _broadcastPresence();
     notifyListeners();
 
-    // After the UI has rebuilt with the new dimensions, programmatically
-    // scroll the Gantt chart to the correct position.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (effectiveTotalStartDate != null &&
-          // Add a guard to ensure the controller is attached before use.
-          // This is crucial, especially during initial load or rapid state changes.
           _ganttHorizontalScrollController.hasClients &&
           effectiveTotalEndDate != null &&
           _ganttHorizontalScrollController.hasClients) {
@@ -1483,15 +1348,10 @@ class GanttViewModel extends ChangeNotifier {
         final position = _ganttHorizontalScrollController.position;
         final totalGanttWidth = position.maxScrollExtent + position.viewportDimension;
         if (totalGanttWidth > 0) {
-          // Determine which date to use as the anchor for scrolling.
-          // If resizing from the right, we anchor to the existing start date.
-          // Otherwise, we anchor to the new start date from the scrubber.
           final DateTime anchorDate;
           if (handle == scrubber.ScrubberHandle.right) {
-            // Keep the left side of the viewport fixed.
             anchorDate = _visibleStartDate!;
           } else {
-            // Move the viewport based on the new start date.
             anchorDate = newStart;
           }
 
@@ -1501,7 +1361,6 @@ class GanttViewModel extends ChangeNotifier {
           _ganttHorizontalScrollController.jumpTo(newScrollOffset.clamp(0.0, position.maxScrollExtent));
         }
       }
-      // Reset the flag after the update is complete.
       _isScrubberUpdating = false;
     });
   }
@@ -1514,7 +1373,6 @@ class GanttViewModel extends ChangeNotifier {
   /// It calculates the new visible date window based on the scroll offset and updates
   /// the state, which in turn updates the position of the window on the timeline scrubber.
   void _onGanttScroll() {
-    // If the scroll is happening because of the scrubber, do nothing.
     if (_isScrubberUpdating || effectiveTotalStartDate == null || effectiveTotalEndDate == null) return;
 
     final position = _ganttHorizontalScrollController.position;
@@ -1524,15 +1382,10 @@ class GanttViewModel extends ChangeNotifier {
     final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
     if (totalDataDuration <= 0) return;
 
-    // We no longer rely on _lastTotalGanttWidth check here because _onGanttScroll
-    // might not fire if pixel offset doesn't change during resize.
-    // Instead we rely on maintainScrollOffsetForWidth called from the view.
-
     final startOffsetMs = (position.pixels / totalGanttWidth) * totalDataDuration;
     final newVisibleStart = effectiveTotalStartDate!.add(Duration(milliseconds: startOffsetMs.round()));
     final newVisibleEnd = newVisibleStart.add(_visibleEndDate!.difference(_visibleStartDate!));
 
-    // Only update if there's a significant change to prevent excessive rebuilds
     if (newVisibleStart != _visibleStartDate || newVisibleEnd != _visibleEndDate) {
       _visibleStartDate = newVisibleStart;
       _visibleEndDate = newVisibleEnd;
@@ -1552,9 +1405,7 @@ class GanttViewModel extends ChangeNotifier {
       final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
       if (totalDataDuration <= 0) return;
 
-      // Schedule the jump for after layout
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Guard against controller detachment or data changes in the interim
         if (!_ganttHorizontalScrollController.hasClients) return;
         if (effectiveTotalStartDate == null) return;
 
@@ -1602,10 +1453,8 @@ class GanttViewModel extends ChangeNotifier {
 
     final overlay = Overlay.of(context);
 
-    // --- "Day X" Calculation ---
     int? dayNumber;
 
-    // "Day X" is only for child shifts, not summary bars.
     if (!task.isSummary && task.originalId != null) {
       final childEvent = _eventMap[task.originalId];
       if (childEvent?.resourceId != null) {
@@ -1622,16 +1471,13 @@ class GanttViewModel extends ChangeNotifier {
     _tooltipOverlay = OverlayEntry(
       builder: (context) {
         final theme = Theme.of(context);
-        // Get status info from the original event data.
         final event = _eventMap[task.originalId];
         final statusText = event?.referenceData?.taskName;
-        // The color from the API doesn't include '#', so we add it for parsing.
         final taskColorHex = event?.referenceData?.taskColor;
         final taskColor = taskColorHex != null ? _parseColorHex('#$taskColorHex', Colors.transparent) : null;
         final textStyle = theme.textTheme.bodySmall;
         final boldTextStyle = textStyle?.copyWith(fontWeight: FontWeight.bold);
 
-        // Position the tooltip near the cursor
         return Positioned(
           left: globalPosition.dx + 15, // Offset from cursor
           top: globalPosition.dy + 15,
@@ -1694,7 +1540,6 @@ class GanttViewModel extends ChangeNotifier {
     _hoveredTaskId = task?.id;
     _removeTooltip();
     if (task != null && !task.isTimeRangeHighlight) {
-      // Don't show tooltip for highlights
       showTooltip(context, task, globalPosition);
     }
     notifyListeners();
@@ -1716,7 +1561,6 @@ class GanttViewModel extends ChangeNotifier {
     controller.setConflictIndicators(_conflictIndicators);
   }
 
-  // --- Presence & Follow Mode ---
   final Map<String, RemoteGhost> _connectedUsers = {};
   Map<String, RemoteGhost> get connectedUsers => Map.unmodifiable(_connectedUsers);
 
@@ -1737,8 +1581,6 @@ class GanttViewModel extends ChangeNotifier {
     _visibleStartDate = start;
     _visibleEndDate = end;
     notifyListeners();
-    // Programmatically scroll the chart to match
-    // Reuse the logic from onScrubberWindowChanged but simplified
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (effectiveTotalStartDate != null &&
           _ganttHorizontalScrollController.hasClients &&
@@ -1765,7 +1607,6 @@ class GanttViewModel extends ChangeNotifier {
       if (visibleStartDate != null && visibleEndDate != null) {
         print('Broadcasting Presence: User ${_syncClient?.hashCode}');
 
-        // Manually show "Me" in the UI immediately
         if (_currentUsername != null) {
           const localId = 'me';
           _connectedUsers[localId] = RemoteGhost(
@@ -1776,13 +1617,9 @@ class GanttViewModel extends ChangeNotifier {
             userName: _currentUsername,
             userColor: '#00FF00', // Green for self
           );
-          // notifyListeners() is called below or by other events
           notifyListeners();
         }
 
-        // Use gridScrollController as the source of truth for vertical scroll
-        // because in the current wiring, the Gantt chart uses the grid's controller.
-        // ganttScrollController might be detached (no clients).
         double verticalScroll = 0.0;
         if (_gridScrollController.hasClients) {
           verticalScroll = _gridScrollController.offset;
@@ -1798,13 +1635,12 @@ class GanttViewModel extends ChangeNotifier {
               'viewportEnd': visibleEndDate!.millisecondsSinceEpoch,
               'verticalScrollOffset': verticalScroll,
               'userName': _currentUsername ?? 'User ${_syncClient?.hashCode ?? "Me"}',
-              'userColor': '#FF0000', // Placeholder color for remote view of me
+              'userColor': '#FF0000',
             },
             timestamp: DateTime.now().millisecondsSinceEpoch,
-            actorId: 'me', // Sync client usually overrides this
+            actorId: 'me',
           ));
         } catch (e) {
-          // Ignore connection errors during presence broadcast
           print('Warning: Failed to broadcast presence: $e');
         }
       }
@@ -1824,7 +1660,6 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       if (targetController != null) {
-        // Clamp to avoid errors if the remote scroll is larger than local content
         final maxScroll = targetController.position.maxScrollExtent;
         final targetScroll = ghost.verticalScrollOffset!.clamp(0.0, maxScroll);
 
@@ -1835,7 +1670,6 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  // --- Sync Client State ---
   String? _currentUsername;
 
   GanttSyncClient? _syncClient;
@@ -1877,7 +1711,6 @@ class GanttViewModel extends ChangeNotifier {
           wsClientToConnect = _syncClient as WebSocketGanttSyncClient;
         }
       } else {
-        // Initialize WebSocket Client
         final wsClient = WebSocketGanttSyncClient(
           uri: wsUri,
           authToken: token,
@@ -1887,7 +1720,6 @@ class GanttViewModel extends ChangeNotifier {
         if (_syncClient is OfflineGanttSyncClient) {
           await (_syncClient as OfflineGanttSyncClient).setInnerClient(wsClient);
         } else {
-          // If we had a different client type or null
           if (_syncClient is WebSocketGanttSyncClient) {
             await (_syncClient as WebSocketGanttSyncClient).dispose();
           }
@@ -1897,7 +1729,6 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // Listen to connection state
       _connectionStateSubscription?.cancel();
       Stream<bool>? connectionStream;
       if (_syncClient is OfflineGanttSyncClient) {
@@ -1923,7 +1754,6 @@ class GanttViewModel extends ChangeNotifier {
       _broadcastPresence();
       notifyListeners();
 
-      // Connect AFTER listeners are set up to capture initial state
       if (wsClientToConnect != null) {
         int? lastSynced;
         if (_useLocalDatabase) {
@@ -1943,7 +1773,6 @@ class GanttViewModel extends ChangeNotifier {
 
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
-      // Only dispose if we are NOT using local database, otherwise keep it for queuing
       if (!_useLocalDatabase) {
         await (_syncClient as OfflineGanttSyncClient).dispose();
         _syncClient = null;
@@ -1962,21 +1791,12 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> _handleIncomingOperation(Operation op) async {
     print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
 
-    // Persist the latest sync timestamp from the server, independent of local edits
-    // This serves as a checkpoint. For batch, we update it once.
     if (_useLocalDatabase) {
       await _localRepository.setLastServerSyncTimestamp(op.timestamp);
     }
 
     if (op.type == 'BATCH_UPDATE') {
       final operations = op.data['operations'] as List? ?? [];
-      // print('Processing BATCH_UPDATE with ${operations.length} operations');
-
-      // Use a transaction or batch process if possible.
-      // Current architecture relies on _processLocalData triggers, so we just run them without notifying.
-      // Ideally, we'd pause the stream or use a batch DB insert method.
-      // But passing notify: false prevents the heavy _processLocalData() call until the end.
-
       final batchTasks = <LegacyGanttTask>[];
       final batchDependencies = <LegacyGanttTaskDependency>[];
       final batchResources = <LocalResource>[];
@@ -1989,7 +1809,6 @@ class GanttViewModel extends ChangeNotifier {
           final opTs = opMap['timestamp'] as int;
           final opActor = opMap['actorId'] as String;
 
-          // Auto-unwrap logic similar to Single Op
           if (opData.containsKey('data') && opData['data'] is Map) {
             final innerData = opData['data'] as Map<String, dynamic>;
             if (opData.containsKey('gantt_type')) {
@@ -2017,7 +1836,6 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // Final flush of remaining batch items
       if (_useLocalDatabase) {
         if (batchTasks.isNotEmpty) {
           await _localRepository.insertTasks(batchTasks);
@@ -2030,7 +1848,6 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // Final notify after batch
       await _processLocalData();
     } else {
       await _processOperationInternal(op, notify: true);
@@ -2051,10 +1868,8 @@ class GanttViewModel extends ChangeNotifier {
       var innerData = taskData;
       String? ganttType;
 
-      // Try reading gantt_type from top level first
       ganttType = innerData['gantt_type'] as String?;
 
-      // Unwrap if nested (gantt_type present or just nested data)
       if (innerData.containsKey('data') && innerData['data'] is Map) {
         ganttType ??= innerData['gantt_type'] as String?;
         innerData = innerData['data'] as Map<String, dynamic>;
@@ -2063,20 +1878,16 @@ class GanttViewModel extends ChangeNotifier {
 
       final taskIdRaw = innerData['id'];
       if (taskIdRaw == null) {
-        // print('Warning: UPDATE_TASK received without ID');
         return;
       }
       final taskId = taskIdRaw.toString().trim();
 
-      // 1. Check if task exists
       final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
 
       if (sourceIndex != -1) {
-        // UPDATE Existing
         final existingTask = _allGanttTasks[sourceIndex];
 
         if (existingTask.lastUpdated != null && op.timestamp < existingTask.lastUpdated!) {
-          // Stale update
           return;
         }
 
@@ -2129,7 +1940,6 @@ class GanttViewModel extends ChangeNotifier {
           print('Error processing UPDATE_TASK for $taskId: $e');
         }
       } else {
-        // UPSERT
         final newTask = LegacyGanttTask(
           id: taskId,
           rowId: innerData['rowId'] ?? 'unknown_row',
@@ -2212,7 +2022,6 @@ class GanttViewModel extends ChangeNotifier {
       if (taskId == null) return;
 
       if (_useLocalDatabase) {
-        // FLUSH BATCH before delete to ensure order
         if (batchTasks != null && batchTasks.isNotEmpty) {
           await _localRepository.insertTasks(batchTasks);
           batchTasks.clear();
@@ -2277,7 +2086,6 @@ class GanttViewModel extends ChangeNotifier {
       final succ = data['successorTaskId'];
 
       if (_useLocalDatabase) {
-        // FLUSH BATCH before delete
         if (batchDependencies != null && batchDependencies.isNotEmpty) {
           await _localRepository.insertDependencies(batchDependencies);
           batchDependencies.clear();
@@ -2293,7 +2101,6 @@ class GanttViewModel extends ChangeNotifier {
       if (taskId == null) return;
 
       if (_useLocalDatabase) {
-        // FLUSH BATCH before delete
         if (batchDependencies != null && batchDependencies.isNotEmpty) {
           await _localRepository.insertDependencies(batchDependencies);
           batchDependencies.clear();
@@ -2337,7 +2144,6 @@ class GanttViewModel extends ChangeNotifier {
       final id = op.data['id'];
       if (id != null) {
         if (_useLocalDatabase) {
-          // FLUSH BATCH before delete
           if (batchResources != null && batchResources.isNotEmpty) {
             await _localRepository.insertResources(batchResources);
             batchResources.clear();
@@ -2352,11 +2158,6 @@ class GanttViewModel extends ChangeNotifier {
       await _localRepository.deleteAllTasks();
       await _localRepository.deleteAllResources();
 
-      // Clear batch lists too if we reset?
-      // Technically RESET_DATA should probably clear pending batch lists too as they are now stale/deleted.
-      // But RESET_DATA usually shouldn't happen inside a mixed batch.
-      // If it does, we assume it nullifies everything before it.
-      // But clearing them avoids inserting stale data after delete.
       batchTasks?.clear();
       batchDependencies?.clear();
       batchResources?.clear();
@@ -2391,14 +2192,11 @@ class GanttViewModel extends ChangeNotifier {
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   Future<void> handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) async {
-    // 1. Handle Local Database Mode - Persist change
     if (_useLocalDatabase) {
-      // Write to database asynchronously.
       final now = DateTime.now().millisecondsSinceEpoch;
       final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
       await _localRepository.insertOrUpdateTask(updatedTask);
 
-      // Optimistically update in-memory request with the timestamped task
       final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
       if (index != -1) {
         _allGanttTasks[index] = updatedTask;
@@ -2409,21 +2207,12 @@ class GanttViewModel extends ChangeNotifier {
           _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
         }
       }
-      // Return early or continue? The original logic continued to sync client.
-      // We can continue, but we've already updated memory.
-      // The original code had a duplicate memory update at the bottom.
-      // Let's rely on the bottom part but ensure we use the updated task.
     } else if (_apiResponse != null) {
-      // 2. Handle Mock Data Mode (Memory only) - only if NOT using local DB
-      // Find the parent resource and child job to update the "backend" (apiResponse)
       final parentResource =
           _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
       if (parentResource != null) {
         final jobIndex = parentResource.children.indexWhere((j) => j.id == task.rowId);
         if (jobIndex != -1) {
-          // Determine which event corresponds to this task.
-          // In this simple model, we assume 1:1, but the task might be from an assignment.
-          // For simplicity in this demo, we update the event in the events list if found.
           final assignment = _apiResponse?.assignmentsData.firstWhereOrNull((a) => a.id == task.id);
           if (assignment != null) {
             final eventIndex = _apiResponse!.eventsData.indexWhere((e) => e.id == assignment.event);
@@ -2443,11 +2232,6 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // Sync Client Notification (Common)
-    // Moved after local persistence to ensure optimistic update applies locally first
-    // Sync Client Notification (Common)
-    // Moved after local persistence to ensure optimistic update applies locally first
-    // Allow sending if connected OR if using OfflineClient (which buffers internally)
     if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
       _syncClient!.sendOperation(Operation(
         type: 'UPDATE_TASK',
@@ -2458,14 +2242,9 @@ class GanttViewModel extends ChangeNotifier {
           'name': task.name,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
-        actorId: 'local-user', // Should be replaced by real user ID in prod
+        actorId: 'local-user',
       ));
     }
-
-    // Common: Update the source of truth (_allGanttTasks) optimistically
-    // This applies to both Local Mode (optimistic) and Mock Mode (memory)
-    // FIX: Ensure we only update if we haven't already done so in the Local DB block above.
-    // OR simpler: Make the bottom block the ONLY block, but ensuring `lastUpdated` is set.
 
     if (!_useLocalDatabase) {
       final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
@@ -2489,24 +2268,16 @@ class GanttViewModel extends ChangeNotifier {
     if (!_createTasksEnabled) return;
 
     String resourceName = 'Unknown';
-    // Try to find resource in _localResources
     final resource = _localResources.firstWhereOrNull((r) => r.id == rowId);
     if (resource != null) {
       resourceName = resource.name ?? 'Unknown';
     } else {
-      // Fallback: Check grid data
-      // _cachedFlatGridData is List<Map<String, dynamic>>
       final flatNode = _cachedFlatGridData?.firstWhereOrNull((n) => n['id'] == rowId);
       if (flatNode != null) {
         resourceName = flatNode['name'] ?? 'Unknown';
-      } else {
-        // Fallback to recursive search in _gridData if flat cache is not ready (though getter usually readies it)
-        // But _gridData is List<GanttGridData>
-        // Let's simplified search or just skip.
-      }
+      } else {}
     }
 
-    // Show dialog to create a new task
     await showDialog(
       context: context,
       builder: (context) => TaskDialog(
@@ -2526,9 +2297,6 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleTaskDrawEnd(DateTime start, DateTime end, String rowId) async {
     if (!_createTasksEnabled) return;
 
-    // We proceed even if resource lookup fails, assuming implicit resource.
-
-    // Create the task directly
     final newTask = LegacyGanttTask(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       rowId: rowId,
@@ -2545,16 +2313,13 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Helper method to add a new task, handle persistence, and update UI.
   Future<void> _createTask(LegacyGanttTask newTask) async {
-    // Optimistic update
     _allGanttTasks.add(newTask);
     _recalculateStackingAndNotify();
 
-    // Persist to local DB if enabled
     if (_useLocalDatabase) {
       await _localRepository.insertOrUpdateTask(newTask);
     }
 
-    // Sync with remote if connected
     if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
       _syncClient!.sendOperation(Operation(
         type: 'INSERT_TASK', // Use INSERT_TASK for clarity
@@ -2615,7 +2380,6 @@ class GanttViewModel extends ChangeNotifier {
     if (newContactName != null && newContactName.isNotEmpty) {
       final newResourceId = 'person_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Create new data objects
       final newResource = GanttResourceData(
         id: newResourceId,
         name: newContactName,
@@ -2625,7 +2389,6 @@ class GanttViewModel extends ChangeNotifier {
       final newGridItem =
           GanttGridData(id: newResourceId, name: newContactName, isParent: true, isExpanded: true, children: []);
 
-      // Update the mock API response and the grid data
       _apiResponse?.resourcesData.add(newResource);
       _gridData.add(newGridItem);
       _cachedFlatGridData = null;
@@ -2645,12 +2408,10 @@ class GanttViewModel extends ChangeNotifier {
     if (newLineItemName != null && newLineItemName.isNotEmpty) {
       final newJobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Create new data objects
       final newJob = GanttJobData(
           id: newJobId, name: newLineItemName, taskName: null, status: 'New', taskColor: '9E9E9E', completion: 0.0);
       final newGridItem = GanttGridData.fromJob(newJob);
 
-      // Find the parent in both data structures and add the new child
       final parentResource = _apiResponse?.resourcesData.firstWhere((r) => r.id == parentId);
       parentResource?.children.add(newJob);
       parentGridItem.children.add(newGridItem);
@@ -2676,7 +2437,6 @@ class GanttViewModel extends ChangeNotifier {
     if (isSummary) {
       if (parentTaskIndex != -1) {
         final existingTask = nextTasks[parentTaskIndex];
-        // Create a new list with the modified task.
         nextTasks = List.from(nextTasks)..[parentTaskIndex] = existingTask.copyWith(isSummary: true);
       } else {
         final parentGridItem = _gridData.firstWhere((g) => g.id == parentId);
@@ -2765,16 +2525,11 @@ class GanttViewModel extends ChangeNotifier {
     final item = _gridData.firstWhereOrNull((element) => element.id == id);
     if (item == null || !_gridScrollController.hasClients) return;
 
-    // --- Scroll Position Preservation Logic ---
-    // 1. Get the current scroll offset before any changes.
     final currentOffset = _gridScrollController.offset;
     final currentMaxScroll = _gridScrollController.position.maxScrollExtent;
 
-    // 2. Find the index of the row being toggled in the *current* visible list.
     final visibleRowsBefore = visibleGanttRows;
     final rowIndex = visibleRowsBefore.indexWhere((r) => r.id == id);
-
-    // 3. Calculate the height of the children that will be hidden/shown.
     double childrenHeight = 0;
     if (item.isParent && item.children.isNotEmpty) {
       childrenHeight = item.children.fold<double>(0.0, (prev, child) {
@@ -2783,22 +2538,11 @@ class GanttViewModel extends ChangeNotifier {
       });
     }
 
-    // --- Proactive Scroll Adjustment (to handle animation) ---
-    // If we are collapsing a row, we predict the new max scroll extent.
-    // If the current scroll position would be invalid after the animation,
-    // we jump to the predicted new max extent *before* the animation starts.
-    // This prevents the scroll "jump" when collapsing from the bottom up.
     if (!item.isExpanded && ganttScrollController.hasClients) {
       final predictedNewMaxScroll = currentMaxScroll - childrenHeight;
       if (currentOffset >= predictedNewMaxScroll) {
-        // The current position will be out of bounds. Jump to the new end.
         _gridScrollController.jumpTo(predictedNewMaxScroll);
-        // By jumping, we've handled the scroll adjustment for this case.
-        // We must also manually update the Gantt chart's internal translateY
-        // to keep the bars in sync with the grid's new scroll position.
         _ganttScrollController.jumpTo(predictedNewMaxScroll);
-
-        // We can now skip the top-down adjustment logic later on.
         item.isExpanded = !item.isExpanded;
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded);
@@ -2826,9 +2570,6 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // --- State Update ---
-    // This path is taken for expansions or for top-down collapses.
-    // 4. Toggle the expansion state.
     item.isExpanded = !item.isExpanded;
 
     if (_useLocalDatabase) {
@@ -2854,10 +2595,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (_apiResponse != null) {
-      //
-      // After toggling, get the new set of visible row IDs.
       final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
-      // Recalculate task stacking, but only run conflict detection on visible tasks.
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
         _ganttTasks,
         _apiResponse!,
@@ -2866,9 +2604,6 @@ class GanttViewModel extends ChangeNotifier {
       );
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
 
-      // --- Top-Down Collapse Adjustment ---
-      // This logic now only runs if the bottom-up case was not met.
-      // If a row *above* the viewport was collapsed, we need to shift the scroll position up.
       if (rowIndex != -1 && !item.isExpanded) {
         double rowTop = 0;
         for (int i = 0; i < rowIndex; i++) {
@@ -2879,14 +2614,12 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
     } else {
-      // If there's no data, just notify to update the expansion arrow.
       notifyListeners();
     }
   }
 
   /// Helper to centralize the logic for recalculating stacking and notifying listeners.
   void _recalculateStackingAndNotify() {
-    // Use existing response or fallback to empty state to ensure conflicts are calculated
     final response = _apiResponse ??
         GanttResponse(
           success: true,
@@ -2909,18 +2642,10 @@ class GanttViewModel extends ChangeNotifier {
   /// Ensures that a given row is visible by expanding its parent if necessary.
   /// This is called by the Gantt chart when a hidden task is focused.
   void ensureRowIsVisible(String rowId) {
-    // Find the parent of the given row.
     final parent = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
 
-    // If a parent is found and it's currently collapsed, expand it.
     if (parent != null && !parent.isExpanded) {
-      // We call toggleExpansion which handles the state update and recalculates
-      // the visible rows and task stacking.
       toggleExpansion(parent.id);
-
-      // After the state is updated and listeners are notified, the Gantt chart
-      // will be rebuilt with the newly visible row. The `_scrollToFocusedTask`
-      // logic in the package will then execute successfully on the next frame.
     }
   }
 
@@ -2928,7 +2653,6 @@ class GanttViewModel extends ChangeNotifier {
   void handleCopyTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
 
-    // Create a new task, slightly offset in time, with a new unique ID.
     final newTask = task.copyWith(
       id: 'copy_${task.id}_${DateTime.now().millisecondsSinceEpoch}',
       start: task.start.add(const Duration(days: 1)),
@@ -2936,11 +2660,9 @@ class GanttViewModel extends ChangeNotifier {
     );
 
     if (_useLocalDatabase) {
-      // Persist to local DB, stream will update UI
       _localRepository.insertOrUpdateTask(newTask);
     } else {
       final newTasks = [..._ganttTasks, newTask];
-      // Recalculate stacking with the new task.
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
           _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
@@ -2968,15 +2690,12 @@ class GanttViewModel extends ChangeNotifier {
     if (_apiResponse == null) return;
 
     if (_useLocalDatabase) {
-      // Remove from local DB
       _localRepository.deleteTask(task.id);
     } else {
-      // Create new lists by filtering out the deleted task and its dependencies.
       final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
       final newDependencies =
           _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
 
-      // After removing the task, recalculate stacking with the new list.
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
           _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
       _dependencies = newDependencies;
@@ -2994,7 +2713,6 @@ class GanttViewModel extends ChangeNotifier {
       ));
     }
 
-    // Check if we need to delete the resource row (if empty parents/rows are hidden)
     final remainingTasksInRow = _allGanttTasks.where((t) => t.rowId == task.rowId && t.id != task.id).length;
     if (remainingTasksInRow == 0 && !_showEmptyParentRows) {
       if (_useLocalDatabase) {
@@ -3014,15 +2732,12 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (_useLocalDatabase) {
-      // Remove from local DB
       _localRepository.deleteTask(task.id);
     } else {
-      // Create new lists by filtering out the deleted task and its dependencies.
       final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
       final newDependencies =
           _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
 
-      // After removing the task, recalculate stacking with the new list.
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
           _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
       _dependencies = newDependencies;
@@ -3043,7 +2758,6 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Shows a dialog to edit all parent summary tasks at once.
   Future<void> editAllParentTasks(BuildContext context) async {
-    // Get all parent rows that are currently acting as summaries.
     final parentRowIds = _gridData.where((g) => g.isParent).map((g) => g.id).toSet();
     final parentSummaryTasks =
         _ganttTasks.where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator).toList();
@@ -3086,13 +2800,11 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> editParentTask(BuildContext context, String rowId) async {
     final parentData = _gridData.firstWhereOrNull((p) => p.id == rowId);
     if (parentData != null && parentData.isParent) {
-      // It's a parent row, edit the summary task
       final task = _ganttTasks.firstWhereOrNull((t) => t.rowId == rowId && t.isSummary);
       if (task != null) {
         _editTask(context, task);
       }
     } else {
-      // It's a child row, let the user pick a task to edit
       await editChildTask(context, rowId);
     }
   }
@@ -3105,10 +2817,8 @@ class GanttViewModel extends ChangeNotifier {
     if (tasksInRow.isEmpty) return;
 
     if (tasksInRow.length == 1) {
-      // If there's only one task, edit it directly.
       await _editTask(context, tasksInRow.first);
     } else {
-      // If there are multiple tasks, show a dialog to choose which one to edit.
       final updatedTasks = await showDialog<List<LegacyGanttTask>>(
         context: context,
         builder: (context) => _EditTasksInRowDialog(tasks: tasksInRow),
@@ -3149,8 +2859,6 @@ class GanttViewModel extends ChangeNotifier {
       if (index != -1) {
         final originalTask = newTasks[index];
         final now = DateTime.now().millisecondsSinceEpoch;
-        // Preserve original properties by only copying over the edited fields.
-        // Also ensure lastUpdated is updated if not already set new.
         newTasks[index] = originalTask.copyWith(
           name: updatedTask.name,
           start: updatedTask.start,
@@ -3158,8 +2866,6 @@ class GanttViewModel extends ChangeNotifier {
           completion: updatedTask.completion,
           lastUpdated: updatedTask.lastUpdated ?? now,
         );
-
-        // Update the underlying GanttJobData in the API response to persist changes.
         final parentResource =
             _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == originalTask.rowId));
         if (parentResource != null) {
@@ -3175,25 +2881,19 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
     }
-    // Instead of manually updating parts of the state, re-run the full processing logic.
-    // This guarantees consistency across all data models.
     await _reprocessDataFromApiResponse();
   }
 
   /// Deletes a row from the grid and all associated tasks from the Gantt chart.
-  /// Deletes a row from the grid and all associated tasks from the Gantt chart.
   void deleteRow(String rowId) {
     if (_apiResponse == null) return;
 
-    // 1. Identify Resources to Delete
     final resourcesToDelete = <String>{};
     final parentData = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
 
     if (parentData != null) {
-      // Deleting a child row (Job)
       resourcesToDelete.add(rowId);
     } else {
-      // Deleting a parent row (Person) - Cascades to children
       final parentToDelete = _gridData.firstWhereOrNull((p) => p.id == rowId);
       if (parentToDelete != null) {
         resourcesToDelete.add(rowId);
@@ -3202,11 +2902,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (resourcesToDelete.isEmpty) return; // Should not happen if rowId is valid
-
-    // 2. Identify Tasks to Delete
     final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
-
-    // 3. Persist Locally First
     if (_useLocalDatabase) {
       for (final task in tasksToDelete) {
         _localRepository.deleteTask(task.id);
@@ -3214,7 +2910,6 @@ class GanttViewModel extends ChangeNotifier {
       resourcesToDelete.forEach(_localRepository.deleteResource);
     }
 
-    // 4. Sync Client Notification
     if (_syncClient != null) {
       for (final task in tasksToDelete) {
         _syncClient!.sendOperation(Operation(
@@ -3234,23 +2929,14 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // 4. Update In-Memory State (Client-side view update)
     if (!_useLocalDatabase) {
-      // Only manually update in-memory state if we are NOT using the DB stream.
-      // If we ARE using DB, the stream usage in _processLocalData will eventually handle this,
-      // but waiting for stream might cause UI lag.
-      // Ideally, simple deletion reflects via stream.
-      // But let's mirror the old logic for non-DB mode:
-
       final nextTasks = _allGanttTasks.where((task) => !tasksToDelete.contains(task)).toList();
 
       if (parentData != null) {
-        // Child row removed
         parentData.children.removeWhere((child) => child.id == rowId);
         final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
         parentResource?.children.removeWhere((job) => job.id == rowId);
       } else {
-        // Parent row removed
         _gridData.removeWhere((p) => p.id == rowId);
         _apiResponse?.resourcesData.removeWhere((r) => r.id == rowId);
       }
@@ -3285,11 +2971,7 @@ class GanttViewModel extends ChangeNotifier {
       return;
     }
 
-    // Preserve the expanded/collapsed state of parent rows before reprocessing.
     final expansionStates = {for (var item in _gridData) item.id: item.isExpanded};
-
-    // Re-run the full processing logic from the service.
-    // This is a simplified version of the logic in `fetchAndProcessSchedule`.
     final processedData = await _scheduleService.processGanttResponse(
       _apiResponse!,
       startDate: _startDate,
@@ -3297,15 +2979,12 @@ class GanttViewModel extends ChangeNotifier {
       showConflicts: _showConflicts,
       showEmptyParentRows: _showEmptyParentRows,
     );
-
-    // Restore the expansion states.
     for (var newItem in processedData.gridData) {
       if (expansionStates.containsKey(newItem.id)) {
         newItem.isExpanded = expansionStates[newItem.id]!;
       }
     }
 
-    // Update all the view model's state variables from the newly processed data.
     _ganttTasks = processedData.ganttTasks;
     _conflictIndicators = processedData.conflictIndicators;
     _gridData = processedData.gridData;
@@ -3313,7 +2992,6 @@ class GanttViewModel extends ChangeNotifier {
     _rowMaxStackDepth = processedData.rowMaxStackDepth;
     _eventMap = processedData.eventMap;
 
-    // Recalculate total date range based on all tasks
     if (_ganttTasks.isNotEmpty) {
       DateTime minStart = _ganttTasks.first.start;
       DateTime maxEnd = _ganttTasks.first.end;
@@ -3328,9 +3006,6 @@ class GanttViewModel extends ChangeNotifier {
       _totalEndDate = _startDate.add(Duration(days: _range));
     }
 
-    // When reprocessing, we must preserve the current visible window.
-    // If we reset it to the total effective range, any user zoom/pan is lost.
-    // If the visible range is somehow null, we reset it.
     if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
     notifyListeners();
@@ -3362,10 +3037,8 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Adds a new dependency object directly.
   void addDependencyObject(LegacyGanttTaskDependency newDependency) {
-    // Avoid adding duplicate dependencies
     if (!_dependencies.any((d) =>
         d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
-      // Sync Client Notification
       if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'INSERT_DEPENDENCY',
@@ -3381,9 +3054,7 @@ class GanttViewModel extends ChangeNotifier {
 
       if (_useLocalDatabase) {
         _localRepository.insertOrUpdateDependency(newDependency).then((_) => notifyListeners());
-        // The stream listener from local repo will update the UI list
       } else {
-        // Create a new list to ensure change notification is triggered.
         _dependencies = List.from(_dependencies)..add(newDependency);
         notifyListeners();
       }
@@ -3392,7 +3063,6 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Adds a new dependency between two tasks.
   void addDependency(String fromTaskId, String toTaskId) {
-    // For now, default to FinishToStart. This could be made configurable in the UI.
     final newDependency = LegacyGanttTaskDependency(
       predecessorTaskId: fromTaskId,
       successorTaskId: toTaskId,
@@ -3411,7 +3081,6 @@ class GanttViewModel extends ChangeNotifier {
     final newList = _dependencies.where((d) => d != dependency).toList();
 
     if (newList.length < initialCount) {
-      // Sync Client Notification
       if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_DEPENDENCY',
@@ -3428,7 +3097,6 @@ class GanttViewModel extends ChangeNotifier {
         _localRepository
             .deleteDependency(dependency.predecessorTaskId, dependency.successorTaskId)
             .then((_) => notifyListeners());
-        // Stream listener updates UI
       } else {
         _dependencies = newList;
         notifyListeners();
@@ -3625,7 +3293,6 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
   @override
   void initState() {
     super.initState();
-    // Create a mutable copy to edit.
     _tasks = widget.tasks.map((t) => t.copyWith()).toList();
   }
 
