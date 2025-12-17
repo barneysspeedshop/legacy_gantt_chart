@@ -699,6 +699,26 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Show Resource Histogram'),
+                Switch(
+                  value: vm.showResourceHistogram,
+                  onChanged: (value) => vm.setShowResourceHistogram(value),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Enable Work Calendar'),
+                Switch(
+                  value: vm.enableWorkCalendar,
+                  onChanged: (value) => vm.setEnableWorkCalendar(value),
+                ),
+              ],
+            ),
             const Divider(height: 24),
             Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
             // This dropdown demonstrates how to control the width of the resize handles on tasks.
@@ -1143,6 +1163,8 @@ class _GanttViewState extends State<GanttView> {
                                                 syncClient: vm.syncClient,
                                                 showCursors: _showCursors,
                                                 showCriticalPath: vm.showCriticalPath,
+                                                showResourceHistogram: vm.showResourceHistogram,
+                                                workCalendar: vm.workCalendar,
                                                 onTaskSecondaryTap: (task, position) =>
                                                     _showTaskContextMenu(context, task, position),
                                                 onTaskLongPress: (task, position) =>

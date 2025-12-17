@@ -7,6 +7,7 @@ import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_theme.dart';
 import 'models/remote_ghost.dart';
+import 'models/work_calendar.dart';
 
 /// A [CustomPainter] responsible for drawing all the task bars, dependency lines,
 /// and other visual elements onto the main Gantt chart grid area.
@@ -92,6 +93,7 @@ class BarsCollectionPainter extends CustomPainter {
   final Map<String, (DateTime, DateTime)> bulkGhostTasks;
   final Set<String> criticalTaskIds;
   final Set<LegacyGanttTaskDependency> criticalDependencies;
+  final WorkCalendar? workCalendar;
 
   BarsCollectionPainter({
     required this.conflictIndicators,
@@ -122,6 +124,7 @@ class BarsCollectionPainter extends CustomPainter {
     this.bulkGhostTasks = const {},
     this.criticalTaskIds = const {},
     this.criticalDependencies = const {},
+    this.workCalendar,
   });
 
   @override
@@ -333,6 +336,10 @@ class BarsCollectionPainter extends CustomPainter {
                 ..color = (segment.color ?? task.color ?? theme.barColorPrimary)
                     .withValues(alpha: isBeingDragged ? 0.3 : 1.0);
               canvas.drawRRect(segmentRRect, barPaint);
+
+              if (task.usesWorkCalendar) {
+                _drawNonWorkingShading(canvas, segmentRRect, segment.start, segment.end);
+              }
             }
           } else {
             // --- Draw Single Continuous Bar (existing logic) ---
@@ -341,6 +348,10 @@ class BarsCollectionPainter extends CustomPainter {
             final barPaint = Paint()
               ..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.3 : 1.0);
             canvas.drawRRect(barRRect, barPaint);
+
+            if (task.usesWorkCalendar) {
+              _drawNonWorkingShading(canvas, barRRect, task.start, task.end);
+            }
 
             // Draw completion progress
             if (task.completion > 0.0) {
@@ -1077,6 +1088,35 @@ class BarsCollectionPainter extends CustomPainter {
     return null;
   }
 
+  void _drawNonWorkingShading(Canvas canvas, RRect clipRRect, DateTime start, DateTime end) {
+    if (workCalendar == null) return;
+
+    final ranges = workCalendar!.getNonWorkingRanges(start, end);
+    if (ranges.isEmpty) return;
+
+    final shadingPaint = Paint()
+      ..color = theme.backgroundColor.withValues(alpha: 0.5)
+      ..style = PaintingStyle.fill;
+
+    canvas.save();
+    canvas.clipRRect(clipRRect);
+
+    for (final range in ranges) {
+      if (range.$1.isAfter(range.$2)) continue;
+
+      final rStart = scale(range.$1);
+      final rEnd = scale(range.$2);
+
+      if (rEnd <= rStart) continue;
+
+      // Draw rect covering the full height of the bar
+      final rect = Rect.fromLTRB(rStart, clipRRect.top, rEnd, clipRRect.bottom);
+      canvas.drawRect(rect, shadingPaint);
+    }
+
+    canvas.restore();
+  }
+
   @override
   bool shouldRepaint(covariant BarsCollectionPainter oldDelegate) =>
       !listEquals(oldDelegate.data, data) ||
@@ -1100,5 +1140,6 @@ class BarsCollectionPainter extends CustomPainter {
       oldDelegate.hoveredTaskForDependency != hoveredTaskForDependency ||
       oldDelegate.hasCustomTaskBuilder != hasCustomTaskBuilder ||
       oldDelegate.hasCustomTaskContentBuilder != hasCustomTaskContentBuilder ||
+      oldDelegate.workCalendar != workCalendar ||
       oldDelegate.translateY != translateY;
 }

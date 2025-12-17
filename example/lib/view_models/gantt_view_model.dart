@@ -81,6 +81,8 @@ class GanttViewModel extends ChangeNotifier {
   bool _showConflicts = true;
   bool _showEmptyParentRows = false;
   bool _showDependencies = true;
+  bool _showResourceHistogram = false;
+  bool _enableWorkCalendar = false;
 
   bool _showCriticalPath = false;
   Map<String, CpmTaskStats> _cpmStats = {};
@@ -139,6 +141,28 @@ class GanttViewModel extends ChangeNotifier {
   /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
   /// and to manage the horizontal scroll of the chart.
   final ScrollController _ganttScrollController = ScrollController();
+
+  bool get showResourceHistogram => _showResourceHistogram;
+  void setShowResourceHistogram(bool value) {
+    if (_showResourceHistogram == value) return;
+    _showResourceHistogram = value;
+    notifyListeners();
+  }
+
+  bool get enableWorkCalendar => _enableWorkCalendar;
+  void setEnableWorkCalendar(bool value) {
+    if (_enableWorkCalendar == value) return;
+    _enableWorkCalendar = value;
+    notifyListeners();
+  }
+
+  // Define a static work calendar for the example
+  WorkCalendar? get workCalendar => _enableWorkCalendar
+      ? WorkCalendar(
+          weekendDays: const {DateTime.saturday, DateTime.sunday},
+          holidays: {DateTime(DateTime.now().year, 12, 25)}, // Christmas for current year
+        )
+      : null;
   final ScrollController _gridScrollController = ScrollController();
   final ScrollController _ganttHorizontalScrollController = ScrollController();
 
@@ -2451,29 +2475,35 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleEmptySpaceClick(BuildContext context, String rowId, DateTime time) async {
     if (!_createTasksEnabled) return;
 
+    String resourceName = 'Unknown';
+    // Try to find resource in _localResources
     final resource = _localResources.firstWhereOrNull((r) => r.id == rowId);
-    if (resource == null) return;
+    if (resource != null) {
+      resourceName = resource.name ?? 'Unknown';
+    } else {
+      // Fallback: Check grid data
+      // _cachedFlatGridData is List<Map<String, dynamic>>
+      final flatNode = _cachedFlatGridData?.firstWhereOrNull((n) => n['id'] == rowId);
+      if (flatNode != null) {
+        resourceName = flatNode['name'] ?? 'Unknown';
+      } else {
+        // Fallback to recursive search in _gridData if flat cache is not ready (though getter usually readies it)
+        // But _gridData is List<GanttGridData>
+        // Let's simplified search or just skip.
+      }
+    }
 
-    // Show dialog to create a new task
     // Show dialog to create a new task
     await showDialog(
       context: context,
       builder: (context) => TaskDialog(
         initialTime: time,
-        resourceName: resource.name ?? 'Unknown',
+        resourceName: resourceName,
         rowId: rowId,
         defaultStartTime: _defaultStartTime,
         defaultEndTime: _defaultEndTime,
         onSubmit: (newTask) {
-          _createTask(newTask);
-          // Navigator pop handled inside dialog now? Wait, my TaskDialog implementation pops it.
-          // Let's check TaskDialog submit logic. Yes, it pops.
-          // So no need to pop here?
-          // Previous implementation: callback did creation then pop.
-          // New implementation: submits then pops itself.
-          // So I don't need to pop here?
-          // Let's reread TaskDialog. _submit calls widget.onSubmit(newTask); Navigator.pop(context);
-          // So callback just needs to create task.
+          _createTask(newTask.copyWith(usesWorkCalendar: _enableWorkCalendar));
         },
       ),
     );
@@ -2483,8 +2513,7 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleTaskDrawEnd(DateTime start, DateTime end, String rowId) async {
     if (!_createTasksEnabled) return;
 
-    final resource = _localResources.firstWhereOrNull((r) => r.id == rowId);
-    if (resource == null) return;
+    // We proceed even if resource lookup fails, assuming implicit resource.
 
     // Create the task directly
     final newTask = LegacyGanttTask(
@@ -2495,6 +2524,7 @@ class GanttViewModel extends ChangeNotifier {
       end: end,
       color: Colors.blue, // Default color
       isSummary: false,
+      usesWorkCalendar: _enableWorkCalendar,
     );
 
     await _createTask(newTask);

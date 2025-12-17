@@ -13,6 +13,8 @@ import 'legacy_gantt_view_model.dart';
 import 'bars_collection_painter.dart';
 import 'sync/gantt_sync_client.dart';
 import 'cursor_painter.dart';
+import 'widgets/resource_histogram.dart';
+import 'models/work_calendar.dart';
 
 /// Defines the type of progress indicator to display during loading.
 enum GanttLoadingIndicatorType {
@@ -336,6 +338,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Whether to highlight the critical path on the chart.
   final bool showCriticalPath;
 
+  /// Whether to show the resource histogram view below the chart.
+  final bool showResourceHistogram;
+
+  /// The calendar defining working days.
+  final WorkCalendar? workCalendar;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -393,6 +401,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.taskGrouper,
     this.showCursors = true,
     this.showCriticalPath = false,
+    this.showResourceHistogram = false,
+    this.workCalendar,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -432,6 +442,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         _internalViewModel!.updateConflictIndicators(widget.conflictIndicators!);
       }
 
+      if (oldWidget.workCalendar != widget.workCalendar) {
+        _internalViewModel!.workCalendar = widget.workCalendar;
+      }
+
       _internalViewModel!.updateVisibleRows(widget.visibleRows);
 
       _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
@@ -440,8 +454,24 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         _internalViewModel!.updateAxisHeight(widget.axisHeight);
       }
 
+      if (oldWidget.totalGridMin != widget.totalGridMin || oldWidget.totalGridMax != widget.totalGridMax) {
+        _internalViewModel!.updateTotalGridRange(widget.totalGridMin, widget.totalGridMax);
+      }
+
+      if (oldWidget.gridMin != widget.gridMin || oldWidget.gridMax != widget.gridMax) {
+        // Only update if not controlled by internal controller logic?
+        // Actually, internal VM listens to controller logic usually via updateVisibleRange call in build().
+        // But if we are in non-controller mode (using params), we must update.
+        // Even in controller mode, if parent params change, we might want to respect them.
+        _internalViewModel!.minMaxOverrides(widget.gridMin, widget.gridMax);
+      }
+
       if (oldWidget.showCriticalPath != widget.showCriticalPath) {
         _internalViewModel!.showCriticalPath = widget.showCriticalPath;
+      }
+
+      if (oldWidget.workCalendar != widget.workCalendar) {
+        _internalViewModel!.workCalendar = widget.workCalendar;
       }
 
       // Ensure callback is fresh (captures latest scope/closures)
@@ -620,14 +650,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onFocusChange: widget.onFocusChange,
             resizeHandleWidth: widget.resizeHandleWidth,
             syncClient: widget.syncClient,
-            taskGrouper: widget.taskGrouper,
-            onVisibleRangeChanged: (start, end) {
-              if (widget.controller != null) {
-                if (widget.controller!.visibleStartDate != start || widget.controller!.visibleEndDate != end) {
-                  widget.controller!.setVisibleRange(start, end);
-                }
-              }
-            },
+            taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
+            workCalendar: widget.workCalendar,
             onSelectionChanged: (ids) {
               if (widget.controller != null) {
                 widget.controller!.setSelectedTaskIds(ids);
@@ -720,156 +744,183 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                             cursor: vm.cursor,
                             onHover: (event) => vm.onHover(event),
                             onExit: (event) => vm.onHoverExit(event),
-                            child: ClipRect(
-                              child: Stack(
-                                children: [
-                                  // 1. Chart Content Area (Grid, Bars, Tasks, Cursors)
-                                  Padding(
-                                    padding: EdgeInsets.only(top: vm.timeAxisHeight),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: ClipRect(
                                     child: Stack(
                                       children: [
-                                        // 1.1 Grid Painter (Background)
-                                        RepaintBoundary(
-                                          child: CustomPaint(
-                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                            painter: AxisPainter(
-                                              x: 0,
-                                              y: 0,
-                                              width: totalContentWidth,
-                                              height: contentHeight,
-                                              scale: vm.totalScale,
-                                              domain: vm.totalDomain,
-                                              visibleDomain: vm.visibleExtent,
-                                              theme: effectiveTheme.copyWith(
-                                                  axisTextStyle: const TextStyle(color: Colors.transparent)),
-                                              weekendColor: effectiveTheme.weekendColor,
-                                              weekendDays: widget.weekendDays,
-                                            ),
-                                          ),
-                                        ),
-                                        // 1.2 Bars Painter (Main Content)
-                                        RepaintBoundary(
-                                          child: CustomPaint(
-                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                            painter: BarsCollectionPainter(
-                                              conflictIndicators: vm.conflictIndicators,
-                                              dependencies: vm.dependencies,
-                                              data: vm.data,
-                                              domain: vm.totalDomain,
-                                              visibleRows: widget.visibleRows,
-                                              rowMaxStackDepth: widget.rowMaxStackDepth,
-                                              scale: vm.totalScale,
-                                              rowHeight: widget.rowHeight,
-                                              draggedTaskId: vm.draggedTask?.id,
-                                              drawingTask: vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
-                                              ghostTaskStart: vm.ghostTaskStart,
-                                              ghostTaskEnd: vm.ghostTaskEnd,
-                                              remoteGhosts: vm.remoteGhosts,
-                                              theme: effectiveTheme,
-                                              hoveredRowId: vm.hoveredRowId,
-                                              hoveredDate: vm.hoveredDate,
-                                              hasCustomTaskBuilder: widget.taskBarBuilder != null,
-                                              hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
-                                              translateY: vm.translateY,
-                                              selectedTaskIds: vm.selectedTaskIds,
-                                              bulkGhostTasks: vm.bulkGhostTasks,
-                                              enableDependencyCreation: vm.currentTool == GanttTool.drawDependencies,
-                                              dependencyDragStartTaskId: vm.dependencyStartTaskId,
-                                              dependencyDragStartIsFromStart:
-                                                  vm.dependencyStartSide == TaskPart.startHandle,
-                                              dependencyDragCurrentPosition: vm.currentDragPosition,
-                                              hoveredTaskForDependency: vm.dependencyHoveredTaskId,
-                                              criticalTaskIds: vm.criticalTaskIds,
-                                              criticalDependencies: vm.criticalDependencies,
-                                            ),
-                                          ),
-                                        ),
-                                        // 1.3 Selection Box Painter
-                                        if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
-                                          CustomPaint(
-                                            size: Size(constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                            painter: _SelectionBoxPainter(
-                                              rect: vm.selectionRect!,
-                                              borderColor: Theme.of(context).primaryColor,
-                                              fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                                            ),
-                                          ),
-                                        // 1.4 Custom Task Widgets
-                                        if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
-                                          ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
-                                        ..._buildCustomCellWidgets(vm, vm.data),
-                                        ..._buildFocusedTaskWidgets(vm, vm.data, effectiveTheme,
-                                            widget.focusedTaskResizeHandleBuilder, widget.focusedTaskResizeHandleWidth),
-                                        // 1.5 Cursors
-                                        if (vm.showRemoteCursors)
-                                          IgnorePointer(
-                                            child: RepaintBoundary(
-                                              child: CustomPaint(
-                                                size: Size(
-                                                    constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                                painter: CursorPainter(
-                                                  remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
-                                                  totalScale: vm.totalScale,
-                                                  visibleRows: widget.visibleRows,
-                                                  rowMaxStackDepth: widget.rowMaxStackDepth,
-                                                  rowHeight: widget.rowHeight,
-                                                  translateY: vm.translateY,
+                                        // 1. Chart Content Area (Grid, Bars, Tasks, Cursors)
+                                        Padding(
+                                          padding: EdgeInsets.only(top: vm.timeAxisHeight),
+                                          child: Stack(
+                                            children: [
+                                              // 1.1 Grid Painter (Background)
+                                              RepaintBoundary(
+                                                child: CustomPaint(
+                                                  size: Size(
+                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                                  painter: AxisPainter(
+                                                    x: 0,
+                                                    y: 0,
+                                                    width: totalContentWidth,
+                                                    height: contentHeight,
+                                                    scale: vm.totalScale,
+                                                    domain: vm.totalDomain,
+                                                    visibleDomain: vm.visibleExtent,
+                                                    theme: effectiveTheme.copyWith(
+                                                        axisTextStyle: const TextStyle(color: Colors.transparent)),
+                                                    weekendColor: effectiveTheme.weekendColor,
+                                                    weekendDays:
+                                                        widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                              // 1.2 Bars Painter (Main Content)
+                                              RepaintBoundary(
+                                                child: CustomPaint(
+                                                  size: Size(
+                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                                  painter: BarsCollectionPainter(
+                                                    conflictIndicators: vm.conflictIndicators,
+                                                    dependencies: vm.dependencies,
+                                                    data: vm.data,
+                                                    domain: vm.totalDomain,
+                                                    visibleRows: widget.visibleRows,
+                                                    rowMaxStackDepth: widget.rowMaxStackDepth,
+                                                    scale: vm.totalScale,
+                                                    rowHeight: widget.rowHeight,
+                                                    draggedTaskId: vm.draggedTask?.id,
+                                                    drawingTask:
+                                                        vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
+                                                    ghostTaskStart: vm.ghostTaskStart,
+                                                    ghostTaskEnd: vm.ghostTaskEnd,
+                                                    remoteGhosts: vm.remoteGhosts,
+                                                    theme: effectiveTheme,
+                                                    hoveredRowId: vm.hoveredRowId,
+                                                    hoveredDate: vm.hoveredDate,
+                                                    hasCustomTaskBuilder: widget.taskBarBuilder != null,
+                                                    hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
+                                                    translateY: vm.translateY,
+                                                    selectedTaskIds: vm.selectedTaskIds,
+                                                    bulkGhostTasks: vm.bulkGhostTasks,
+                                                    enableDependencyCreation:
+                                                        vm.currentTool == GanttTool.drawDependencies,
+                                                    dependencyDragStartTaskId: vm.dependencyStartTaskId,
+                                                    dependencyDragStartIsFromStart:
+                                                        vm.dependencyStartSide == TaskPart.startHandle,
+                                                    dependencyDragCurrentPosition: vm.currentDragPosition,
+                                                    hoveredTaskForDependency: vm.dependencyHoveredTaskId,
+                                                    criticalTaskIds: vm.criticalTaskIds,
+                                                    criticalDependencies: vm.criticalDependencies,
+                                                    workCalendar: vm.workCalendar,
+                                                  ),
+                                                ),
+                                              ),
+                                              // 1.3 Selection Box Painter
+                                              if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
+                                                CustomPaint(
+                                                  size: Size(
+                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
+                                                  painter: _SelectionBoxPainter(
+                                                    rect: vm.selectionRect!,
+                                                    borderColor: Theme.of(context).primaryColor,
+                                                    fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                                                  ),
+                                                ),
+                                              // 1.4 Custom Task Widgets
+                                              if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
+                                                ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
+                                              ..._buildCustomCellWidgets(vm, vm.data),
+                                              ..._buildFocusedTaskWidgets(
+                                                  vm,
+                                                  vm.data,
+                                                  effectiveTheme,
+                                                  widget.focusedTaskResizeHandleBuilder,
+                                                  widget.focusedTaskResizeHandleWidth),
+                                              // 1.5 Cursors
+                                              if (vm.showRemoteCursors)
+                                                IgnorePointer(
+                                                  child: RepaintBoundary(
+                                                    child: CustomPaint(
+                                                      size: Size(constraints.maxWidth,
+                                                          constraints.maxHeight - vm.timeAxisHeight),
+                                                      painter: CursorPainter(
+                                                        remoteCursors:
+                                                            vm.showRemoteCursors ? vm.remoteCursors : const {},
+                                                        totalScale: vm.totalScale,
+                                                        visibleRows: widget.visibleRows,
+                                                        rowMaxStackDepth: widget.rowMaxStackDepth,
+                                                        rowHeight: widget.rowHeight,
+                                                        translateY: vm.translateY,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        // 2. Header Painter (Top Axis) - Fixed at Top
+                                        Positioned(
+                                          top: 0,
+                                          left: 0,
+                                          right: 0,
+                                          height: vm.timeAxisHeight,
+                                          child: widget.timelineAxisHeaderBuilder != null
+                                              ? widget.timelineAxisHeaderBuilder!(
+                                                  context,
+                                                  vm.totalScale,
+                                                  vm.visibleExtent,
+                                                  vm.totalDomain,
+                                                  effectiveTheme,
+                                                  totalContentWidth,
+                                                )
+                                              : Container(
+                                                  color: effectiveTheme.backgroundColor,
+                                                  child: RepaintBoundary(
+                                                    child: CustomPaint(
+                                                      painter: AxisPainter(
+                                                        x: 0,
+                                                        y: 0,
+                                                        width: totalContentWidth,
+                                                        height: vm.timeAxisHeight,
+                                                        scale: vm.totalScale,
+                                                        domain: vm.totalDomain,
+                                                        visibleDomain: vm.visibleExtent,
+                                                        theme: effectiveTheme,
+                                                        timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                                        weekendColor: effectiveTheme.weekendColor,
+                                                        weekendDays: widget.workCalendar?.weekendDays.toList() ??
+                                                            widget.weekendDays,
+                                                        showGridLines: false,
+                                                        verticallyCenterLabels: true,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                        ),
+
+                                        // 3. Resize Tooltip - Absolute Position
+                                        if (vm.showResizeTooltip)
+                                          Positioned(
+                                            left: vm.resizeTooltipPosition.dx + 15,
+                                            top: vm.resizeTooltipPosition.dy + 15,
+                                            child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
                                           ),
                                       ],
                                     ),
                                   ),
-
-                                  // 2. Header Painter (Top Axis) - Fixed at Top
-                                  Positioned(
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    height: vm.timeAxisHeight,
-                                    child: widget.timelineAxisHeaderBuilder != null
-                                        ? widget.timelineAxisHeaderBuilder!(
-                                            context,
-                                            vm.totalScale,
-                                            vm.visibleExtent,
-                                            vm.totalDomain,
-                                            effectiveTheme,
-                                            totalContentWidth,
-                                          )
-                                        : Container(
-                                            color: effectiveTheme.backgroundColor,
-                                            child: RepaintBoundary(
-                                              child: CustomPaint(
-                                                painter: AxisPainter(
-                                                  x: 0,
-                                                  y: 0,
-                                                  width: totalContentWidth,
-                                                  height: vm.timeAxisHeight,
-                                                  scale: vm.totalScale,
-                                                  domain: vm.totalDomain,
-                                                  visibleDomain: vm.visibleExtent,
-                                                  theme: effectiveTheme,
-                                                  timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
-                                                  weekendColor: effectiveTheme.weekendColor,
-                                                  weekendDays: widget.weekendDays,
-                                                  showGridLines: false,
-                                                  verticallyCenterLabels: true,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
+                                ),
+                                if (widget.showResourceHistogram) ...[
+                                  const Divider(height: 1),
+                                  ResourceHistogramWidget(
+                                    viewModel: vm,
+                                    height: 150,
+                                    theme: effectiveTheme,
                                   ),
-
-                                  // 3. Resize Tooltip - Absolute Position
-                                  if (vm.showResizeTooltip)
-                                    Positioned(
-                                      left: vm.resizeTooltipPosition.dx + 15,
-                                      top: vm.resizeTooltipPosition.dy + 15,
-                                      child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
-                                    ),
                                 ],
-                              ),
+                              ],
                             ),
                           ),
                         ),

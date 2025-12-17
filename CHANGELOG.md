@@ -1,3 +1,10 @@
+## 4.8.0
+
+* **PRE-ALPHA**: Added **Resource Histogram View** to visualize resource allocation and identify over-booked days (`showResourceHistogram: true`) NOTE: This doesn't work yet
+* **FEATURE**: Added **Work Calendars** support. Define `WorkCalendar` with custom weekends and holidays to manage working days.
+* **FEATURE**: Added **Smart Duration Logic**. When a `WorkCalendar` is provided, moving tasks respects working days (skipping non-working days) to preserve the effective working duration.
+* **IMPROVEMENT**: Conflict detection now defaults to grouping tasks by `resourceId` to automatically highlight double-bookings.
+
 ## 4.7.5
 
 * **FIX**: Fixed issue where Summary Tasks were excluded from the grid row completion calculation, resulting in 0% completion display

@@ -74,6 +74,7 @@ class LegacyGanttTask {
   final DateTime? baselineStart;
   final DateTime? baselineEnd;
   final String? notes;
+  final bool usesWorkCalendar;
 
   const LegacyGanttTask({
     required this.id,
@@ -98,6 +99,7 @@ class LegacyGanttTask {
     this.baselineStart,
     this.baselineEnd,
     this.notes,
+    this.usesWorkCalendar = false,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -133,6 +135,7 @@ class LegacyGanttTask {
         'baselineStart': baselineStart?.toIso8601String(),
         'baselineEnd': baselineEnd?.toIso8601String(),
         'notes': notes,
+        'usesWorkCalendar': usesWorkCalendar,
       };
 
   @override
@@ -161,7 +164,8 @@ class LegacyGanttTask {
           resourceId == other.resourceId &&
           baselineStart == other.baselineStart &&
           baselineEnd == other.baselineEnd &&
-          notes == other.notes;
+          notes == other.notes &&
+          usesWorkCalendar == other.usesWorkCalendar;
 
   @override
   int get hashCode =>
@@ -186,7 +190,8 @@ class LegacyGanttTask {
       resourceId.hashCode ^
       baselineStart.hashCode ^
       baselineEnd.hashCode ^
-      notes.hashCode;
+      notes.hashCode ^
+      usesWorkCalendar.hashCode;
 
   LegacyGanttTask copyWith({
     String? id,
@@ -211,6 +216,7 @@ class LegacyGanttTask {
     DateTime? baselineStart,
     DateTime? baselineEnd,
     String? notes,
+    bool? usesWorkCalendar,
   }) =>
       LegacyGanttTask(
         id: id ?? this.id,
@@ -235,5 +241,6 @@ class LegacyGanttTask {
         baselineStart: baselineStart ?? this.baselineStart,
         baselineEnd: baselineEnd ?? this.baselineEnd,
         notes: notes ?? this.notes,
+        usesWorkCalendar: usesWorkCalendar ?? this.usesWorkCalendar,
       );
 }

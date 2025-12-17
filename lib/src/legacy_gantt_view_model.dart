@@ -13,6 +13,7 @@ import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
 import 'legacy_gantt_controller.dart';
+import 'models/work_calendar.dart';
 
 enum DragMode { none, move, resizeStart, resizeEnd }
 
@@ -65,16 +66,46 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   /// The start of the visible time range in milliseconds since epoch.
-  double? gridMin;
+  double? _gridMin;
+  double? get gridMin => _gridMin;
 
   /// The end of the visible time range in milliseconds since epoch.
-  double? gridMax;
+  double? _gridMax;
+  double? get gridMax => _gridMax;
 
   /// The start of the total time range in milliseconds since epoch.
-  final double? totalGridMin;
+  double? _totalGridMin;
+  double? get totalGridMin => _totalGridMin;
 
   /// The end of the total time range in milliseconds since epoch.
-  final double? totalGridMax;
+  double? _totalGridMax;
+  double? get totalGridMax => _totalGridMax;
+
+  set gridMin(double? value) {
+    if (_gridMin != value) {
+      _gridMin = value;
+      _calculateDomains();
+      notifyListeners();
+    }
+  }
+
+  set gridMax(double? value) {
+    if (_gridMax != value) {
+      _gridMax = value;
+      _calculateDomains();
+      notifyListeners();
+    }
+  }
+
+  // Setters for totalGridMin/Max were not strictly required by API match (as they were final),
+  // but adding them for consistency if valid.
+  set totalGridMin(double? value) {
+    updateTotalGridRange(value, _totalGridMax);
+  }
+
+  set totalGridMax(double? value) {
+    updateTotalGridRange(_totalGridMin, value);
+  }
 
   /// Whether tasks can be moved by dragging.
   final bool enableDragAndDrop;
@@ -142,6 +173,15 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// A function to group tasks for conflict detection.
   /// If provided, conflict detection will be run when tasks are updated via sync.
   final Object? Function(LegacyGanttTask task)? taskGrouper;
+
+  WorkCalendar? _workCalendar;
+  WorkCalendar? get workCalendar => _workCalendar;
+  set workCalendar(WorkCalendar? value) {
+    if (_workCalendar != value) {
+      _workCalendar = value;
+      notifyListeners();
+    }
+  }
 
   StreamSubscription<Operation>? _syncSubscription;
 
@@ -311,10 +351,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onDependencyAdd,
     required this.rowHeight,
     double? axisHeight,
-    this.gridMin,
-    this.gridMax,
-    this.totalGridMin,
-    this.totalGridMax,
+    double? gridMin,
+    double? gridMax,
+    double? totalGridMin,
+    double? totalGridMax,
     this.enableDragAndDrop = false,
     this.enableResize = false,
     this.onTaskUpdate,
@@ -338,7 +378,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.syncClient,
     this.taskGrouper,
     this.onSelectionChanged,
+    WorkCalendar? workCalendar,
   })  : _tasks = List.from(data),
+        _workCalendar = workCalendar,
+        _gridMin = gridMin,
+        _gridMax = gridMax,
+        _totalGridMin = totalGridMin,
+        _totalGridMax = totalGridMax,
         _axisHeight = axisHeight {
     // 1. Pre-calculate row offsets immediately
     _focusedTaskId = initialFocusedTaskId;
@@ -991,10 +1037,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _calculateDomains() {
-    if (gridMin != null && gridMax != null) {
+    if (_gridMin != null && _gridMax != null) {
       _visibleExtent = [
-        DateTime.fromMillisecondsSinceEpoch(gridMin!.toInt()),
-        DateTime.fromMillisecondsSinceEpoch(gridMax!.toInt()),
+        DateTime.fromMillisecondsSinceEpoch(_gridMin!.toInt()),
+        DateTime.fromMillisecondsSinceEpoch(_gridMax!.toInt()),
       ];
     } else if (data.isEmpty) {
       final now = DateTime.now();
@@ -1239,6 +1285,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
       // Momentum logic could go here
     }
     _resetDragState();
+  }
+
+  void updateTotalGridRange(double? min, double? max) {
+    if (_totalGridMin != min || _totalGridMax != max) {
+      _totalGridMin = min;
+      _totalGridMax = max;
+      _calculateDomains();
+      notifyListeners();
+    }
+  }
+
+  void minMaxOverrides(double? min, double? max) {
+    if (_gridMin != min || _gridMax != max) {
+      _gridMin = min;
+      _gridMax = max;
+      _calculateDomains();
+      notifyListeners();
+    }
   }
 
   void onVerticalPanCancel() {

@@ -56,7 +56,8 @@ class LocalGanttRepository {
             baseline_end = ?15,
             notes = ?16,
             deleted_at = NULL,
-            is_deleted = 0
+            is_deleted = 0,
+            uses_work_calendar = ?17
           WHERE id = ?1
           ''',
           [
@@ -76,13 +77,14 @@ class LocalGanttRepository {
             task.baselineStart?.toIso8601String(),
             task.baselineEnd?.toIso8601String(),
             task.notes,
+            task.usesWorkCalendar ? 1 : 0,
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, deleted_at, is_deleted)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, NULL, 0)
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0)
           ''',
           [
             task.id,
@@ -101,6 +103,7 @@ class LocalGanttRepository {
             task.baselineStart?.toIso8601String(),
             task.baselineEnd?.toIso8601String(),
             task.notes,
+            task.usesWorkCalendar ? 1 : 0,
           ],
         );
       }
@@ -135,7 +138,8 @@ class LocalGanttRepository {
           baseline_end = ?15,
           notes = ?16,
           deleted_at = NULL,
-          is_deleted = 0
+          is_deleted = 0,
+          uses_work_calendar = ?17
         WHERE id = ?1
         ''',
         [
@@ -155,13 +159,14 @@ class LocalGanttRepository {
           task.baselineStart?.toIso8601String(),
           task.baselineEnd?.toIso8601String(),
           task.notes,
+          task.usesWorkCalendar ? 1 : 0,
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, deleted_at, is_deleted)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, NULL, 0)
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0)
         ''',
         [
           task.id,
@@ -180,6 +185,7 @@ class LocalGanttRepository {
           task.baselineStart?.toIso8601String(),
           task.baselineEnd?.toIso8601String(),
           task.notes,
+          task.usesWorkCalendar ? 1 : 0,
         ],
       );
     });
@@ -330,6 +336,7 @@ class LocalGanttRepository {
         baselineStart: row['baseline_start'] != null ? DateTime.tryParse(row['baseline_start'] as String) : null,
         baselineEnd: row['baseline_end'] != null ? DateTime.tryParse(row['baseline_end'] as String) : null,
         notes: row['notes'] as String?,
+        usesWorkCalendar: (row['uses_work_calendar'] as int?) == 1,
       );
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(
