@@ -1,7 +1,3 @@
-## 4.8.1
-
-* **FIX**: Fix for an issue that prevented work calendars from applying
-
 ## 4.8.0
 
 * **PRE-ALPHA**: Added **Resource Histogram View** to visualize resource allocation and identify over-booked days (`showResourceHistogram: true`) NOTE: This doesn't work yet
