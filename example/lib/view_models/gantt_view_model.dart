@@ -404,6 +404,11 @@ class GanttViewModel extends ChangeNotifier {
           'gantt_type': ganttType,
           'is_summary': newTask.isSummary, // explicit field sometimes used
           // 'is_milestone': newTask.isMilestone, // if used
+          'completion': newTask.completion,
+          'resourceId': newTask.resourceId,
+          'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
+          'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
+          'notes': newTask.notes,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
@@ -435,6 +440,11 @@ class GanttViewModel extends ChangeNotifier {
           'end_date': task.end.millisecondsSinceEpoch,
           'gantt_type': ganttType,
           'is_summary': task.isSummary,
+          'completion': task.completion,
+          'resourceId': task.resourceId,
+          'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
+          'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
+          'notes': task.notes,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
@@ -639,6 +649,11 @@ class GanttViewModel extends ChangeNotifier {
               'is_summary': task.isSummary,
               'color': task.color?.toARGB32().toRadixString(16),
               'textColor': task.textColor?.toARGB32().toRadixString(16),
+              'completion': task.completion,
+              'resourceId': task.resourceId,
+              'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
+              'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
+              'notes': task.notes,
               // Add other fields if necessary
             }
           },

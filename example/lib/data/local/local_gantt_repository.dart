@@ -51,6 +51,10 @@ class LocalGanttRepository {
             is_milestone = ?10,
             resource_id = ?11,
             last_updated = ?12,
+            completion = ?13,
+            baseline_start = ?14,
+            baseline_end = ?15,
+            notes = ?16,
             deleted_at = NULL,
             is_deleted = 0
           WHERE id = ?1
@@ -66,15 +70,19 @@ class LocalGanttRepository {
             task.stackIndex,
             task.isSummary ? 1 : 0,
             task.isMilestone ? 1 : 0,
-            task.originalId,
+            task.resourceId ?? task.originalId,
             task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            task.completion,
+            task.baselineStart?.toIso8601String(),
+            task.baselineEnd?.toIso8601String(),
+            task.notes,
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, deleted_at, is_deleted)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, NULL, 0)
           ''',
           [
             task.id,
@@ -87,8 +95,12 @@ class LocalGanttRepository {
             task.stackIndex,
             task.isSummary ? 1 : 0,
             task.isMilestone ? 1 : 0,
-            task.originalId,
+            task.resourceId ?? task.originalId,
             task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            task.completion,
+            task.baselineStart?.toIso8601String(),
+            task.baselineEnd?.toIso8601String(),
+            task.notes,
           ],
         );
       }
@@ -118,6 +130,10 @@ class LocalGanttRepository {
           is_milestone = ?10,
           resource_id = ?11,
           last_updated = ?12,
+          completion = ?13,
+          baseline_start = ?14,
+          baseline_end = ?15,
+          notes = ?16,
           deleted_at = NULL,
           is_deleted = 0
         WHERE id = ?1
@@ -133,15 +149,19 @@ class LocalGanttRepository {
           task.stackIndex,
           task.isSummary ? 1 : 0,
           task.isMilestone ? 1 : 0,
-          task.originalId,
+          task.resourceId ?? task.originalId,
           task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          task.completion,
+          task.baselineStart?.toIso8601String(),
+          task.baselineEnd?.toIso8601String(),
+          task.notes,
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, deleted_at, is_deleted)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 0)
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, deleted_at, is_deleted)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, NULL, 0)
         ''',
         [
           task.id,
@@ -154,8 +174,12 @@ class LocalGanttRepository {
           task.stackIndex,
           task.isSummary ? 1 : 0,
           task.isMilestone ? 1 : 0,
-          task.originalId,
+          task.resourceId ?? task.originalId,
           task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          task.completion,
+          task.baselineStart?.toIso8601String(),
+          task.baselineEnd?.toIso8601String(),
+          task.notes,
         ],
       );
     });
@@ -299,7 +323,13 @@ class LocalGanttRepository {
         stackIndex: (row['stack_index'] as int?) ?? 0,
         isSummary: (row['is_summary'] as int?) == 1,
         isMilestone: (row['is_milestone'] as int?) == 1,
-        originalId: row['resource_id'] as String?,
+        resourceId: row['resource_id'] as String?,
+        originalId: row['resource_id']
+            as String?, // Keep for compatibility if needed, but resource_id is the canonical field now
+        completion: (row['completion'] as num?)?.toDouble() ?? 0.0,
+        baselineStart: row['baseline_start'] != null ? DateTime.tryParse(row['baseline_start'] as String) : null,
+        baselineEnd: row['baseline_end'] != null ? DateTime.tryParse(row['baseline_end'] as String) : null,
+        notes: row['notes'] as String?,
       );
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(

@@ -1,3 +1,7 @@
+## 4.7.2
+
+* **FIX**: Fix for an issue that preventing "notes" and other new properties from persisting in local storage.
+
 ## 4.7.1
 
 * **FIX**: Fix for an issue that caused a lifecycle error when saving task edits

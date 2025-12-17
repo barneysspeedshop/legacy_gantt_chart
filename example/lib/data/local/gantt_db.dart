@@ -49,6 +49,9 @@ class GanttDb {
             is_summary INTEGER,
             is_milestone INTEGER,
             completion REAL,
+            baseline_start TEXT,
+            baseline_end TEXT,
+            notes TEXT,
             last_updated INTEGER,
             deleted_at INTEGER
           )
@@ -228,11 +231,38 @@ class GanttDb {
           } catch (_) {}
           print('Successfully applied v10 column repair');
         }
+        if (oldVersion < 11) {
+          // Add new feature columns
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN baseline_start TEXT');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN baseline_end TEXT');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN notes TEXT');
+          } catch (_) {}
+          // completion/resource_id were already in create but missing from v10 upgrade if user was on old version?
+          // Actually completion was in CREATE but not explicitly added in upgrades.
+          // Resource_id was in CREATE.
+          // Let's add them safely just in case.
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN completion REAL DEFAULT 0.0');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN resource_id TEXT');
+          } catch (_) {}
+
+          // Dependencies
+          try {
+            await db.execute('ALTER TABLE dependencies ADD COLUMN lag_ms INTEGER');
+          } catch (_) {}
+        }
 
         // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
         // on open, so we don't need manual migration for is_deleted.
       },
-      version: 10,
+      version: 11,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)
