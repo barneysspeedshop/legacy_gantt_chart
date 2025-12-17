@@ -1,13 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
-import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
-import 'package:legacy_gantt_chart/src/models/work_calendar.dart';
 
 void main() {
   test('LegacyGanttViewModel Smart Duration drag logic', () {
     // defaults: Sat, Sun are weekends
-    final calendar = WorkCalendar();
+    const calendar = WorkCalendar();
 
     // Friday Oct 27, 2023
     final start = DateTime(2023, 10, 27);
@@ -24,7 +22,7 @@ void main() {
 
     final vm = LegacyGanttViewModel(
       data: [task],
-      visibleRows: [LegacyGanttRow(id: 'row1', label: 'Row 1')],
+      visibleRows: [const LegacyGanttRow(id: 'row1', label: 'Row 1')],
       rowMaxStackDepth: {'row1': 1},
       conflictIndicators: [],
       dependencies: [],
@@ -63,7 +61,7 @@ void main() {
 
     // 2. Pan Update: First move triggers the lock
     // We need to calculate how many pixels is 1 day.
-    final dayWidth = (vm.totalScale(start.add(Duration(days: 1))) - vm.totalScale(start)).abs();
+    final dayWidth = (vm.totalScale(start.add(const Duration(days: 1))) - vm.totalScale(start)).abs();
 
     vm.onPanUpdate(DragUpdateDetails(
       globalPosition: Offset(taskCenterX + dayWidth, taskCenterY),
