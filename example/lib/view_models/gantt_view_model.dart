@@ -2043,6 +2043,8 @@ class GanttViewModel extends ChangeNotifier {
           isSummary: ganttType != null
               ? (ganttType == 'summary')
               : (innerData['is_summary'] == true ? true : existingTask.isSummary),
+          color: _parseColor(innerData['color']) ?? existingTask.color,
+          textColor: _parseColor(innerData['text_color']) ?? existingTask.textColor,
         );
 
         try {
@@ -2080,7 +2082,7 @@ class GanttViewModel extends ChangeNotifier {
           isSummary: ganttType == 'summary' || innerData['is_summary'] == true,
           isMilestone: ganttType == 'milestone',
           color: _parseColor(innerData['color']),
-          textColor: _parseColor(innerData['textColor']),
+          textColor: _parseColor(innerData['text_color']),
         );
 
         if (_useLocalDatabase) {
@@ -2293,13 +2295,20 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  Color? _parseColor(String? hex) {
-    if (hex == null) return null;
-    try {
-      return Color(int.parse(hex, radix: 16));
-    } catch (_) {
-      return null;
+  Color? _parseColor(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return Color(value);
+    if (value is String) {
+      try {
+        if (value.startsWith('#')) {
+          return Color(int.parse(value.substring(1), radix: 16));
+        }
+        return Color(int.parse(value, radix: 16));
+      } catch (_) {
+        return null;
+      }
     }
+    return null;
   }
 
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.

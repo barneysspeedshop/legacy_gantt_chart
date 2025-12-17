@@ -1,3 +1,7 @@
+## 4.6.1
+
+* **FIX**: Fix for an issue that led to color changes being ignored on task updates
+
 ## 4.6.0
 
 * **FEATURE**: Implement basic Critical Path Analysis
