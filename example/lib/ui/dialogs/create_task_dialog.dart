@@ -36,6 +36,7 @@ class _TaskDialogState extends State<TaskDialog> {
   Color? _selectedColor;
   Color? _selectedTextColor;
   double _completion = 0.0;
+  bool _isAutoScheduled = true;
   final TextEditingController _resourceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -52,6 +53,7 @@ class _TaskDialogState extends State<TaskDialog> {
       _selectedColor = widget.task!.color;
       _selectedTextColor = widget.task!.textColor;
       _completion = widget.task!.completion;
+      _isAutoScheduled = widget.task!.isAutoScheduled ?? true;
       _resourceController.text = widget.task!.resourceId ?? '';
       _notesController.text = widget.task!.notes ?? '';
 
@@ -119,6 +121,7 @@ class _TaskDialogState extends State<TaskDialog> {
           completion: _completion,
           resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
+          isAutoScheduled: _isAutoScheduled,
         );
 
         // Enforce milestone duration logic if type changed to milestone
@@ -145,6 +148,7 @@ class _TaskDialogState extends State<TaskDialog> {
           completion: _completion,
           resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
+          isAutoScheduled: _isAutoScheduled,
         );
         widget.onSubmit(newTask);
       }
@@ -317,6 +321,13 @@ class _TaskDialogState extends State<TaskDialog> {
           TextField(
             controller: _resourceController,
             decoration: const InputDecoration(labelText: 'Resource ID', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            title: const Text('Auto Schedule'),
+            subtitle: const Text('Automatically adjust start/end based on dependencies'),
+            value: _isAutoScheduled,
+            onChanged: (val) => setState(() => _isAutoScheduled = val),
           ),
           const SizedBox(height: 16),
           TextField(

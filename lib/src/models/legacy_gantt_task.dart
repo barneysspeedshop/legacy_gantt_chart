@@ -71,11 +71,13 @@ class LegacyGanttTask {
   final String? lastUpdatedBy;
 
   final String? resourceId;
+  final String? parentId;
   final DateTime? baselineStart;
   final DateTime? baselineEnd;
   final String? notes;
   final bool usesWorkCalendar;
   final double load;
+  final bool? isAutoScheduled;
 
   const LegacyGanttTask({
     required this.id,
@@ -97,11 +99,13 @@ class LegacyGanttTask {
     this.lastUpdated,
     this.lastUpdatedBy,
     this.resourceId,
+    this.parentId,
     this.baselineStart,
     this.baselineEnd,
     this.notes,
     this.usesWorkCalendar = false,
     this.load = 1.0,
+    this.isAutoScheduled,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -134,11 +138,13 @@ class LegacyGanttTask {
         'lastUpdated': lastUpdated,
         'lastUpdatedBy': lastUpdatedBy,
         'resourceId': resourceId,
+        'parentId': parentId,
         'baselineStart': baselineStart?.toIso8601String(),
         'baselineEnd': baselineEnd?.toIso8601String(),
         'notes': notes,
         'usesWorkCalendar': usesWorkCalendar,
         'load': load,
+        'isAutoScheduled': isAutoScheduled,
       };
 
   @override
@@ -165,11 +171,13 @@ class LegacyGanttTask {
           lastUpdated == other.lastUpdated &&
           lastUpdatedBy == other.lastUpdatedBy &&
           resourceId == other.resourceId &&
+          parentId == other.parentId &&
           baselineStart == other.baselineStart &&
           baselineEnd == other.baselineEnd &&
           notes == other.notes &&
           usesWorkCalendar == other.usesWorkCalendar &&
-          load == other.load;
+          load == other.load &&
+          isAutoScheduled == other.isAutoScheduled;
 
   @override
   int get hashCode =>
@@ -192,11 +200,13 @@ class LegacyGanttTask {
       lastUpdated.hashCode ^
       lastUpdatedBy.hashCode ^
       resourceId.hashCode ^
+      parentId.hashCode ^
       baselineStart.hashCode ^
       baselineEnd.hashCode ^
       notes.hashCode ^
       usesWorkCalendar.hashCode ^
-      load.hashCode;
+      load.hashCode ^
+      isAutoScheduled.hashCode;
 
   LegacyGanttTask copyWith({
     String? id,
@@ -218,11 +228,13 @@ class LegacyGanttTask {
     int? lastUpdated,
     String? lastUpdatedBy,
     String? resourceId,
+    String? parentId,
     DateTime? baselineStart,
     DateTime? baselineEnd,
     String? notes,
     bool? usesWorkCalendar,
     double? load,
+    bool? isAutoScheduled,
   }) =>
       LegacyGanttTask(
         id: id ?? this.id,
@@ -244,10 +256,12 @@ class LegacyGanttTask {
         lastUpdated: lastUpdated ?? this.lastUpdated,
         lastUpdatedBy: lastUpdatedBy ?? this.lastUpdatedBy,
         resourceId: resourceId ?? this.resourceId,
+        parentId: parentId ?? this.parentId,
         baselineStart: baselineStart ?? this.baselineStart,
         baselineEnd: baselineEnd ?? this.baselineEnd,
         notes: notes ?? this.notes,
         usesWorkCalendar: usesWorkCalendar ?? this.usesWorkCalendar,
         load: load ?? this.load,
+        isAutoScheduled: isAutoScheduled ?? this.isAutoScheduled,
       );
 }

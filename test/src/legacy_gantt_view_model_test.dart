@@ -6,6 +6,7 @@ import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
+import 'package:collection/collection.dart';
 
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
 
@@ -555,9 +556,243 @@ void main() {
       // Simulate parent widget updating dependencies (e.g. from local DB)
       viewModel.updateDependencies([dep1]);
 
-      // Expectation: NO operations sent.
-      // Current behavior (bug): INSERT_DEPENDENCY sent.
       expect(mockSyncClient.sentOperations, isEmpty);
+    });
+
+    test('Auto-scheduling: Parent shifts Child', () {
+      final mockSyncClient = MockGanttSyncClient();
+      final parentTask = LegacyGanttTask(
+        id: 'parent',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 12),
+        name: 'Parent',
+      );
+      final childTask = LegacyGanttTask(
+        id: 'child',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 9),
+        end: DateTime(2023, 1, 1, 10),
+        name: 'Child',
+        parentId: 'parent',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [parentTask, childTask],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+        enableDragAndDrop: true,
+      );
+
+      viewModel.updateLayout(2000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble();
+      // Scale: 200px/hour. Parent Start (8h): 1600px.
+
+      // Start Drag on Parent
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: const Offset(1610, 75), // Row 1 y=50-100
+            localPosition: const Offset(1610, 75),
+          ),
+          overrideTask: parentTask);
+
+      // Drag +200px (+1 hour)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(1810, 75),
+        delta: const Offset(200, 0),
+        primaryDelta: 200,
+      ));
+
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      // Check operations
+      // Expect update for Parent AND Child
+      expect(mockSyncClient.sentOperations.length, greaterThanOrEqualTo(2));
+
+      final childUpdate = mockSyncClient.sentOperations.firstWhere((op) => op.data['id'] == 'child');
+      final newStart = DateTime.parse(childUpdate.data['start']);
+      // Child original 9:00. +1h -> 10:00.
+      expect(newStart.hour, 10);
+    });
+
+    test('Auto-scheduling: Predecessor shifts Successor', () {
+      final mockSyncClient = MockGanttSyncClient();
+      final predTask = LegacyGanttTask(
+        id: 'pred',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 9),
+        name: 'Predecessor',
+      );
+      final succTask = LegacyGanttTask(
+        id: 'succ',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 10),
+        end: DateTime(2023, 1, 1, 11),
+        name: 'Successor',
+      );
+      final dependency = LegacyGanttTaskDependency(
+        predecessorTaskId: 'pred',
+        successorTaskId: 'succ',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [predTask, succTask],
+        dependencies: [dependency],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+        enableDragAndDrop: true,
+      );
+
+      viewModel.updateLayout(2000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble();
+
+      // Start Drag on Predecessor
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: const Offset(1610, 75),
+            localPosition: const Offset(1610, 75),
+          ),
+          overrideTask: predTask);
+
+      // Drag +200px (+1 hour)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(1810, 75),
+        delta: const Offset(200, 0),
+        primaryDelta: 200,
+      ));
+
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      // Check operations
+      final succUpdate = mockSyncClient.sentOperations.firstWhere((op) => op.data['id'] == 'succ');
+      final newStart = DateTime.parse(succUpdate.data['start']);
+      // Succ original 10:00. +1h -> 11:00.
+      expect(newStart.hour, 11);
+    });
+
+    test('Auto-scheduling: Disabled Globally', () {
+      final mockSyncClient = MockGanttSyncClient();
+      final parentTask = LegacyGanttTask(
+        id: 'parent',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 12),
+        name: 'Parent',
+      );
+      final childTask = LegacyGanttTask(
+        id: 'child',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 9),
+        end: DateTime(2023, 1, 1, 10),
+        name: 'Child',
+        parentId: 'parent',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [parentTask, childTask],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+        enableDragAndDrop: true,
+        enableAutoScheduling: false, // Disabled!
+      );
+
+      viewModel.updateLayout(2000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble();
+
+      // Start Drag on Parent
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: const Offset(1610, 75), // Row 1
+            localPosition: const Offset(1610, 75),
+          ),
+          overrideTask: parentTask);
+
+      // Drag +200px (+1 hour)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(1810, 75),
+        delta: const Offset(200, 0),
+        primaryDelta: 200,
+      ));
+
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      // Check operations
+      // Expect update for Parent ONLY
+      final childUpdate = mockSyncClient.sentOperations.firstWhereOrNull((op) => op.data['id'] == 'child');
+      expect(childUpdate, isNull);
+    });
+
+    test('Auto-scheduling: Disabled Per Task', () {
+      final mockSyncClient = MockGanttSyncClient();
+      final parentTask = LegacyGanttTask(
+        id: 'parent',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 12),
+        name: 'Parent',
+      );
+      final childTask = LegacyGanttTask(
+        id: 'child',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 9),
+        end: DateTime(2023, 1, 1, 10),
+        name: 'Child',
+        parentId: 'parent',
+        isAutoScheduled: false, // Disabled for this task!
+      );
+
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [parentTask, childTask],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+        enableDragAndDrop: true,
+        enableAutoScheduling: true, // Enabled globally
+      );
+
+      viewModel.updateLayout(2000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble();
+
+      // Start Drag on Parent
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: const Offset(1610, 75), // Row 1
+            localPosition: const Offset(1610, 75),
+          ),
+          overrideTask: parentTask);
+
+      // Drag +200px (+1 hour)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(1810, 75),
+        delta: const Offset(200, 0),
+        primaryDelta: 200,
+      ));
+
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      // Check operations
+      // Expect update for Parent ONLY
+      final childUpdate = mockSyncClient.sentOperations.firstWhereOrNull((op) => op.data['id'] == 'child');
+      expect(childUpdate, isNull);
     });
   });
 }

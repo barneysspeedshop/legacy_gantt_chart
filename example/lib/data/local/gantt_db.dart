@@ -54,7 +54,8 @@ class GanttDb {
             notes TEXT,
             last_updated INTEGER,
             deleted_at INTEGER,
-            uses_work_calendar INTEGER
+            uses_work_calendar INTEGER,
+            parent_id TEXT
           )
         ''');
 
@@ -264,11 +265,21 @@ class GanttDb {
             await db.execute('ALTER TABLE tasks ADD COLUMN uses_work_calendar INTEGER DEFAULT 0');
           } catch (_) {}
         }
+        if (oldVersion < 13) {
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN parent_id TEXT');
+          } catch (_) {}
+        }
+        if (oldVersion < 14) {
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN is_auto_scheduled INTEGER DEFAULT 1');
+          } catch (_) {}
+        }
 
         // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
         // on open, so we don't need manual migration for is_deleted.
       },
-      version: 12,
+      version: 14,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)

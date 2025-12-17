@@ -115,6 +115,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Whether tasks can be resized from their start or end handles.
   final bool enableResize;
 
+  /// Whether auto-scheduling is enabled globally.
+  bool enableAutoScheduling;
+
   /// A callback invoked when a task is successfully moved or resized.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
 
@@ -359,6 +362,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     double? totalGridMax,
     this.enableDragAndDrop = false,
     this.enableResize = false,
+    this.enableAutoScheduling = true,
     this.onTaskUpdate,
     this.onTaskDoubleClick,
     this.onTaskDelete,
@@ -1236,6 +1240,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void onHorizontalPanEnd(DragEndDetails details) {
     if (_panType == PanType.horizontal) {
+      if (_draggedTask != null && _ghostTaskStart != null) {
+        // Calculate the delta for auto-scheduling
+        final delta = _ghostTaskStart!.difference(_draggedTask!.start);
+        if (delta.inSeconds != 0) {
+          _propagateAutoSchedule(_draggedTask!, delta);
+        }
+      }
+
       // Execute existing finish logic
       if (_draggedTask != null) {
         _clearGhostUpdate(_draggedTask!.id);
@@ -1305,7 +1317,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     bool localStateChanged = false;
 
-    for (final entry in _bulkGhostTasks.entries) {
+    // We copy the entries because _bulkGhostTasks might be modified ? No, but safe practice.
+    final Map<String, (DateTime, DateTime)> updates = Map.from(_bulkGhostTasks);
+    // Clear immediately to avoid double commits if something recurses? (Unlikely)
+    // But existing code cleared it in _resetDragState, which is called after this.
+
+    for (final entry in updates.entries) {
       final taskId = entry.key;
       final (newStart, newEnd) = entry.value;
       // Use _allGanttTasks or data to find the current state of the task
@@ -1341,6 +1358,44 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final conflicts = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
       conflictIndicators = conflicts;
       notifyListeners();
+    }
+  }
+
+  /// Propagates a time shift (delta) to all successor tasks and child tasks.
+  /// This implements the auto-scheduling logic.
+  void _propagateAutoSchedule(LegacyGanttTask originTask, Duration delta) {
+    if (!enableAutoScheduling) return;
+
+    final visited = <String>{originTask.id};
+    final queue = <LegacyGanttTask>[originTask];
+
+    while (queue.isNotEmpty) {
+      final currentTask = queue.removeAt(0);
+
+      // 1. Find direct children (Hierarchy)
+      final children = _tasks.where((t) => t.parentId == currentTask.id).toList();
+
+      // 2. Find direct successors (Dependencies)
+      final directDependencies = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
+      final successorIds = directDependencies.map((d) => d.successorTaskId).toSet();
+      final successors = _tasks.where((t) => successorIds.contains(t.id)).toList();
+
+      final tasksToUpdate = [...children, ...successors];
+
+      for (final task in tasksToUpdate) {
+        if (!visited.contains(task.id)) {
+          // Check per-task auto-scheduling setting (default to true if null)
+          if (task.isAutoScheduled == false) continue;
+
+          visited.add(task.id);
+
+          final newStart = task.start.add(delta);
+          final newEnd = task.end.add(delta);
+
+          _bulkGhostTasks[task.id] = (newStart, newEnd);
+          queue.add(task);
+        }
+      }
     }
   }
 

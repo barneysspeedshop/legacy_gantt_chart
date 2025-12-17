@@ -404,6 +404,7 @@ class GanttViewModel extends ChangeNotifier {
           'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
           'notes': newTask.notes,
           'uses_work_calendar': newTask.usesWorkCalendar,
+          'parentId': newTask.parentId,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
@@ -439,6 +440,7 @@ class GanttViewModel extends ChangeNotifier {
           'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
           'notes': task.notes,
           'uses_work_calendar': task.usesWorkCalendar,
+          'parentId': task.parentId,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
@@ -536,6 +538,33 @@ class GanttViewModel extends ChangeNotifier {
 
     final tasks = processedData.ganttTasks;
 
+    // Auto-assign parentId based on grid hierarchy (Row Hierarchy -> Task Hierarchy)
+    final taskByRow = {for (var t in tasks) t.rowId: t};
+
+    void assignParents(List<GanttGridData> nodes, String? parentTaskId) {
+      for (final node in nodes) {
+        final task = taskByRow[node.id];
+        String? currentScopeTaskId = parentTaskId;
+
+        if (task != null) {
+          if (parentTaskId != null && task.parentId == null) {
+            // Create a new task version with parentId
+            final updatedTask = task.copyWith(parentId: parentTaskId);
+            taskByRow[node.id] = updatedTask;
+            final index = tasks.indexWhere((t) => t.id == task.id);
+            if (index != -1) tasks[index] = updatedTask;
+          }
+          currentScopeTaskId = task.id;
+        }
+
+        if (node.children.isNotEmpty) {
+          assignParents(node.children, currentScopeTaskId);
+        }
+      }
+    }
+
+    assignParents(processedData.gridData, null);
+
     if (processedData.gridData.isNotEmpty && processedData.gridData.first.children.isNotEmpty) {
       final firstChildRowId = processedData.gridData.first.children.first.id;
       final milestoneDate = _startDate.add(const Duration(days: 5));
@@ -622,6 +651,7 @@ class GanttViewModel extends ChangeNotifier {
               'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
               'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
               'notes': task.notes,
+              'parentId': task.parentId,
             }
           },
           timestamp: DateTime.now().millisecondsSinceEpoch,

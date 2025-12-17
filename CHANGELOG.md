@@ -1,3 +1,7 @@
+## 4.9.0
+
+* **FEATURE**: Implement the ability to auto-schedule. When moving tasks that have successors, the successors adjust to follow
+
 ## 4.8.2
 
 * **FIX**: Fix for an issue that caused the resource histogram panel to appear with 0px height in web browsers
