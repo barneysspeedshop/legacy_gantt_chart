@@ -55,7 +55,8 @@ class GanttDb {
             last_updated INTEGER,
             deleted_at INTEGER,
             uses_work_calendar INTEGER,
-            parent_id TEXT
+            parent_id TEXT,
+            is_auto_scheduled INTEGER DEFAULT 1
           )
         ''');
 

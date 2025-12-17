@@ -636,7 +636,7 @@ void main() {
         end: DateTime(2023, 1, 1, 11),
         name: 'Successor',
       );
-      final dependency = LegacyGanttTaskDependency(
+      const dependency = LegacyGanttTaskDependency(
         predecessorTaskId: 'pred',
         successorTaskId: 'succ',
       );
