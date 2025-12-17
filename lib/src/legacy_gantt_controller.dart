@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
+import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
+import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
 
 /// A controller to programmatically manage a [LegacyGanttChartWidget].
 ///
@@ -14,6 +16,7 @@ class LegacyGanttController extends ChangeNotifier {
   List<LegacyGanttTask> _holidays;
   List<LegacyGanttTaskDependency> _dependencies;
   List<LegacyGanttTask> _conflictIndicators;
+  Map<String, List<ResourceBucket>> _resourceBuckets = {};
 
   /// An optional asynchronous function to fetch tasks for a given date range.
   ///
@@ -52,6 +55,9 @@ class LegacyGanttController extends ChangeNotifier {
 
   /// The list of dependencies currently managed by the controller.
   List<LegacyGanttTaskDependency> get dependencies => _dependencies;
+
+  /// The aggregated resource load buckets.
+  Map<String, List<ResourceBucket>> get resourceBuckets => _resourceBuckets;
 
   /// Whether the controller is currently fetching new tasks via `tasksAsync`.
   bool get isLoading => _isLoading;
@@ -92,6 +98,9 @@ class LegacyGanttController extends ChangeNotifier {
       }
       // Perform an initial fetch for the provided date range.
       fetchTasksForVisibleRange();
+    } else {
+      // Calculate initial buckets if static data is provided
+      _resourceBuckets = aggregateResourceLoad(_tasks, start: _visibleStartDate, end: _visibleEndDate);
     }
     if (holidaysAsync != null) {
       if (initialHolidays != null && initialHolidays.isNotEmpty) {
@@ -144,6 +153,7 @@ class LegacyGanttController extends ChangeNotifier {
       throw StateError('Cannot call setTasks when a tasksAsync callback is provided.');
     }
     _tasks = List.from(newTasks);
+    _resourceBuckets = aggregateResourceLoad(_tasks, start: _visibleStartDate, end: _visibleEndDate);
     notifyListeners();
   }
 
@@ -200,7 +210,10 @@ class LegacyGanttController extends ChangeNotifier {
   Future<void> fetchTasksForVisibleRange() async {
     await _fetchData(
       fetcher: tasksAsync, // The async function to call
-      onDataReceived: (tasks) => _tasks = List.from(tasks), // Store a copy
+      onDataReceived: (tasks) {
+        _tasks = List.from(tasks); // Store a copy
+        _resourceBuckets = aggregateResourceLoad(_tasks, start: _visibleStartDate, end: _visibleEndDate);
+      },
       setLoading: (loading) => _isLoading = loading,
       errorContext: 'tasks',
     );

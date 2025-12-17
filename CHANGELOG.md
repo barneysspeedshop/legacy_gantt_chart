@@ -1,3 +1,7 @@
+## 4.8.1
+
+* **FIX**: Fix for an issue that caused the resource histogram to draw histograms that were 0px high
+
 ## 4.8.0
 
 * **PRE-ALPHA**: Added **Resource Histogram View** to visualize resource allocation and identify over-booked days (`showResourceHistogram: true`) NOTE: This doesn't work yet

@@ -12,6 +12,8 @@ import 'sync/gantt_sync_client.dart';
 import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
+import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
+import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
 import 'legacy_gantt_controller.dart';
 import 'models/work_calendar.dart';
 
@@ -386,6 +388,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _totalGridMin = totalGridMin,
         _totalGridMax = totalGridMax,
         _axisHeight = axisHeight {
+    // 0. Calculate initial resource buckets
+    _baseResourceBuckets = aggregateResourceLoad(_tasks);
+
     // 1. Pre-calculate row offsets immediately
     _focusedTaskId = initialFocusedTaskId;
     _calculateRowOffsets();
@@ -466,6 +471,82 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  // --- Resource Histogram State ---
+  Map<String, List<ResourceBucket>> _baseResourceBuckets = {};
+
+  /// Returns the resource buckets, potentially modified by the current drag operation.
+  /// This ensures the histogram updates live as the user drags a task.
+  Map<String, List<ResourceBucket>> get resourceBuckets {
+    if (_draggedTask == null || _ghostTaskStart == null || _ghostTaskEnd == null) {
+      return _baseResourceBuckets;
+    }
+
+    // Optimization: If the dragged task has no resource, just return base.
+    if (_draggedTask!.resourceId == null) {
+      return _baseResourceBuckets;
+    }
+
+    final resourceId = _draggedTask!.resourceId!;
+
+    // Create a copy of the buckets for this resource only
+    final Map<String, List<ResourceBucket>> effectiveBuckets = Map.from(_baseResourceBuckets);
+    final List<ResourceBucket> currentResourceBuckets = List.from(effectiveBuckets[resourceId] ?? []);
+
+    // 1. Remove the original task's contribution
+    // We need to iterate over original task days and subtract load.
+    // However, the base buckets are aggregated.
+    // It is cleaner to re-aggregate if we want perfect accuracy, or delta-update.
+    // Given usage of "Bucket System", let's try delta update.
+
+    // Note: Tasks list `_tasks` still contains the original task at its original position.
+    // `_baseResourceBuckets` is derived from `_tasks`.
+    // So we need to subtract the original task and add the ghost task.
+
+    final originalStart = _draggedTask!.start;
+    final originalEnd = _draggedTask!.end;
+    final load = _draggedTask!.load;
+
+    // Subtract original
+    DateTime current = DateTime(originalStart.year, originalStart.month, originalStart.day);
+    final endDay = DateTime(originalEnd.year, originalEnd.month, originalEnd.day);
+
+    while (current.isBefore(endDay) || current.isAtSameMomentAs(endDay)) {
+      final index = currentResourceBuckets.indexWhere((b) => DateUtils.isSameDay(b.date, current));
+      if (index != -1) {
+        final b = currentResourceBuckets[index];
+        final newLoad = b.totalLoad - load;
+        // If load becomes ~0, keep specific logic? Or just allow 0.
+        currentResourceBuckets[index] = b.copyWith(totalLoad: max(0.0, newLoad));
+      }
+      current = current.add(const Duration(days: 1));
+    }
+
+    // Add ghost
+    final ghostStart = _ghostTaskStart!;
+    final ghostEnd = _ghostTaskEnd!;
+
+    current = DateTime(ghostStart.year, ghostStart.month, ghostStart.day);
+    final ghostEndDay = DateTime(ghostEnd.year, ghostEnd.month, ghostEnd.day);
+
+    while (current.isBefore(ghostEndDay) || current.isAtSameMomentAs(ghostEndDay)) {
+      final index = currentResourceBuckets.indexWhere((b) => DateUtils.isSameDay(b.date, current));
+      if (index != -1) {
+        final b = currentResourceBuckets[index];
+        currentResourceBuckets[index] = b.copyWith(totalLoad: b.totalLoad + load);
+      } else {
+        // Create new bucket if it didn't exist
+        currentResourceBuckets.add(ResourceBucket(date: current, resourceId: resourceId, totalLoad: load));
+      }
+      current = current.add(const Duration(days: 1));
+    }
+
+    // Sort again just in case new buckets were added out of order
+    currentResourceBuckets.sort((a, b) => a.date.compareTo(b.date));
+
+    effectiveBuckets[resourceId] = currentResourceBuckets;
+    return effectiveBuckets;
+  }
+
   // Internal State
 
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
@@ -483,6 +564,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
       // Recalculate domains as data changed
       _calculateDomains();
       _recalculateCriticalPath();
+      // Recalculate resource buckets
+      _baseResourceBuckets = aggregateResourceLoad(_tasks,
+          start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
+          end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
       notifyListeners();
     }
   }
