@@ -2060,6 +2060,11 @@ class GanttViewModel extends ChangeNotifier {
               : (innerData['is_summary'] == true ? true : existingTask.isSummary),
           color: _parseColor(innerData['color']) ?? existingTask.color,
           textColor: _parseColor(innerData['text_color']) ?? existingTask.textColor,
+          completion: (innerData['completion'] as num?)?.toDouble() ?? existingTask.completion,
+          resourceId: innerData['resourceId'] as String? ?? existingTask.resourceId,
+          baselineStart: parseDate(innerData['baseline_start']) ?? existingTask.baselineStart,
+          baselineEnd: parseDate(innerData['baseline_end']) ?? existingTask.baselineEnd,
+          notes: innerData['notes'] as String? ?? existingTask.notes,
         );
 
         try {
@@ -2098,6 +2103,15 @@ class GanttViewModel extends ChangeNotifier {
           isMilestone: ganttType == 'milestone',
           color: _parseColor(innerData['color']),
           textColor: _parseColor(innerData['text_color']),
+          completion: (innerData['completion'] as num?)?.toDouble() ?? 0.0,
+          resourceId: innerData['resourceId'] as String?,
+          baselineStart: innerData['baseline_start'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_start'] as int)
+              : null,
+          baselineEnd: innerData['baseline_end'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_end'] as int)
+              : null,
+          notes: innerData['notes'] as String?,
         );
 
         if (_useLocalDatabase) {
@@ -2133,6 +2147,13 @@ class GanttViewModel extends ChangeNotifier {
         isMilestone: ganttType == 'milestone',
         color: _parseColor(data['color']),
         textColor: _parseColor(data['textColor']),
+        completion: (data['completion'] as num?)?.toDouble() ?? 0.0,
+        resourceId: data['resourceId'] as String?,
+        baselineStart:
+            data['baseline_start'] != null ? DateTime.fromMillisecondsSinceEpoch(data['baseline_start'] as int) : null,
+        baselineEnd:
+            data['baseline_end'] != null ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'] as int) : null,
+        notes: data['notes'] as String?,
       );
 
       if (_useLocalDatabase) {

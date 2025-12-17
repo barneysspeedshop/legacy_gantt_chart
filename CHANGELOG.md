@@ -1,3 +1,7 @@
+## 4.7.3
+
+* **FIX**: Fix for an issue that prevented sync clients from rendering received task updates to apply new properties (e.g. `notes`, `completion`) to the local view model
+
 ## 4.7.2
 
 * **FIX**: Fix for an issue that preventing "notes" and other new properties from persisting in local storage.
