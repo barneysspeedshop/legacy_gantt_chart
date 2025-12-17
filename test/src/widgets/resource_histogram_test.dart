@@ -36,9 +36,6 @@ void main() {
     );
     // Simulate domain calculation
     vm.updateVisibleRange(start.millisecondsSinceEpoch.toDouble(), end.millisecondsSinceEpoch.toDouble());
-
-    // We need to trigger the internal logic that sets up totalScale, etc.
-    // The view model usually does this when data is updated.
     vm.updateLayout(800, 600);
 
     await tester.pumpWidget(MaterialApp(
@@ -53,5 +50,34 @@ void main() {
 
     // To verify the painter, we can look for CustomPaint
     expect(find.byType(CustomPaint), findsAtLeastNWidgets(2)); // One per row
+  });
+
+  testWidgets('ResourceHistogramWidget renders "No resources" when empty', (tester) async {
+    final start = DateTime(2023, 1, 1);
+    final end = DateTime(2023, 1, 10);
+
+    final vm = LegacyGanttViewModel(
+      data: [], // No tasks
+      visibleRows: [],
+      rowMaxStackDepth: {},
+      conflictIndicators: [],
+      dependencies: [],
+      rowHeight: 30,
+      totalGridMin: start.millisecondsSinceEpoch.toDouble(),
+      totalGridMax: end.millisecondsSinceEpoch.toDouble(),
+    );
+    vm.updateVisibleRange(start.millisecondsSinceEpoch.toDouble(), end.millisecondsSinceEpoch.toDouble());
+    vm.updateLayout(800, 600);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ResourceHistogramWidget(viewModel: vm),
+      ),
+    ));
+
+    expect(find.byType(ResourceHistogramWidget), findsOneWidget);
+    // Should show "No resources" text path
+    expect(find.text('No resources'), findsOneWidget);
+    expect(find.byType(ListView), findsNothing);
   });
 }

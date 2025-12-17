@@ -1,3 +1,7 @@
+## 4.8.2
+
+* **FIX**: Fix for an issue that caused the resource histogram panel to appear with 0px height in web browsers
+
 ## 4.8.1
 
 * **FIX**: Fix for an issue that caused the resource histogram to draw histograms that were 0px high
