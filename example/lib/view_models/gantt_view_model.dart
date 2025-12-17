@@ -789,8 +789,12 @@ class GanttViewModel extends ChangeNotifier {
         if (hasDirectTask || hasVisibleChildren || _showEmptyParentRows) {
           double completion = 0.0;
           if (hasDirectTask) {
-            final task = tasks.firstWhereOrNull((t) => t.rowId == child.id && !t.isSummary && !t.isTimeRangeHighlight);
-            completion = task?.completion ?? 0.0;
+            final rowTasks =
+                tasks.where((t) => t.rowId == child.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator).toList();
+            if (rowTasks.isNotEmpty) {
+              final totalCompletion = rowTasks.fold(0.0, (sum, t) => sum + t.completion);
+              completion = totalCompletion / rowTasks.length;
+            }
           } else if (hasVisibleChildren) {
             if (grandChildren.isNotEmpty) {
               final total = grandChildren.fold(0.0, (sum, c) => sum + (c.completion ?? 0.0));

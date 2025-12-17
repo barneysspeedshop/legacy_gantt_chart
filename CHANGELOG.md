@@ -1,3 +1,11 @@
+## 4.7.5
+
+* **FIX**: Fixed issue where Summary Tasks were excluded from the grid row completion calculation, resulting in 0% completion display
+
+## 4.7.4
+
+* **FIX**: Updated grid row completion calculation to average the completion of all tasks in the row, instead of just displaying the first task's completion
+
 ## 4.7.3
 
 * **FIX**: Fix for an issue that prevented sync clients from rendering received task updates to apply new properties (e.g. `notes`, `completion`) to the local view model
