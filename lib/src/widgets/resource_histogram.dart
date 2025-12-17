@@ -132,7 +132,7 @@ class _ResourceRowPainter extends CustomPainter {
       final x = globalX - startOffset;
 
       // Determine color: Green if <= 1, Red if > 1
-      paint.color = count > 1 ? Colors.red.withOpacity(0.7) : Colors.green.withOpacity(0.5);
+      paint.color = count > 1 ? Colors.red.withValues(alpha: 0.7) : Colors.green.withValues(alpha: 0.5);
 
       // Determine height relative to max? Or just distinct block?
       // Simple visualization: Full height for overage, half height for normal?
