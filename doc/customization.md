@@ -72,3 +72,27 @@ timelineAxisLabelBuilder: (date, interval) {
   }
 },
 ```
+
+## 5. Custom Resize Handles (`focusedTaskResizeHandleBuilder`)
+
+This builder allows you to customize the appearance of the resize handles that appear when a task is focused (e.g., via keyboard navigation).
+
+The builder provides the `task`, the `TaskPart` (start or end handle), a reference to the `LegacyGanttViewModel`, and the handle width.
+
+```dart
+focusedTaskResizeHandleBuilder: (task, part, vm, width) {
+  return Container(
+    width: width,
+    height: 20,
+    decoration: BoxDecoration(
+      color: Colors.blue,
+      shape: BoxShape.circle,
+    ),
+    child: Icon(
+      part == TaskPart.startHandle ? Icons.chevron_left : Icons.chevron_right,
+      color: Colors.white,
+      size: 14,
+    ),
+  );
+},
+```

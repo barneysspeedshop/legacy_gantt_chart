@@ -22,3 +22,9 @@ final ganttTheme = LegacyGanttTheme.fromTheme(Theme.of(context)).copyWith(
 | `taskTextStyle`                      | The `TextStyle` for the name displayed inside a task bar.                                               |
 | `axisTextStyle`                      | The `TextStyle` for the labels on the timeline axis.                                                    |
 | `backgroundColor`                    | The overall background color of the chart area.                                                         |
+| `criticalPathColor`                  | The color used to highlight tasks and dependencies on the critical path.                                |
+| `emptySpaceHighlightColor`           | The background color for the highlight that appears when hovering over empty space.                     |
+| `emptySpaceAddIconColor`             | The color of the add icon (+) that appears in the empty space highlight.                                |
+| `weekendColor`                       | The color used to highlight weekends in the chart background.                                           |
+| `showRowBorders`                     | Whether to draw borders between rows (boolean).                                                         |
+| `rowBorderColor`                     | The color of the row borders.                                                                           |

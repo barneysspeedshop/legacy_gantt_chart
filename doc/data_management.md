@@ -15,8 +15,10 @@ LegacyGanttChartWidget(
   gridMin: myStartDate.millisecondsSinceEpoch.toDouble(),
   gridMax: myEndDate.millisecondsSinceEpoch.toDouble(),
   // ... other properties
+  // ... other properties
 )
 ```
+
 
 ## 2. Controller Mode (Dynamic)
 
@@ -63,6 +65,38 @@ For applications requiring offline capabilities or real-time collaboration, `leg
 2.  **Source vs. View**: Maintain a clear separation between your source data (the full dataset from the DB) and the view data (filtered list for the UI).
     -   **Source (`_allGanttTasks`)**: The authoritative list from the repository stream. All mutations (add, update, delete) must operate on this list.
     -   **View (`_ganttTasks`)**: The filtered subset passed to the `LegacyGanttChartWidget`. This list mirrors the source but excludes hidden rows or filtered items.
+
+
+## 4. Work Calendars
+
+The `WorkCalendar` feature allows you to define working days (e.g., Mon-Fri) and holidays. When a task has `usesWorkCalendar` set to `true`, its duration and end date are calculated by skipping non-working days.
+
+```dart
+LegacyGanttChartWidget(
+  workCalendar: WorkCalendar(
+    weekendDays: [DateTime.saturday, DateTime.sunday],
+    holidays: [DateTime(2024, 12, 25)],
+  ),
+  // ...
+)
+```
+
+## 5. Auto-Scheduling
+
+Auto-scheduling ensures that task dependencies are respected. When you move a parent task or a predecessor, linked tasks are automatically shifted.
+-   **Global Toggle**: `LegacyGanttViewModel(enableAutoScheduling: true)`
+-   **Per-Task Toggle**: `LegacyGanttTask(isAutoScheduled: false)`
+
+## 6. Resource Management (Histogram)
+
+To visualize resource usage, you can enable the resource histogram. This aggregates the `load` of all tasks assigned to a `resourceId` across time buckets.
+
+```dart
+LegacyGanttChartWidget(
+  showResourceHistogram: true,
+  // ...
+)
+```
 
 
 ## Understanding Stacking

@@ -16,6 +16,8 @@ The following diagram illustrates the main components and their roles:
             +--- AxisPainter (Draws background grid & time headers)
             |
             +--- BarsCollectionPainter (Highly optimized painter for all tasks & dependencies)
+            |
+            +--- ResourceHistogramWidget (Visualizes resource density)
 ```
 
 ## Component Breakdown
@@ -29,6 +31,14 @@ The following diagram illustrates the main components and their roles:
 *   **Painters (`CustomPainter`)**: For maximum performance, the chart relies on `CustomPainter` to draw the most complex visual elements.
     *   **`AxisPainter`**: Responsible for drawing the background grid lines and the labels on the timeline axis.
     *   **`BarsCollectionPainter`**: A highly optimized painter that draws all task bars, summary bars, highlights, conflict indicators, and dependency lines in a single paint cycle.
+
+*   **Resource Management**:
+    *   **`ResourceHistogramWidget`**: A widget that visualizes resource allocation density over time, helping to identify bottlenecks.
+
+*   **Logic & Helpers**:
+    *   **`WorkCalendar`**: Defines working days and holidays for realistic scheduling.
+    *   **Auto-Scheduling**: Logic within the ViewModel that automatically adjusts dependent tasks when a predecessor or parent is modified.
+    *   **`LegacyGanttConflictDetector`**: Utility to identify overlapping tasks.
 
 *   **Repository Layer (Optional)**: For offline-first or local-only deployments, the package supports a repository pattern backed by SQLite and CRDTs.
     *   **`LocalGanttRepository`**: Handles CRUD operations and data synchronization logic. It abstracts the underlying database and provides streams for real-time UI updates.

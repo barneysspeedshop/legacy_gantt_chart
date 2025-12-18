@@ -15,6 +15,7 @@ A flexible and performant Gantt chart widget for Flutter. Supports interactive d
   - [Interactivity](#interactivity)
   - [Customization & Theming](#customization--theming)
   - [Timeline & Dependencies](#timeline--dependencies)
+  - [Resource Management](#resource-management)
 - [Installation](#installation)
 - [Migration Guide](#migration-guide)
   - [Migrating to 3.0.0](#migrating-to-v300)
@@ -96,7 +97,12 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
     -   **Vertical Markers (Background Highlights):** Simple colored rectangles used to denote special time ranges like weekends, holidays, or periods of unavailability for a specific resource.
     -   **Automatic Conflict Detection:** The example application includes a `LegacyGanttConflictDetector` utility that automatically processes your task data. It identifies tasks within the same logical group (e.g., assigned to the same person) that overlap in time. When a conflict is found, the detector generates new, temporary `LegacyGanttTask` objects with the `isOverlapIndicator` flag set to `true`. These "extra" tasks are what get rendered as the red, angled conflict pattern on your chart. This is an opt-in feature; you have full control over whether and how to run conflict detection on your data before passing it to the widget.
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
+-   **Auto-Scheduling:** Enable auto-scheduling to automatically adjust the start and end dates of dependent tasks when a predecessor or parent task is moved. This maintains the integrity of your project schedule. You can enable this globally or on a per-task basis.
+-   **Work Calendar Support:** Define working days (e.g., Mon-Fri) and holidays. Tasks with `usesWorkCalendar` enabled will automatically skip non-working days when calculating their duration and end dates, ensuring realistic scheduling.
 -   **Programmatic Validation:** Use callbacks like `onTaskUpdate` to validate user actions before committing them.
+
+### Resource Management
+-   **Resource Histogram:** Visualize resource allocation density over time using the `ResourceHistogramWidget`. This helps identify bottlenecks where specific resources are over-allocated.
 
 [ ^ Table of Contents ^ ](#table-of-contents)
 
@@ -108,7 +114,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  legacy_gantt_chart: ^1.0.1 # Replace with the latest version
+  legacy_gantt_chart: ^4.9.0
 ```
 
 Then, you can install the package using the command-line:
@@ -521,7 +527,7 @@ The package now includes experimental support for real-time synchronization and 
 
 ### Key Components
 
-*   **`WebSocketGanttSyncClient`**: Connects to a compatible backend (COMING SOON!) to push and receive updates in real-time.
+*   **`WebSocketGanttSyncClient`**: Connects to a compatible backend to push and receive updates in real-time. A reference server implementation is provided in `bin/server.dart`.
 *   **`OfflineGanttSyncClient`**: Queues operations when offline and syncs them when the connection is restored.
 *   **`CrdtEngine`**: The core logic that handles the merging of concurrent edits.
 
