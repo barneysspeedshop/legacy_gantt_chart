@@ -1,4 +1,4 @@
-## 5.0.0-alhpa.5
+## 5.0.0-alpha.5
 
 * **FIX**: Fix for an issue that prevented proper association of milestones with `parentId`
 
