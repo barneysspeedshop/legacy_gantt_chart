@@ -1,3 +1,7 @@
+## 5.0.0-alpha.6
+
+* **FIX**: Send `isMilestone` to the backend so that its state isn't ignored by other clients
+
 ## 5.0.0-alpha.5
 
 * **FIX**: Fix for an issue that prevented proper association of milestones with `parentId`

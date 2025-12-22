@@ -661,6 +661,7 @@ class GanttViewModel extends ChangeNotifier {
               'start_date': task.start.millisecondsSinceEpoch,
               'end_date': task.end.millisecondsSinceEpoch,
               'is_summary': task.isSummary,
+              'isMilestone': task.isMilestone,
               'color': task.color?.toARGB32().toRadixString(16),
               'textColor': task.textColor?.toARGB32().toRadixString(16),
               'completion': task.completion,
