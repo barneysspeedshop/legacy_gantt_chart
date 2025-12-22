@@ -135,5 +135,10 @@ class CRDTEngine {
                 ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'])
                 : existing?.baselineEnd),
         notes: data['notes'] ?? existing?.notes,
+        isMilestone: data['isMilestone'] ?? existing?.isMilestone ?? false,
+        parentId: data['parentId'] ?? existing?.parentId,
+        usesWorkCalendar: data['usesWorkCalendar'] ?? existing?.usesWorkCalendar ?? false,
+        load: (data['load'] as num?)?.toDouble() ?? existing?.load ?? 1.0,
+        isAutoScheduled: data['isAutoScheduled'] ?? existing?.isAutoScheduled,
       );
 }

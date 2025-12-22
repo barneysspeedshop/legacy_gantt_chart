@@ -1,3 +1,7 @@
+## 5.0.0-alhpa.5
+
+* **FIX**: Fix for an issue that prevented proper association of milestones with `parentId`
+
 ## 5.0.0-alpha.4
 
 * **FEATURE**: Added `rollUpMilestones` property to `LegacyGanttChartWidget`. When enabled, milestones assigned to a summary task (via `parentId`) will be displayed on the summary task's bar.
