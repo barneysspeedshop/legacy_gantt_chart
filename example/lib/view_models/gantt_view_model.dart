@@ -1979,6 +1979,13 @@ class GanttViewModel extends ChangeNotifier {
           baselineStart: parseDate(innerData['baseline_start']) ?? existingTask.baselineStart,
           baselineEnd: parseDate(innerData['baseline_end']) ?? existingTask.baselineEnd,
           notes: innerData['notes'] as String? ?? existingTask.notes,
+          parentId: innerData['parentId'] as String? ?? existingTask.parentId,
+          usesWorkCalendar: innerData['uses_work_calendar'] == true
+              ? true
+              : (innerData['uses_work_calendar'] == false ? false : existingTask.usesWorkCalendar),
+          isAutoScheduled: innerData['is_auto_scheduled'] == true
+              ? true
+              : (innerData['is_auto_scheduled'] == false ? false : existingTask.isAutoScheduled),
         );
 
         try {
@@ -2025,6 +2032,9 @@ class GanttViewModel extends ChangeNotifier {
               ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_end'] as int)
               : null,
           notes: innerData['notes'] as String?,
+          parentId: innerData['parentId'] as String?,
+          usesWorkCalendar: innerData['uses_work_calendar'] == true,
+          isAutoScheduled: innerData['is_auto_scheduled'] != false,
         );
 
         if (_useLocalDatabase) {
@@ -2067,6 +2077,9 @@ class GanttViewModel extends ChangeNotifier {
         baselineEnd:
             data['baseline_end'] != null ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'] as int) : null,
         notes: data['notes'] as String?,
+        parentId: data['parentId'] as String?,
+        usesWorkCalendar: data['uses_work_calendar'] == true,
+        isAutoScheduled: data['is_auto_scheduled'] != false,
       );
 
       if (_useLocalDatabase) {
