@@ -51833,8 +51833,8 @@ break
 case 5:case 1:return A.A(q,r)
 case 2:return A.z(o.at(-1),r)}})
 return A.B($async$xg,r)},
-kq(){var s=0,r=A.C(t.H),q=this,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1
-var $async$kq=A.x(function(b2,b3){if(b2===1)return A.z(b3,r)
+kq(){var s=0,r=A.C(t.H),q=this,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,b0,b1,b2
+var $async$kq=A.x(function(b3,b4){if(b3===1)return A.z(b4,r)
 for(;;)switch(s){case 0:q.W=!0
 q.N()
 p=q.a
@@ -51854,7 +51854,7 @@ n=q.R8
 m=q.RG
 s=8
 return A.l(q.bw.w_(q.rx,m,n,o),$async$kq)
-case 8:l=b3
+case 8:l=b4
 k=l.a
 o=t.N
 n=A.h(o,t.g)
@@ -51881,36 +51881,37 @@ case 11:a=A.b([],t.Qn)
 n=t.z
 a.push(new A.cm("RESET_DATA",A.h(o,n),Date.now(),"local-user"))
 for(f=k.length,a0=t.X,j=0;j<k.length;k.length===f||(0,A.r)(k),++j){c=k[j]
-if(c.ax)a1="milestone"
-else a1=c.y?"summary":"task"
-a2=c.f
-a2=a2==null?null:B.f.f7(a2.q(),16)
-a3=c.r
+a1=c.ax
+if(a1)a2="milestone"
+else a2=c.y?"summary":"task"
+a3=c.f
 a3=a3==null?null:B.f.f7(a3.q(),16)
-a4=c.db
-a4=a4==null?null:a4.a
-a5=c.dx
+a4=c.r
+a4=a4==null?null:B.f.f7(a4.q(),16)
+a5=c.db
 a5=a5==null?null:a5.a
-a.push(new A.cm("INSERT_TASK",A.a4(["gantt_type",a1,"data",A.a4(["id",c.a,"rowId",c.b,"name",c.e,"start_date",c.c.a,"end_date",c.d.a,"is_summary",c.y,"color",a2,"textColor",a3,"completion",c.as,"resourceId",c.cx,"baseline_start",a4,"baseline_end",a5,"notes",c.dy,"parentId",c.cy],o,a0)],o,n),Date.now(),"local-user"))}for(f=e.length,j=0;j<e.length;e.length===f||(0,A.r)(e),++j){a6=e[j]
-a.push(new A.cm("INSERT_DEPENDENCY",A.a4(["predecessorTaskId",a6.a,"successorTaskId",a6.b,"dependency_type",a6.c.b],o,n),Date.now(),"local-user"))}s=13
+a6=c.dx
+a6=a6==null?null:a6.a
+a.push(new A.cm("INSERT_TASK",A.a4(["gantt_type",a2,"data",A.a4(["id",c.a,"rowId",c.b,"name",c.e,"start_date",c.c.a,"end_date",c.d.a,"is_summary",c.y,"isMilestone",a1,"color",a3,"textColor",a4,"completion",c.as,"resourceId",c.cx,"baseline_start",a5,"baseline_end",a6,"notes",c.dy,"parentId",c.cy],o,a0)],o,n),Date.now(),"local-user"))}for(f=e.length,j=0;j<e.length;e.length===f||(0,A.r)(e),++j){a7=e[j]
+a.push(new A.cm("INSERT_DEPENDENCY",A.a4(["predecessorTaskId",a7.a,"successorTaskId",a7.b,"dependency_type",a7.c.b],o,n),Date.now(),"local-user"))}s=13
 return A.l(q.aU.lL(a),$async$kq)
 case 13:case 12:new A.alv(A.h(o,t.v)).$1(m)
-a7=A.b([],t.tr)
-for(n=l.f.c,a8=0;a8<n.length;++a8){a9=n[a8]
-m=a9.a
-a7.push(new A.e0(m,a9.b,null,a8===0,null))
-for(f=a9.d,a0=f.length,j=0;j<f.length;f.length===a0||(0,A.r)(f),++j){b0=f[j]
-a7.push(new A.e0(b0.a,b0.b,m,!0,null))}}s=14
-return A.l(p.wl(a7),$async$kq)
+a8=A.b([],t.tr)
+for(n=l.f.c,a9=0;a9<n.length;++a9){b0=n[a9]
+m=b0.a
+a8.push(new A.e0(m,b0.b,null,a9===0,null))
+for(f=b0.d,a0=f.length,j=0;j<f.length;f.length===a0||(0,A.r)(f),++j){b1=f[j]
+a8.push(new A.e0(b1.a,b1.b,m,!0,null))}}s=14
+return A.l(p.wl(a8),$async$kq)
 case 14:s=q.aU!=null?15:16
 break
-case 15:b1=A.b([],t.Qn)
-for(p=t.K,m=t.z,f=t.X,a8=0;a8<n.length;++a8){a9=n[a8]
-a0=a9.a
-b1.push(new A.cm("INSERT_RESOURCE",A.a4(["gantt_type","person","data",A.a4(["id",a0,"name",a9.b,"parentId",null,"isExpanded",a8===0],o,f)],o,m),Date.now(),"local-user"))
-for(a2=a9.d,a3=a2.length,j=0;j<a2.length;a2.length===a3||(0,A.r)(a2),++j){b0=a2[j]
-b1.push(new A.cm("INSERT_RESOURCE",A.a4(["gantt_type","job","data",A.a4(["id",b0.a,"name",b0.b,"parentId",a0,"isExpanded",!0],o,p)],o,m),Date.now(),"local-user"))}}s=17
-return A.l(q.aU.lL(b1),$async$kq)
+case 15:b2=A.b([],t.Qn)
+for(p=t.K,m=t.z,f=t.X,a9=0;a9<n.length;++a9){b0=n[a9]
+a0=b0.a
+b2.push(new A.cm("INSERT_RESOURCE",A.a4(["gantt_type","person","data",A.a4(["id",a0,"name",b0.b,"parentId",null,"isExpanded",a9===0],o,f)],o,m),Date.now(),"local-user"))
+for(a1=b0.d,a3=a1.length,j=0;j<a1.length;a1.length===a3||(0,A.r)(a1),++j){b1=a1[j]
+b2.push(new A.cm("INSERT_RESOURCE",A.a4(["gantt_type","job","data",A.a4(["id",b1.a,"name",b1.b,"parentId",a0,"isExpanded",!0],o,p)],o,m),Date.now(),"local-user"))}}s=17
+return A.l(q.aU.lL(b2),$async$kq)
 case 17:case 16:q.aM=!0
 q.N()
 return A.A(null,r)}})
