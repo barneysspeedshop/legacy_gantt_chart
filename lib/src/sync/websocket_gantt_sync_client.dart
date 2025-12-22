@@ -18,18 +18,22 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   int _totalToSync = 0;
   int _processedSyncOps = 0;
 
+  // Time Synchronization State
+  int _clockSkew = 0;
+  bool _isClockSynced = false;
+
   WebSocketGanttSyncClient({
     required this.uri,
     this.authToken,
     WebSocketChannel Function(Uri)? channelFactory,
-  }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri)) {
-    // WebSocket client sends immediately, so pending count is effectively 0 (or ephemeral)
-    // We can emit 0 initially.
-    // Use Timer.run to emit after listen? Or just lazily.
-    // For now we just emit 0 when listened to via onListen if we want, or just let it be.
-  }
+  }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri));
 
   final WebSocketChannel Function(Uri) _channelFactory;
+
+  /// Returns the current time adjusted to match the server's clock.
+  /// This prevents "Time Traveler" bugs where a client with a future clock
+  /// overwrites valid data.
+  int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch + _clockSkew;
 
   static Future<String> login({
     required Uri uri,
@@ -70,6 +74,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     try {
       _channel = _channelFactory(finalUri);
+      _isClockSynced = false; // Reset sync state on new connection
 
       // No longer sending 'auth' message explicitly.
       // Handshake handles it.
@@ -87,6 +92,19 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             final envelope = jsonDecode(message as String) as Map<String, dynamic>;
             final type = envelope['type'] as String;
             final dataMap = envelope['data'];
+
+            // --- TIME SYNC LOGIC ---
+            // We use the timestamp from the server to calculate skew.
+            // We prefer SYNC_METADATA as it's the first authoritative timestamp.
+            if (!_isClockSynced && envelope.containsKey('timestamp')) {
+              final serverTime = envelope['timestamp'] as int;
+              final localTime = DateTime.now().millisecondsSinceEpoch;
+              // Calculate skew. We ignore latency here, which effectively means
+              // we are slightly "in the past" relative to server, which is safe.
+              _clockSkew = serverTime - localTime;
+              _isClockSynced = true;
+              print('Time Sync: Local=$localTime, Server=$serverTime, Skew=$_clockSkew');
+            }
 
             if (type == 'SYNC_METADATA') {
               if (dataMap != null) {
@@ -226,7 +244,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     };
 
     final encodedEnvelope = jsonEncode(envelope);
-    print('WebSocketClient Sending: $encodedEnvelope');
+    // print('WebSocketClient Sending: $encodedEnvelope'); // Reduced noise
     _channel!.sink.add(encodedEnvelope);
   }
 
@@ -268,8 +286,8 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     final batchEnvelope = {
       'type': 'BATCH_UPDATE',
       'data': {'operations': envelopes},
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'actorId': operations.first.actorId, // Use first actor or generic
+      'timestamp': correctedTimestamp, // Use corrected time for batch container
+      'actorId': operations.first.actorId,
     };
 
     final encodedEnvelope = jsonEncode(batchEnvelope);

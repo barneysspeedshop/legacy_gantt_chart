@@ -9,6 +9,7 @@ import 'models/legacy_gantt_task.dart';
 import 'models/remote_cursor.dart';
 import 'models/remote_ghost.dart';
 import 'sync/gantt_sync_client.dart';
+import 'sync/websocket_gantt_sync_client.dart';
 import 'sync/crdt_engine.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
@@ -211,6 +212,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Timer? _ghostUpdateThrottle;
   static const Duration _ghostThrottleDuration = Duration(milliseconds: 50);
 
+  // Helper to get safe timestamp
+  int get _currentTimestamp {
+    if (syncClient != null && syncClient is WebSocketGanttSyncClient) {
+      return (syncClient as WebSocketGanttSyncClient).correctedTimestamp;
+    }
+    return DateTime.now().millisecondsSinceEpoch;
+  }
+
   void _sendGhostUpdate(String taskId, DateTime start, DateTime end) {
     if (syncClient == null) return;
     if (_ghostUpdateThrottle?.isActive ?? false) return;
@@ -223,7 +232,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           'start': start.millisecondsSinceEpoch,
           'end': end.millisecondsSinceEpoch,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentTimestamp,
         actorId: 'me', // SyncClient will likely overwrite this, but good to have
       ));
     });
@@ -239,7 +248,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           'start': null,
           'end': null,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentTimestamp,
         actorId: 'me',
       ));
     }
@@ -649,7 +658,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       syncClient!.sendOperation(Operation(
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': task.id},
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentTimestamp,
         actorId: 'user',
       ));
     }
@@ -676,7 +685,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         'time': time.millisecondsSinceEpoch,
         'rowId': rowId,
       },
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: _currentTimestamp,
       actorId: 'user',
     ));
   }
@@ -691,7 +700,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         'type': dep.type.name,
         'lag': dep.lag?.inMilliseconds,
       },
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: _currentTimestamp,
       actorId: 'user',
     ));
   }

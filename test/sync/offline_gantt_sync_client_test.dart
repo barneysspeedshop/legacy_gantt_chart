@@ -15,6 +15,9 @@ class MockInnerClient implements WebSocketGanttSyncClient {
   bool shouldFailSend = false;
 
   @override
+  int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch;
+
+  @override
   Stream<bool> get connectionStateStream => connectionController.stream;
 
   @override

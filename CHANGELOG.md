@@ -1,3 +1,7 @@
+## 5.0.0-alpha.3
+
+* **SECURITY**: Implemented client-server clock synchronization and server-side timestamp validation to prevent future-dated operations from overwriting valid data (Time Traveler Mitigation).
+
 ## 5.0.0-alpha.2
 
 * **FEATURE**: Added Sync Progress UI to display inbound sync status and pending outbound operations count.
