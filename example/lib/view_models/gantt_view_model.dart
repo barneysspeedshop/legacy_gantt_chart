@@ -82,6 +82,7 @@ class GanttViewModel extends ChangeNotifier {
   bool _enableWorkCalendar = false;
 
   bool _showCriticalPath = false;
+  bool _rollUpMilestones = false;
   Map<String, CpmTaskStats> _cpmStats = {};
 
   /// The width of the resize handles on the edges of task bars.
@@ -141,6 +142,13 @@ class GanttViewModel extends ChangeNotifier {
   void setShowResourceHistogram(bool value) {
     if (_showResourceHistogram == value) return;
     _showResourceHistogram = value;
+    notifyListeners();
+  }
+
+  bool get rollUpMilestones => _rollUpMilestones;
+  void setRollUpMilestones(bool value) {
+    if (_rollUpMilestones == value) return;
+    _rollUpMilestones = value;
     notifyListeners();
   }
 
@@ -571,6 +579,9 @@ class GanttViewModel extends ChangeNotifier {
     assignParents(processedData.gridData, null);
 
     if (processedData.gridData.isNotEmpty && processedData.gridData.first.children.isNotEmpty) {
+      final parentRowId = processedData.gridData.first.id;
+      final parentTask = taskByRow[parentRowId];
+
       final firstChildRowId = processedData.gridData.first.children.first.id;
       final milestoneDate = _startDate.add(const Duration(days: 5));
       final milestone = LegacyGanttTask(
@@ -581,6 +592,7 @@ class GanttViewModel extends ChangeNotifier {
         end: milestoneDate, // start and end are the same for a milestone
         isMilestone: true,
         color: Colors.deepPurple, // Give it a distinct color
+        parentId: parentTask?.id,
       );
       tasks.add(milestone);
     }

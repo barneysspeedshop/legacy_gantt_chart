@@ -180,6 +180,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// If provided, conflict detection will be run when tasks are updated via sync.
   final Object? Function(LegacyGanttTask task)? taskGrouper;
 
+  /// Whether to roll up milestones to summary tasks.
+  bool _rollUpMilestones;
+  bool get rollUpMilestones => _rollUpMilestones;
+  set rollUpMilestones(bool value) {
+    if (_rollUpMilestones != value) {
+      _rollUpMilestones = value;
+      notifyListeners();
+    }
+  }
+
   WorkCalendar? _workCalendar;
   WorkCalendar? get workCalendar => _workCalendar;
   set workCalendar(WorkCalendar? value) {
@@ -394,7 +404,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.taskGrouper,
     this.onSelectionChanged,
     WorkCalendar? workCalendar,
+    bool rollUpMilestones = false,
   })  : _tasks = List.from(data),
+        _rollUpMilestones = rollUpMilestones,
         _workCalendar = workCalendar,
         _gridMin = gridMin,
         _gridMax = gridMax,
@@ -2078,6 +2090,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
     for (final task in tasksInTappedStack) {
       final double barStartX = _totalScale(task.start);
       final double barEndX = _totalScale(task.end);
+
+      // Check for rolled-up milestones on summary tasks
+      if (task.isSummary && rollUpMilestones) {
+        // Find child milestones (inefficient for large datasets, consider optimizing with a map if needed)
+        final childMilestones = data.where((t) => t.isMilestone && t.parentId == task.id);
+        for (final milestone in childMilestones) {
+          final double mStartX = _totalScale(milestone.start);
+          final double diamondSize = rowHeight * 0.8;
+          // Milestones are drawn centered vertically on the summary bar.
+          // Since we are iterating tasksInTappedStack which matched the pointerY,
+          // and summary tasks usually take the slot, this vertical check is implicitly satisfied
+          // by the fact we are looking at the summary task's slot.
+          // However, we should check X bounds.
+          if (pointerXOnTotalContent >= mStartX && pointerXOnTotalContent <= mStartX + diamondSize) {
+            return (task: milestone, part: TaskPart.body);
+          }
+        }
+      }
 
       // If this task is focused, the hit area for its handles should be larger
       // to account for the externally drawn handles.

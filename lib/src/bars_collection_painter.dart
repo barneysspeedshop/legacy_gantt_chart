@@ -94,6 +94,7 @@ class BarsCollectionPainter extends CustomPainter {
   final Set<String> criticalTaskIds;
   final Set<LegacyGanttTaskDependency> criticalDependencies;
   final WorkCalendar? workCalendar;
+  final bool rollUpMilestones;
 
   BarsCollectionPainter({
     required this.conflictIndicators,
@@ -125,6 +126,7 @@ class BarsCollectionPainter extends CustomPainter {
     this.criticalTaskIds = const {},
     this.criticalDependencies = const {},
     this.workCalendar,
+    this.rollUpMilestones = false,
   });
 
   @override
@@ -223,6 +225,16 @@ class BarsCollectionPainter extends CustomPainter {
     for (final task in data) {
       if (visibleRowIds.contains(task.rowId)) {
         tasksByRow.putIfAbsent(task.rowId, () => []).add(task);
+      }
+    }
+
+    // Pre-calculate child milestones for summary tasks if rollup is enabled
+    final Map<String, List<LegacyGanttTask>> milestonesByParent = {};
+    if (rollUpMilestones) {
+      for (final task in data) {
+        if (task.isMilestone && task.parentId != null) {
+          milestonesByParent.putIfAbsent(task.parentId!, () => []).add(task);
+        }
       }
     }
 
@@ -370,6 +382,26 @@ class BarsCollectionPainter extends CustomPainter {
             // Draw summary pattern if needed
             if (task.isSummary) {
               _drawSummaryPattern(canvas, barRRect);
+
+              if (rollUpMilestones) {
+                final childMilestones = milestonesByParent[task.id];
+                if (childMilestones != null) {
+                  for (final milestone in childMilestones) {
+                    final double mStartX = scale(milestone.start);
+                    // Ensure milestone is visible horizontally
+                    if (mStartX + barHeight < 0 || mStartX > size.width) continue;
+
+                    _drawMilestone(
+                      canvas,
+                      milestone,
+                      mStartX,
+                      barTop + barVerticalCenterOffset,
+                      barHeight,
+                      isBeingDragged,
+                    );
+                  }
+                }
+              }
             }
 
             // Draw Baseline

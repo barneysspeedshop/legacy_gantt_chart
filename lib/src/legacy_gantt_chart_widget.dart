@@ -343,6 +343,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// The calendar defining working days.
   final WorkCalendar? workCalendar;
 
+  /// Whether to roll up milestones to summary tasks.
+  final bool rollUpMilestones;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -402,6 +405,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.showCriticalPath = false,
     this.showResourceHistogram = false,
     this.workCalendar,
+    this.rollUpMilestones = false,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -471,6 +475,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
       if (oldWidget.workCalendar != widget.workCalendar) {
         _internalViewModel!.workCalendar = widget.workCalendar;
+      }
+
+      if (oldWidget.rollUpMilestones != widget.rollUpMilestones) {
+        _internalViewModel!.rollUpMilestones = widget.rollUpMilestones;
       }
 
       // Ensure callback is fresh (captures latest scope/closures)
@@ -646,6 +654,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             syncClient: widget.syncClient,
             taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
             workCalendar: widget.workCalendar,
+            rollUpMilestones: widget.rollUpMilestones,
             onSelectionChanged: (ids) {
               if (widget.controller != null) {
                 widget.controller!.setSelectedTaskIds(ids);
@@ -798,6 +807,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                     translateY: vm.translateY,
                                                     selectedTaskIds: vm.selectedTaskIds,
                                                     bulkGhostTasks: vm.bulkGhostTasks,
+                                                    rollUpMilestones: widget.rollUpMilestones,
                                                     enableDependencyCreation:
                                                         vm.currentTool == GanttTool.drawDependencies,
                                                     dependencyDragStartTaskId: vm.dependencyStartTaskId,

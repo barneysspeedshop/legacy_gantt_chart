@@ -776,6 +776,16 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Roll Up Milestones'),
+                Switch(
+                  value: vm.rollUpMilestones,
+                  onChanged: (value) => vm.setRollUpMilestones(value),
+                ),
+              ],
+            ),
             const Divider(height: 24),
             Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
             // This dropdown demonstrates how to control the width of the resize handles on tasks.
@@ -1355,6 +1365,7 @@ class _GanttViewState extends State<GanttView> {
                                                     vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
                                                 enableDragAndDrop: vm.dragAndDropEnabled,
                                                 showEmptyRows: vm.showEmptyParentRows,
+                                                rollUpMilestones: vm.rollUpMilestones,
                                                 enableResize: vm.resizeEnabled,
                                                 onTaskUpdate: (task, start, end) {
                                                   vm.handleTaskUpdate(task, start, end);

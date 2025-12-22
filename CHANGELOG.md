@@ -1,3 +1,9 @@
+## 5.0.0-alpha.4
+
+* **FEATURE**: Added `rollUpMilestones` property to `LegacyGanttChartWidget`. When enabled, milestones assigned to a summary task (via `parentId`) will be displayed on the summary task's bar.
+* **FEATURE**: Rolled-up milestones are now interactive, supporting hover tooltips and cursor changes identical to standard tasks.
+* **EXAMPLE FEATURE**: Added a "Roll Up Milestones" toggle to the example application's control panel to demonstrate the new functionality. 
+
 ## 5.0.0-alpha.3
 
 * **SECURITY**: Implemented client-server clock synchronization and server-side timestamp validation to prevent future-dated operations from overwriting valid data (Time Traveler Mitigation).
