@@ -242,15 +242,14 @@ class LegacyGanttChartWidget extends StatefulWidget {
     double totalContentWidth,
   )? timelineAxisHeaderBuilder;
 
-  /// A builder function to create a custom widget to display when there is no data.
-  ///
-  /// If not provided, a default message will be shown.
-  final Widget Function(BuildContext context)? noDataWidgetBuilder;
+  /// Optional builder to render a custom widget when the data set is empty.
+  /// Replaces the default "No data to display" text.
+  final WidgetBuilder? emptyStateBuilder;
 
   /// If set to `true`, the chart will display the empty rows provided via
   /// [visibleRows] even when there are no tasks.
   ///
-  /// Defaults to `false`, which shows the [noDataWidgetBuilder] or a default "No data to display" message.
+  /// Defaults to `false`, which shows the [emptyStateBuilder] or a default "No data to display" message.
   final bool showEmptyRows;
 
   /// An optional fixed height for the Gantt chart widget.
@@ -277,9 +276,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Defaults to [GanttLoadingIndicatorPosition.top].
   final GanttLoadingIndicatorPosition loadingIndicatorPosition;
 
-  /// The height of the loading indicator when using [GanttLoadingIndicatorType.linear].
-  /// Defaults to `4.0`.
-  final double loadingIndicatorHeight;
+  /// Defines the height of the linear loading indicator.
+  /// Defaults to 4.0.
+  final double linearProgressHeight;
 
   /// The days of the week to be highlighted as weekends.
   ///
@@ -383,12 +382,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.resizeHandleWidth = 10.0,
     this.timelineAxisLabelBuilder,
     this.timelineAxisHeaderBuilder,
-    this.noDataWidgetBuilder,
+    this.emptyStateBuilder,
     this.showEmptyRows = false,
     this.height,
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
-    this.loadingIndicatorHeight = 4.0,
+    this.linearProgressHeight = 4.0,
     this.weekendDays = const [DateTime.saturday, DateTime.sunday],
     this.weekendColor,
     this.onRowRequestVisible,
@@ -476,9 +475,22 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
       // Ensure callback is fresh (captures latest scope/closures)
       _internalViewModel!.onTaskHover = widget.onTaskHover;
-      _internalViewModel!.onTaskSecondaryTap = widget.onTaskSecondaryTap;
       _internalViewModel!.onTaskLongPress = widget.onTaskLongPress;
     }
+  }
+
+  /// Helper method to determine what to show when there is no data.
+  /// This centralizes the logic to avoid code duplication.
+  Widget _buildEmptyView(BuildContext context, LegacyGanttTheme theme) {
+    if (widget.emptyStateBuilder != null) {
+      return widget.emptyStateBuilder!(context);
+    }
+    return Center(
+      child: Text(
+        'No data to display.',
+        style: TextStyle(color: theme.textColor),
+      ),
+    );
   }
 
   @override
@@ -511,18 +523,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
               return const Center(child: CircularProgressIndicator());
             } else {
-              return SizedBox(height: widget.loadingIndicatorHeight, child: const LinearProgressIndicator());
+              return SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator());
             }
           }
 
           if (allItems.isEmpty && !controller.isOverallLoading && !widget.showEmptyRows) {
-            if (widget.noDataWidgetBuilder != null) {
-              return widget.noDataWidgetBuilder!(context);
-            } else {
-              return Center(
-                child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-              );
-            }
+            return _buildEmptyView(context, effectiveTheme);
           }
 
           return Stack(
@@ -543,7 +549,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                   right: 0,
                   top: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.top ? 0 : null,
                   bottom: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.bottom ? 0 : null,
-                  child: SizedBox(height: widget.loadingIndicatorHeight, child: const LinearProgressIndicator()),
+                  child: SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator()),
                 ),
               if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
                 Positioned.fill(
@@ -577,13 +583,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           // Conflicts are derived from tasks, so we pass them separately.
           final conflictIndicators = widget.conflictIndicators ?? [];
           if (allItems.isEmpty && !widget.showEmptyRows) {
-            if (widget.noDataWidgetBuilder != null) {
-              return widget.noDataWidgetBuilder!(context);
-            } else {
-              return Center(
-                child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-              );
-            }
+            return _buildEmptyView(context, effectiveTheme);
           }
           return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
         },
@@ -594,13 +594,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final conflictIndicators = widget.conflictIndicators ?? [];
       final allItems = [...tasks, ...holidays];
       if (allItems.isEmpty && !widget.showEmptyRows) {
-        if (widget.noDataWidgetBuilder != null) {
-          return _wrap(widget.noDataWidgetBuilder!(context));
-        } else {
-          return _wrap(Center(
-            child: Text('No data to display.', style: TextStyle(color: effectiveTheme.textColor)),
-          ));
-        }
+        return _wrap(_buildEmptyView(context, effectiveTheme));
       }
       return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
     }

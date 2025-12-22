@@ -1,3 +1,9 @@
+## 5.0.0-alpha.1
+
+* **ALPHA FEATURE**: Implemented the ability to invoke an "optimize schedule" function
+* **FEATURE**: Refactor `noDataWidgetBuilder` to align with package convention and reduce duplication. Use `emptyStateBuilder` to replace it
+* **FEATURE**: Refactor `loadingIndicatorHeight` to align with package convention. Use `linearProgressHeight` to replace it
+
 ## 4.9.0
 
 * **FEATURE**: Implement the ability to auto-schedule. When moving tasks that have successors, the successors adjust to follow

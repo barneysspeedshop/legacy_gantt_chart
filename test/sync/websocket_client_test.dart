@@ -56,26 +56,23 @@ void main() {
       );
     });
 
-    test('connect sends auth then subscribe message', () async {
+    test('connect sends token in query and subscribe message', () async {
       client = WebSocketGanttSyncClient(
         uri: Uri.parse('ws://localhost'),
         authToken: 'test-token',
-        channelFactory: mockChannelFactory,
+        channelFactory: (uri) {
+          expect(uri.queryParameters['token'], equals('test-token'));
+          return mockChannelFactory(uri);
+        },
       );
 
       // Start listening to outgoing before connecting
-      // Expect 2 messages: auth, then subscribe
+      // Expect 1 message: subscribe (auth is in handshake)
       final streamQueue = StreamQueue(outgoingController.stream);
 
       client.connect('tenant-123');
 
-      // 1. Auth Message
-      final authMsg = await streamQueue.next;
-      final authJson = jsonDecode(authMsg as String);
-      expect(authJson['type'], equals('auth'));
-      expect(authJson['token'], equals('test-token'));
-
-      // 2. Subscribe Message
+      // 1. Subscribe Message (Auth verified in handshake)
       final subMsg = await streamQueue.next;
       final subJson = jsonDecode(subMsg as String);
       expect(subJson['type'], equals('subscribe'));
@@ -158,8 +155,8 @@ void main() {
         channelFactory: mockChannelFactory,
       );
 
-      // Use take(3) because messages are: auth, subscribe, operation
-      final messagesFuture = outgoingController.stream.take(3).toList();
+      // Use take(2) because messages are: subscribe, operation
+      final messagesFuture = outgoingController.stream.take(2).toList();
 
       client.connect('tenant-123');
 
@@ -173,9 +170,9 @@ void main() {
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
-      expect(messages.length, 3);
+      expect(messages.length, 2);
 
-      final envelopeJson = jsonDecode(messages[2] as String); // Third message
+      final envelopeJson = jsonDecode(messages[1] as String); // Second message
       expect(envelopeJson['type'], equals('UPDATE_TASK'));
       expect(envelopeJson['actorId'], equals('me'));
       expect(envelopeJson['data']['foo'], equals('bar'));
@@ -187,14 +184,14 @@ void main() {
         authToken: 'test-token',
         channelFactory: mockChannelFactory,
       );
-      final messagesFuture = outgoingController.stream.take(3).toList();
+      final messagesFuture = outgoingController.stream.take(2).toList();
       client.connect('tenant-123');
 
       final op = Operation(type: 'INSERT', data: {}, timestamp: 1, actorId: 'me');
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
-      final envelope = jsonDecode(messages[2] as String);
+      final envelope = jsonDecode(messages[1] as String);
       expect(envelope['type'], 'INSERT_TASK');
     });
 
@@ -204,14 +201,14 @@ void main() {
         authToken: 'test-token',
         channelFactory: mockChannelFactory,
       );
-      final messagesFuture = outgoingController.stream.take(3).toList();
+      final messagesFuture = outgoingController.stream.take(2).toList();
       client.connect('tenant-123');
 
       final op = Operation(type: 'DELETE', data: {}, timestamp: 1, actorId: 'me');
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
-      final envelope = jsonDecode(messages[2] as String);
+      final envelope = jsonDecode(messages[1] as String);
       expect(envelope['type'], 'DELETE_TASK');
     });
   });

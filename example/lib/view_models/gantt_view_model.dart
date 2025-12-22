@@ -144,6 +144,11 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  void setSyncClient(GanttSyncClient client) {
+    _syncClient = client;
+  }
+
   bool get enableWorkCalendar => _enableWorkCalendar;
   void setEnableWorkCalendar(bool value) {
     if (_enableWorkCalendar == value) return;
@@ -3174,6 +3179,18 @@ class GanttViewModel extends ChangeNotifier {
         return (date) => DateFormat.E(_selectedLocale).add_jm().format(date);
       case TimelineAxisFormat.custom:
         return (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
+    }
+  }
+
+  /// Sends a request to the server to optimize the schedule.
+  Future<void> optimizeSchedule() async {
+    if (_syncClient != null) {
+      await _syncClient!.sendOperation(Operation(
+        type: 'OPTIMIZE_SCHEDULE',
+        data: {}, // No payload needed, server fetches tasks
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        actorId: 'local-user',
+      ));
     }
   }
 }

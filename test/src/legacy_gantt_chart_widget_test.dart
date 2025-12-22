@@ -114,7 +114,7 @@ void main() {
             data: const [],
             visibleRows: rows,
             rowMaxStackDepth: rowMaxStackDepth,
-            noDataWidgetBuilder: (context) => const Text('Custom Empty'),
+            emptyStateBuilder: (context) => const Text('Custom Empty'),
           ),
         ),
       ));

@@ -486,6 +486,21 @@ class _GanttViewState extends State<GanttView> {
                       onPressed: () => vm.disconnectSync(),
                       child: const Text('Disconnect'),
                     ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        vm.optimizeSchedule();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Optimization request sent')),
+                        );
+                      },
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('Optimize Schedule'),
+                    ),
                   ],
                 ),
               )
