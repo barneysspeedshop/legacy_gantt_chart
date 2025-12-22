@@ -1646,8 +1646,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
             type = DependencyType.startToFinish;
           }
 
-          // TODO: Add cycle detection here
-
           if (!_wouldCreateCycle(_dependencyStartTaskId!, hit.task.id)) {
             final newDep = LegacyGanttTaskDependency(
               predecessorTaskId: _dependencyStartTaskId!,

@@ -11,12 +11,23 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   WebSocketChannel? _channel;
   final _operationController = StreamController<Operation>.broadcast();
   final _connectionStateController = StreamController<bool>.broadcast();
+  final _inboundProgressController = StreamController<SyncProgress>.broadcast();
+  final _outboundPendingCountController = StreamController<int>.broadcast();
+
+  // Progress tracking state
+  int _totalToSync = 0;
+  int _processedSyncOps = 0;
 
   WebSocketGanttSyncClient({
     required this.uri,
     this.authToken,
     WebSocketChannel Function(Uri)? channelFactory,
-  }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri));
+  }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri)) {
+    // WebSocket client sends immediately, so pending count is effectively 0 (or ephemeral)
+    // We can emit 0 initially.
+    // Use Timer.run to emit after listen? Or just lazily.
+    // For now we just emit 0 when listened to via onListen if we want, or just let it be.
+  }
 
   final WebSocketChannel Function(Uri) _channelFactory;
 
@@ -77,6 +88,16 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             final type = envelope['type'] as String;
             final dataMap = envelope['data'];
 
+            if (type == 'SYNC_METADATA') {
+              if (dataMap != null) {
+                _totalToSync = dataMap['totalOperations'] as int? ?? 0;
+                _processedSyncOps = 0;
+                print('Sync Metadata received: total=$_totalToSync');
+                _inboundProgressController.add(SyncProgress(processed: 0, total: _totalToSync));
+              }
+              return;
+            }
+
             if (type == 'BATCH_UPDATE') {
               // OPTIMIZATION: Emit BATCH_UPDATE as a single operation so the UI can process it in bulk
               // instead of receiving hundreds of individual updates that trigger repaints.
@@ -104,6 +125,19 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
                 print('Skipping message without timestamp/actorId: $type');
               }
               return;
+            }
+
+            // Increment progress if we are in a sync phase (total > 0)
+            // We assume ops coming after SYNC_METADATA are part of the sync until we reach total
+            if (_totalToSync > 0) {
+              _processedSyncOps++;
+              _inboundProgressController.add(SyncProgress(processed: _processedSyncOps, total: _totalToSync));
+              // Optimization: Maybe don't emit every single op if high volume?
+              // But for now correct logic is fine.
+              if (_processedSyncOps >= _totalToSync) {
+                // Reset or keep at 100%?
+                // Let's keep it until next sync starts.
+              }
             }
 
             // Construct Operation from envelope fields
@@ -151,6 +185,12 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
   @override
   Stream<Operation> get operationStream => _operationController.stream;
+
+  @override
+  Stream<int> get outboundPendingCount => Stream.value(0).asBroadcastStream();
+
+  @override
+  Stream<SyncProgress> get inboundProgress => _inboundProgressController.stream;
 
   @override
 
@@ -241,5 +281,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     await _channel?.sink.close();
     await _operationController.close();
     await _connectionStateController.close();
+    await _inboundProgressController.close();
+    await _outboundPendingCountController.close();
   }
 }

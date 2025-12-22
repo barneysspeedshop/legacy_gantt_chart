@@ -22,6 +22,12 @@ class MockGanttSyncClient extends GanttSyncClient {
   Future<List<Operation>> getInitialState() async => [];
 
   @override
+  Stream<int> get outboundPendingCount => Stream.value(0);
+
+  @override
+  Stream<SyncProgress> get inboundProgress => Stream.value(const SyncProgress(processed: 0, total: 0));
+
+  @override
   Future<void> sendOperations(List<Operation> operations) async {
     for (final op in operations) {
       await sendOperation(op);

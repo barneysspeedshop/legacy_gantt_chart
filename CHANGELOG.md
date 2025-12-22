@@ -1,8 +1,14 @@
+## 5.0.0-alpha.2
+
+* **FEATURE**: Added Sync Progress UI to display inbound sync status and pending outbound operations count.
+* **PROTOCOL**: Introduced `SYNC_METADATA` message type for transmitting total operation counts during initial sync.
+* **BREAKING**: Updated `GanttSyncClient` interface to include `inboundProgress` and `outboundPendingCount` streams.
+
 ## 5.0.0-alpha.1
 
 * **ALPHA FEATURE**: Implemented the ability to invoke an "optimize schedule" function
-* **FEATURE**: Refactor `noDataWidgetBuilder` to align with package convention and reduce duplication. Use `emptyStateBuilder` to replace it
-* **FEATURE**: Refactor `loadingIndicatorHeight` to align with package convention. Use `linearProgressHeight` to replace it
+* **BREAKING**: Refactor `noDataWidgetBuilder` to align with package convention and reduce duplication. Use `emptyStateBuilder` to replace it
+* **BREAKINg**: Refactor `loadingIndicatorHeight` to align with package convention. Use `linearProgressHeight` to replace it
 
 ## 4.9.0
 

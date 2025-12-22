@@ -19,6 +19,7 @@ assets/usage.gif
 # Logs and Test Output
 *.log
 test_output.txt
+output.txt
 test_failure.log
 test_failure_click.log
 

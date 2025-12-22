@@ -26,6 +26,12 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Future<List<Operation>> getInitialState() async => [];
 
+  @override
+  Stream<int> get outboundPendingCount => Stream.value(0);
+
+  @override
+  Stream<SyncProgress> get inboundProgress => Stream.value(const SyncProgress(processed: 0, total: 0));
+
   // Helper to simulate receiving an operation from a remote source.
   void receiveOperation(Operation op) {
     _controller.add(op);

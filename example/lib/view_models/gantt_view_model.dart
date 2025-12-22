@@ -1718,6 +1718,20 @@ class GanttViewModel extends ChangeNotifier {
   bool _isSyncConnected = false;
   bool get isSyncConnected => _isSyncConnected;
 
+  Stream<int> get outboundPendingCount {
+    if (_syncClient != null) {
+      return _syncClient!.outboundPendingCount;
+    }
+    return Stream.value(0);
+  }
+
+  Stream<SyncProgress> get inboundProgress {
+    if (_syncClient != null) {
+      return _syncClient!.inboundProgress;
+    }
+    return Stream.value(const SyncProgress(processed: 0, total: 0));
+  }
+
   /// Function for logging in. Can be overridden for testing.
   Future<String> Function({required Uri uri, required String username, required String password})? loginFunction;
 

@@ -480,6 +480,50 @@ class _GanttViewState extends State<GanttView> {
                         Text('Connected', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                       ],
                     ),
+                    StreamBuilder<int>(
+                      stream: vm.outboundPendingCount,
+                      builder: (context, snapshot) {
+                        final count = snapshot.data ?? 0;
+                        if (count == 0) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.upload_file, size: 16, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              Text('Pending Outbound: $count',
+                                  style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    StreamBuilder<SyncProgress>(
+                      stream: vm.inboundProgress,
+                      builder: (context, snapshot) {
+                        final progress = snapshot.data;
+                        // Only show if we have a total and we are not done
+                        if (progress == null ||
+                            progress.total == 0 ||
+                            (progress.processed >= progress.total && progress.total > 0)) {
+                          // Keep visible shortly if done? No, standard behavior is hide.
+                          return const SizedBox.shrink();
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('Syncing: ${progress.processed} / ${progress.total}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.blue)),
+                              const SizedBox(height: 4),
+                              LinearProgressIndicator(value: progress.percentage),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                     const SizedBox(height: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),

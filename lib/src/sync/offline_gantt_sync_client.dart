@@ -92,6 +92,30 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
   }
 
+  @override
+  Stream<SyncProgress> get inboundProgress =>
+      _innerClient?.inboundProgress ?? Stream.value(const SyncProgress(processed: 0, total: 0));
+
+  final _outboundPendingCountController = StreamController<int>.broadcast();
+
+  @override
+  Stream<int> get outboundPendingCount {
+    _updatePendingCount();
+    return _outboundPendingCountController.stream;
+  }
+
+  Future<void> _updatePendingCount() async {
+    if (!_isDbReady) return;
+    try {
+      final result =
+          await _lock.synchronized(() => _db.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0'));
+      final count = result.firstOrNull?['COUNT(*)'] as int? ?? result.firstOrNull?.values.first as int? ?? 0;
+      _outboundPendingCountController.add(count);
+    } catch (e) {
+      print('Error updating pending count: $e');
+    }
+  }
+
   Future<void> _flushQueue() async {
     print('OfflineClient: _flushQueue called. isConnected: $_isConnected, innerClient: $_innerClient');
     if (_activeFlushFuture != null) {
@@ -106,6 +130,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       print('OfflineClient: Flush failed with error: $e\n$st');
     } finally {
       _activeFlushFuture = null;
+      _updatePendingCount();
     }
   }
 
@@ -277,6 +302,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
         ],
       );
     });
+    _updatePendingCount();
   }
 
   Future<void> _queueOperations(List<Operation> operations) async {
@@ -297,6 +323,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       }
       await batch.commit();
     });
+    _updatePendingCount();
   }
 
   Future<void> dispose() async {

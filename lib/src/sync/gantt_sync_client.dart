@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'sync_stats.dart';
+export 'sync_stats.dart';
 
 /// Represents a single operation in the CRDT system.
 class Operation {
@@ -70,4 +72,10 @@ abstract class GanttSyncClient {
   /// Fetches the initial state or full state from the server.
   /// Returns a list of operations representing the history or current state.
   Future<List<Operation>> getInitialState();
+
+  /// Stream of pending outbound operations count (e.g. offline queue size).
+  Stream<int> get outboundPendingCount;
+
+  /// Stream of inbound sync progress.
+  Stream<SyncProgress> get inboundProgress;
 }
