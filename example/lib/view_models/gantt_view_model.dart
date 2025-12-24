@@ -397,7 +397,13 @@ class GanttViewModel extends ChangeNotifier {
         isMilestone: false,
         isSummary: false,
         end: newEnd,
+        propagatesMoveToChildren: true,
+        resizePolicy: ResizePolicy.none,
       );
+    }
+
+    if (newType != 'summary') {
+      newTask = newTask.copyWith(propagatesMoveToChildren: true, resizePolicy: ResizePolicy.none);
     }
 
     await _localRepository.insertOrUpdateTask(newTask);
@@ -418,6 +424,8 @@ class GanttViewModel extends ChangeNotifier {
           'notes': newTask.notes,
           'uses_work_calendar': newTask.usesWorkCalendar,
           'parentId': newTask.parentId,
+          'propagates_move_to_children': newTask.propagatesMoveToChildren,
+          'resize_policy': newTask.resizePolicy.index,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user',
@@ -454,11 +462,21 @@ class GanttViewModel extends ChangeNotifier {
           'notes': task.notes,
           'uses_work_calendar': task.usesWorkCalendar,
           'parentId': task.parentId,
+          'propagates_move_to_children': task.propagatesMoveToChildren,
+          'resize_policy': task.resizePolicy.index,
         },
         timestamp: DateTime.now().millisecondsSinceEpoch,
         actorId: 'local-user', // Should ideally represent the current user
       ));
     }
+  }
+
+  Future<void> updateTaskBehavior(LegacyGanttTask task, {bool? propagates, ResizePolicy? policy}) async {
+    final newTask = task.copyWith(
+      propagatesMoveToChildren: propagates ?? task.propagatesMoveToChildren,
+      resizePolicy: policy ?? task.resizePolicy,
+    );
+    await updateTask(newTask);
   }
 
   Map<String, dynamic> exportToJson() {
@@ -551,7 +569,6 @@ class GanttViewModel extends ChangeNotifier {
 
     final tasks = processedData.ganttTasks;
 
-    // Auto-assign parentId based on grid hierarchy (Row Hierarchy -> Task Hierarchy)
     final taskByRow = {for (var t in tasks) t.rowId: t};
 
     void assignParents(List<GanttGridData> nodes, String? parentTaskId) {
@@ -561,7 +578,6 @@ class GanttViewModel extends ChangeNotifier {
 
         if (task != null) {
           if (parentTaskId != null && task.parentId == null) {
-            // Create a new task version with parentId
             final updatedTask = task.copyWith(parentId: parentTaskId);
             taskByRow[node.id] = updatedTask;
             final index = tasks.indexWhere((t) => t.id == task.id);
@@ -2307,33 +2323,6 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // NOTE(patrick): This is crucial.
-    // The internal `LegacyGanttViewModel` (inside the package) now handles the syncing of
-    // drag/drop operations directly using `_syncClient`.
-    // It sends atomic BATCH updates for summary task moves.
-    //
-    // If we ALSO send an operation here (in the example app wrapper), we introduce a Race Condition:
-    // 1. Internal VM sends BATCH (Parent + Children).
-    // 2. Loop iterates, calling this method for EACH task.
-    // 3. This method sends INDIVIDUAL 'UPDATE_TASK' operations.
-    //
-    // This results in double-syncing and potential "jumbling" as the server processes interleaved messages.
-    // Therefore, we MUST NOT send sync operations here for Drag/Drop updates if the internal VM controls sync.
-
-    // if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
-    //   _syncClient!.sendOperation(Operation(
-    //     type: 'UPDATE_TASK',
-    //     data: {
-    //       'id': task.id,
-    //       'start_date': newStart.millisecondsSinceEpoch,
-    //       'end_date': newEnd.millisecondsSinceEpoch,
-    //       'name': task.name,
-    //     },
-    //     timestamp: DateTime.now().millisecondsSinceEpoch,
-    //     actorId: 'local-user',
-    //   ));
-    // }
-
     if (!_useLocalDatabase) {
       final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
       if (index != -1) {
@@ -2355,27 +2344,22 @@ class GanttViewModel extends ChangeNotifier {
     bool needsCalculations = false;
     final List<LegacyGanttTask> dbUpdates = [];
 
-    // 1. Update in-memory state IMMEDIATELY (Synchronously)
     for (final update in updates) {
       final task = update.$1;
       final newStart = update.$2;
       final newEnd = update.$3;
 
       if (_useLocalDatabase) {
-        // Create updated task
         final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
 
-        // Update Memory
         final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
         if (index != -1) {
           _allGanttTasks[index] = updatedTask;
           needsCalculations = true;
         }
 
-        // Queue for DB
         dbUpdates.add(updatedTask);
       } else if (_apiResponse != null) {
-        // Mock API Update logic (Keep existing logic for non-DB mode)
         final parentResource =
             _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
         if (parentResource != null) {
@@ -2407,23 +2391,15 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // 2. Recalculate and Notify UI (Synchronous-ish, but before await)
     if (needsCalculations && _apiResponse != null) {
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
           _scheduleService.publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
-      // This triggers notifyListeners() inside
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
     }
 
-    // 3. Persist to DB (Asynchronously)
     if (_useLocalDatabase && dbUpdates.isNotEmpty) {
-      // We can await this, but the UI is already updated.
-      // Or we can fire and forget?
-      // Better to await to ensure consistency, but we already notified listeners.
-      // Let's await to avoid errors, but it won't block the UI update that happened above.
       await _localRepository.insertTasks(dbUpdates);
     }
-    // NOTE: Sync operations are handled internally by the package for batch drag/drop.
   }
 
   /// A callback from the Gantt chart widget when the user clicks on an empty

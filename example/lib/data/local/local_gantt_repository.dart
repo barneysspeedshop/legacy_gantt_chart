@@ -60,7 +60,9 @@ class LocalGanttRepository {
             is_deleted = 0,
             uses_work_calendar = ?17,
             parent_id = ?18,
-            is_auto_scheduled = ?19
+            is_auto_scheduled = ?19,
+            propagates_move_to_children = ?20,
+            resize_policy = ?21
           WHERE id = ?1
           ''',
           [
@@ -82,14 +84,16 @@ class LocalGanttRepository {
             task.notes,
             task.usesWorkCalendar ? 1 : 0,
             task.parentId,
-            (task.isAutoScheduled ?? true) ? 1 : 0
+            (task.isAutoScheduled ?? true) ? 1 : 0,
+            task.propagatesMoveToChildren ? 1 : 0,
+            task.resizePolicy.index
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19)
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21)
           ''',
           [
             task.id,
@@ -110,7 +114,9 @@ class LocalGanttRepository {
             task.notes,
             task.usesWorkCalendar ? 1 : 0,
             task.parentId,
-            (task.isAutoScheduled ?? true) ? 1 : 0
+            (task.isAutoScheduled ?? true) ? 1 : 0,
+            task.propagatesMoveToChildren ? 1 : 0,
+            task.resizePolicy.index
           ],
         );
       }
@@ -148,7 +154,9 @@ class LocalGanttRepository {
           is_deleted = 0,
           uses_work_calendar = ?17,
           parent_id = ?18,
-          is_auto_scheduled = ?19
+          is_auto_scheduled = ?19,
+          propagates_move_to_children = ?20,
+          resize_policy = ?21
         WHERE id = ?1
         ''',
         [
@@ -170,14 +178,16 @@ class LocalGanttRepository {
           task.notes,
           task.usesWorkCalendar ? 1 : 0,
           task.parentId,
-          (task.isAutoScheduled ?? true) ? 1 : 0
+          (task.isAutoScheduled ?? true) ? 1 : 0,
+          task.propagatesMoveToChildren ? 1 : 0,
+          task.resizePolicy.index
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19)
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21)
         ''',
         [
           task.id,
@@ -199,6 +209,8 @@ class LocalGanttRepository {
           task.usesWorkCalendar ? 1 : 0,
           task.parentId,
           (task.isAutoScheduled ?? true) ? 1 : 0,
+          task.propagatesMoveToChildren ? 1 : 0,
+          task.resizePolicy.index
         ],
       );
     });
@@ -352,6 +364,8 @@ class LocalGanttRepository {
         usesWorkCalendar: (row['uses_work_calendar'] as int?) == 1,
         parentId: row['parent_id'] as String?,
         isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
+        propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
+        resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
       );
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(

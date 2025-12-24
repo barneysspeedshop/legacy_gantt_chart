@@ -1142,6 +1142,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _initialTouchY = details.globalPosition.dy;
       _dragStartGlobalX = details.globalPosition.dx;
 
+      if (hit.task.isAutoScheduled == true && hit.task.isSummary && hit.part == TaskPart.body) {
+        // Type 1: Locked Parent
+        // Prevent moving moving an auto-scheduled summary task.
+        return;
+      }
+
       _draggedTask = hit.task;
       _originalTaskStart = hit.task.start;
       _originalTaskEnd = hit.task.end;
@@ -1273,28 +1279,94 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final visited = <String>{originTask.id};
     final queue = <LegacyGanttTask>[originTask];
 
-    while (queue.isNotEmpty) {
-      final currentTask = queue.removeAt(0);
+    final originNewStart = originTask.start.add(delta);
+    final originNewEnd = originTask.end.add(delta);
 
-      final children = _tasks.where((t) => t.parentId == currentTask.id).toList();
+    (DateTime, DateTime) getNewPosition(LegacyGanttTask t) {
+      if (t.id == originTask.id) return (originNewStart, originNewEnd);
+      if (_bulkGhostTasks.containsKey(t.id)) return _bulkGhostTasks[t.id]!;
+      return (t.start, t.end);
+    }
+
+    int safetyCounter = 0;
+    const maxIterations = 10000;
+
+    while (queue.isNotEmpty) {
+      if (safetyCounter++ > maxIterations) break;
+
+      final currentTask = queue.removeAt(0);
+      final (currentStart, currentEnd) = getNewPosition(currentTask);
+
+      // Type 2 (Static Bucket): Check if this task propagates moves to children.
+      if (currentTask.propagatesMoveToChildren) {
+        final children = _tasks.where((t) => t.parentId == currentTask.id);
+        final parentDelta = currentStart.difference(currentTask.start);
+
+        for (final child in children) {
+          if (visited.contains(child.id)) continue;
+          if (child.isAutoScheduled == false) continue;
+
+          final childNewStart = child.start.add(parentDelta);
+          final childNewEnd = child.end.add(parentDelta);
+
+          _bulkGhostTasks[child.id] = (childNewStart, childNewEnd);
+          visited.add(child.id);
+          queue.add(child);
+        }
+      }
 
       final directDependencies = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
-      final successorIds = directDependencies.map((d) => d.successorTaskId).toSet();
-      final successors = _tasks.where((t) => successorIds.contains(t.id)).toList();
 
-      final tasksToUpdate = [...children, ...successors];
+      for (final dep in directDependencies) {
+        final successor = _tasks.firstWhere((t) => t.id == dep.successorTaskId, orElse: () => LegacyGanttTask.empty());
+        if (successor.id.isEmpty) continue;
+        if (successor.isAutoScheduled == false) continue;
 
-      for (final task in tasksToUpdate) {
-        if (!visited.contains(task.id)) {
-          if (task.isAutoScheduled == false) continue;
+        // Calculate constraint
+        DateTime? requiredStart;
+        final lag = dep.lag ?? Duration.zero;
 
-          visited.add(task.id);
+        // Effective successor start/end (current planned state)
+        final (succCurrentStart, succCurrentEnd) = getNewPosition(successor);
+        final succDuration = successor.end.difference(successor.start); // Maintain duration
 
-          final newStart = task.start.add(delta);
-          final newEnd = task.end.add(delta);
+        switch (dep.type) {
+          case DependencyType.finishToStart:
+            requiredStart = currentEnd.add(lag);
+            break;
+          case DependencyType.startToStart:
+            requiredStart = currentStart.add(lag);
+            break;
+          case DependencyType.finishToFinish:
+            // Successor End >= Predecessor End + Lag
+            // Start = End - Duration
+            requiredStart = currentEnd.add(lag).subtract(succDuration);
+            break;
+          case DependencyType.startToFinish:
+            // Successor End >= Predecessor Start + Lag
+            requiredStart = currentStart.add(lag).subtract(succDuration);
+            break;
+          case DependencyType.contained:
+            break;
+        }
 
-          _bulkGhostTasks[task.id] = (newStart, newEnd);
-          queue.add(task);
+        if (requiredStart != null) {
+          // Standard Constraint: Successor must be >= requiredStart.
+          // This allows "pushing" (moving forward) but prevents "pulling" (moving backward) just to maintain gap.
+          // If successor is ALREADY after requiredStart, we leave it alone.
+
+          if (succCurrentStart.isBefore(requiredStart)) {
+            final newStart = requiredStart;
+            final newEnd = newStart.add(succDuration);
+
+            _bulkGhostTasks[successor.id] = (newStart, newEnd);
+
+            // Queue for propagation if not already present or visited loop prevention needs checking
+            // Since we only move FORWARD, cycles shouldn't cause infinite loops in DAG, but we use safetyCounter anyway.
+            if (!queue.contains(successor)) {
+              queue.add(successor);
+            }
+          }
         }
       }
     }
@@ -1365,6 +1437,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
     TaskPart? overridePart,
   }) {
     if (overrideTask != null) {
+      if (overrideTask.isAutoScheduled == true && overrideTask.isSummary && overridePart == TaskPart.body) {
+        return;
+      }
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
       _initialTouchY = details.globalPosition.dy;
@@ -1372,7 +1447,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _draggedTask = overrideTask;
       _originalTaskStart = overrideTask.start;
       _originalTaskEnd = overrideTask.end;
-      _dragMode = DragMode.move;
+
+      switch (overridePart ?? TaskPart.body) {
+        case TaskPart.startHandle:
+          _dragMode = DragMode.resizeStart;
+          break;
+        case TaskPart.endHandle:
+          _dragMode = DragMode.resizeEnd;
+          break;
+        default:
+          _dragMode = DragMode.move;
+          break;
+      }
+
       if (!isDisposed) notifyListeners();
       return;
     }
@@ -2043,6 +2130,48 @@ class LegacyGanttViewModel extends ChangeNotifier {
         final taskNewStart = task.start.add(durationDelta);
         final taskNewEnd = task.isMilestone ? taskNewStart : task.end.add(durationDelta);
         _bulkGhostTasks[taskId] = (taskNewStart, taskNewEnd);
+      }
+    } else if ((_dragMode == DragMode.resizeStart || _dragMode == DragMode.resizeEnd) &&
+        _draggedTask != null &&
+        _draggedTask!.isSummary &&
+        _draggedTask!.resizePolicy != ResizePolicy.none) {
+      _bulkGhostTasks.clear();
+      final policy = _draggedTask!.resizePolicy;
+      final originalDuration = _originalTaskEnd!.difference(_originalTaskStart!).inMilliseconds.toDouble();
+      final newDuration = newEnd.difference(newStart).inMilliseconds.toDouble();
+      final children = data.where((t) => t.parentId == _draggedTask!.id);
+
+      for (final child in children) {
+        DateTime childNewStart = child.start;
+        DateTime childNewEnd = child.end;
+
+        if (policy == ResizePolicy.elastic && originalDuration > 0) {
+          // Type 5: Time Warper (Elastic)
+          final startRatio = child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration;
+          final endRatio = child.end.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration;
+
+          childNewStart = newStart.add(Duration(milliseconds: (newDuration * startRatio).round()));
+          childNewEnd = newStart.add(Duration(milliseconds: (newDuration * endRatio).round()));
+        } else if (policy == ResizePolicy.constrain) {
+          // Type 4: Enforcer (Constrain)
+          // Push/Clamp children to stay inside.
+          if (childNewStart.isBefore(newStart)) {
+            final duration = childNewEnd.difference(childNewStart);
+            childNewStart = newStart;
+            childNewEnd = childNewStart.add(duration);
+          }
+          if (childNewEnd.isAfter(newEnd)) {
+            final duration = childNewEnd.difference(childNewStart);
+            childNewEnd = newEnd;
+            childNewStart = childNewEnd.subtract(duration);
+          }
+          // If the child is now larger than the parent, shrink it?
+          // For now, let's just clamp the start if it went before start again.
+          if (childNewStart.isBefore(newStart)) {
+            childNewStart = newStart;
+          }
+        }
+        _bulkGhostTasks[child.id] = (childNewStart, childNewEnd);
       }
     } else {
       _bulkGhostTasks.clear();

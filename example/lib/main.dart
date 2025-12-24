@@ -270,6 +270,39 @@ class _GanttViewState extends State<GanttView> {
           return items;
         },
       ),
+      if (task.isSummary)
+        ContextMenuItem(
+          caption: 'Behavior...',
+          submenuBuilder: (context) async {
+            final isStandard = task.propagatesMoveToChildren && task.resizePolicy == ResizePolicy.none;
+            final isStatic = !task.propagatesMoveToChildren;
+            final isEnforcer = task.resizePolicy == ResizePolicy.constrain;
+            final isWarper = task.resizePolicy == ResizePolicy.elastic;
+
+            return [
+              ContextMenuItem(
+                caption: 'Standard (Group)',
+                trailing: isStandard ? const Icon(Icons.check, size: 16) : null,
+                onTap: () => _viewModel.updateTaskBehavior(task, propagates: true, policy: ResizePolicy.none),
+              ),
+              ContextMenuItem(
+                caption: 'Static Bucket',
+                trailing: isStatic ? const Icon(Icons.check, size: 16) : null,
+                onTap: () => _viewModel.updateTaskBehavior(task, propagates: false, policy: ResizePolicy.none),
+              ),
+              ContextMenuItem(
+                caption: 'Enforcer',
+                trailing: isEnforcer ? const Icon(Icons.check, size: 16) : null,
+                onTap: () => _viewModel.updateTaskBehavior(task, propagates: true, policy: ResizePolicy.constrain),
+              ),
+              ContextMenuItem(
+                caption: 'Time Warper',
+                trailing: isWarper ? const Icon(Icons.check, size: 16) : null,
+                onTap: () => _viewModel.updateTaskBehavior(task, propagates: true, policy: ResizePolicy.elastic),
+              ),
+            ];
+          },
+        ),
       ContextMenuItem(
         caption: 'Edit...',
         onTap: () => _showEditTaskDialog(context, task),

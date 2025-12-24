@@ -39,6 +39,19 @@ class LegacyGanttTaskSegment {
   int get hashCode => start.hashCode ^ end.hashCode ^ color.hashCode;
 }
 
+/// Defines how a parent task resizing affects its children.
+enum ResizePolicy {
+  /// Standard resizing (default). Children are not affected by parent resize,
+  /// unless standard dependency rules apply.
+  none,
+
+  /// Enforcer (Type 4): Children are pushed/clamped to stay inside the parent.
+  constrain,
+
+  /// Time Warper (Type 5): Children are scaled proportionally to the parent's new duration.
+  elastic,
+}
+
 /// Represents a single task or event bar in the Gantt chart.
 ///
 /// For optimal performance, it's recommended to override `==` and `hashCode`
@@ -77,6 +90,8 @@ class LegacyGanttTask {
   final bool usesWorkCalendar;
   final double load;
   final bool? isAutoScheduled;
+  final bool propagatesMoveToChildren;
+  final ResizePolicy resizePolicy;
 
   const LegacyGanttTask({
     required this.id,
@@ -105,6 +120,8 @@ class LegacyGanttTask {
     this.usesWorkCalendar = false,
     this.load = 1.0,
     this.isAutoScheduled,
+    this.propagatesMoveToChildren = true,
+    this.resizePolicy = ResizePolicy.none,
   });
 
   factory LegacyGanttTask.empty() => LegacyGanttTask(
@@ -142,6 +159,8 @@ class LegacyGanttTask {
         'usesWorkCalendar': usesWorkCalendar,
         'load': load,
         'isAutoScheduled': isAutoScheduled,
+        'propagatesMoveToChildren': propagatesMoveToChildren,
+        'resizePolicy': resizePolicy.name,
       };
 
   @override
@@ -174,7 +193,9 @@ class LegacyGanttTask {
           notes == other.notes &&
           usesWorkCalendar == other.usesWorkCalendar &&
           load == other.load &&
-          isAutoScheduled == other.isAutoScheduled;
+          isAutoScheduled == other.isAutoScheduled &&
+          propagatesMoveToChildren == other.propagatesMoveToChildren &&
+          resizePolicy == other.resizePolicy;
 
   @override
   int get hashCode =>
@@ -203,7 +224,10 @@ class LegacyGanttTask {
       notes.hashCode ^
       usesWorkCalendar.hashCode ^
       load.hashCode ^
-      isAutoScheduled.hashCode;
+      load.hashCode ^
+      isAutoScheduled.hashCode ^
+      propagatesMoveToChildren.hashCode ^
+      resizePolicy.hashCode;
 
   LegacyGanttTask copyWith({
     String? id,
@@ -232,6 +256,8 @@ class LegacyGanttTask {
     bool? usesWorkCalendar,
     double? load,
     bool? isAutoScheduled,
+    bool? propagatesMoveToChildren,
+    ResizePolicy? resizePolicy,
   }) =>
       LegacyGanttTask(
         id: id ?? this.id,
@@ -260,5 +286,7 @@ class LegacyGanttTask {
         usesWorkCalendar: usesWorkCalendar ?? this.usesWorkCalendar,
         load: load ?? this.load,
         isAutoScheduled: isAutoScheduled ?? this.isAutoScheduled,
+        propagatesMoveToChildren: propagatesMoveToChildren ?? this.propagatesMoveToChildren,
+        resizePolicy: resizePolicy ?? this.resizePolicy,
       );
 }

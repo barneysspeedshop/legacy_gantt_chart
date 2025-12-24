@@ -12,6 +12,11 @@ class TaskDialog extends StatefulWidget {
   final TimeOfDay defaultStartTime;
   final TimeOfDay defaultEndTime;
 
+  static const BEHAVIOR_STANDARD = 'Standard (Group)';
+  static const BEHAVIOR_STATIC = 'Static Bucket';
+  static const BEHAVIOR_ENFORCER = 'Enforcer';
+  static const BEHAVIOR_WARPER = 'Time Warper';
+
   const TaskDialog({
     super.key,
     this.initialTime,
@@ -37,6 +42,8 @@ class _TaskDialogState extends State<TaskDialog> {
   Color? _selectedTextColor;
   double _completion = 0.0;
   bool _isAutoScheduled = true;
+  bool _propagatesMoveToChildren = true;
+  ResizePolicy _resizePolicy = ResizePolicy.none;
   final TextEditingController _resourceController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
@@ -45,15 +52,15 @@ class _TaskDialogState extends State<TaskDialog> {
     super.initState();
 
     if (widget.task != null) {
-      // Edit Mode
       _nameController = TextEditingController(text: widget.task!.name);
       _startDate = widget.task!.start;
       _endDate = widget.task!.end;
       _selectedColor = widget.task!.color;
-      _selectedColor = widget.task!.color;
       _selectedTextColor = widget.task!.textColor;
       _completion = widget.task!.completion;
       _isAutoScheduled = widget.task!.isAutoScheduled ?? true;
+      _propagatesMoveToChildren = widget.task!.propagatesMoveToChildren;
+      _resizePolicy = widget.task!.resizePolicy;
       _resourceController.text = widget.task!.resourceId ?? '';
       _notesController.text = widget.task!.notes ?? '';
 
@@ -63,18 +70,14 @@ class _TaskDialogState extends State<TaskDialog> {
         _selectedType = 'summary';
       }
     } else {
-      // Create Mode
       _nameController =
           TextEditingController(text: widget.resourceName != null ? 'New Task for ${widget.resourceName}' : 'New Task');
 
-      // Select the default text so the user can easily overwrite it.
       _nameController.selection = TextSelection(
         baseOffset: 0,
         extentOffset: _nameController.text.length,
       );
 
-      // Use the date part from where the user clicked, but apply the default times.
-      // We asserted initialTime is not null if task is null.
       final datePart = widget.initialTime!;
       _startDate = DateTime(
         datePart.year,
@@ -91,7 +94,6 @@ class _TaskDialogState extends State<TaskDialog> {
         widget.defaultEndTime.minute,
       );
 
-      // Handle overnight case where end time is on the next day.
       if (_endDate.isBefore(_startDate)) {
         _endDate = _endDate.add(const Duration(days: 1));
       }
@@ -109,7 +111,6 @@ class _TaskDialogState extends State<TaskDialog> {
   void _submit() {
     if (_nameController.text.isNotEmpty) {
       if (widget.task != null) {
-        // Update existing task
         var newTask = widget.task!.copyWith(
           name: _nameController.text,
           start: _startDate,
@@ -122,19 +123,18 @@ class _TaskDialogState extends State<TaskDialog> {
           resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           isAutoScheduled: _isAutoScheduled,
+          propagatesMoveToChildren: _propagatesMoveToChildren,
+          resizePolicy: _resizePolicy,
         );
 
-        // Enforce milestone duration logic if type changed to milestone
         if (_selectedType == 'milestone') {
           newTask = newTask.copyWith(end: _startDate);
         } else if (newTask.start == newTask.end && _selectedType != 'milestone') {
-          // If converting FROM milestone (or just start==end), ensure visible duration
           newTask = newTask.copyWith(end: newTask.start.add(const Duration(days: 1)));
         }
 
         widget.onSubmit(newTask);
       } else {
-        // Create new task
         final newTask = LegacyGanttTask(
           id: 'new_task_${DateTime.now().millisecondsSinceEpoch}',
           rowId: widget.rowId!, // Asserted not null
@@ -149,6 +149,8 @@ class _TaskDialogState extends State<TaskDialog> {
           resourceId: _resourceController.text.isEmpty ? null : _resourceController.text,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           isAutoScheduled: _isAutoScheduled,
+          propagatesMoveToChildren: _propagatesMoveToChildren,
+          resizePolicy: _resizePolicy,
         );
         widget.onSubmit(newTask);
       }
@@ -171,15 +173,12 @@ class _TaskDialogState extends State<TaskDialog> {
           DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
       if (isStart) {
         _startDate = newDateTime;
-        // If it's a milestone, end matches start.
         if (_selectedType == 'milestone') {
           _endDate = _startDate;
         } else if (_endDate.isBefore(_startDate)) {
           _endDate = _startDate.add(const Duration(hours: 1));
         }
       } else {
-        // If it's a milestone, disallow changing end date separately? Or just force consistency?
-        // Better: prevent regular users from setting end date < start date
         _endDate = newDateTime;
         if (_selectedType == 'milestone') {
           _startDate = _endDate;
@@ -276,7 +275,6 @@ class _TaskDialogState extends State<TaskDialog> {
                       if (_selectedType == 'milestone') {
                         _endDate = _startDate;
                       } else if (_endDate == _startDate) {
-                        // Access duration logic for converting back
                         _endDate = _startDate.add(const Duration(days: 1));
                       }
                     });
@@ -286,14 +284,61 @@ class _TaskDialogState extends State<TaskDialog> {
             ),
           ),
           const SizedBox(height: 16),
+          if (_selectedType == 'summary') ...[
+            InputDecorator(
+              decoration: const InputDecoration(labelText: 'Behavior'),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: !_propagatesMoveToChildren
+                      ? TaskDialog.BEHAVIOR_STATIC
+                      : _resizePolicy == ResizePolicy.constrain
+                          ? TaskDialog.BEHAVIOR_ENFORCER
+                          : _resizePolicy == ResizePolicy.elastic
+                              ? TaskDialog.BEHAVIOR_WARPER
+                              : TaskDialog.BEHAVIOR_STANDARD,
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_STANDARD, child: Text(TaskDialog.BEHAVIOR_STANDARD)),
+                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_STATIC, child: Text(TaskDialog.BEHAVIOR_STATIC)),
+                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_ENFORCER, child: Text(TaskDialog.BEHAVIOR_ENFORCER)),
+                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_WARPER, child: Text(TaskDialog.BEHAVIOR_WARPER)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        switch (value) {
+                          case TaskDialog.BEHAVIOR_STATIC:
+                            _propagatesMoveToChildren = false;
+                            _resizePolicy = ResizePolicy.none;
+                            break;
+                          case TaskDialog.BEHAVIOR_ENFORCER:
+                            _propagatesMoveToChildren = true;
+                            _resizePolicy = ResizePolicy.constrain;
+                            break;
+                          case TaskDialog.BEHAVIOR_WARPER:
+                            _propagatesMoveToChildren = true;
+                            _resizePolicy = ResizePolicy.elastic;
+                            break;
+                          case TaskDialog.BEHAVIOR_STANDARD:
+                          default:
+                            _propagatesMoveToChildren = true;
+                            _resizePolicy = ResizePolicy.none;
+                            break;
+                        }
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             const Text('Start:'),
             TextButton(
                 onPressed: () => _selectDateTime(context, true),
                 child: Text(DateFormat.yMd().add_jm().format(_startDate)))
           ]),
-          // Hide End Date for Milestone? Or show but disable? Or keep synced?
-          // Keeping it visible but synced is fine.
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             const Text('End:'),
             TextButton(
