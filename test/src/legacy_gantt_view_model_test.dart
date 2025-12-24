@@ -664,11 +664,14 @@ void main() {
           ),
           overrideTask: predTask);
 
-      // Drag +200px (+1 hour)
+      // Drag +400px (+2 hours)
+      // Original pred: 8-9. New pred: 10-11.
+      // Original succ: 10-11. Hit at 10-11 range.
+      // Succ must be >= pred.end (11:00).
       viewModel.onHorizontalPanUpdate(DragUpdateDetails(
-        globalPosition: const Offset(1810, 75),
-        delta: const Offset(200, 0),
-        primaryDelta: 200,
+        globalPosition: const Offset(2010, 75),
+        delta: const Offset(400, 0),
+        primaryDelta: 400,
       ));
 
       viewModel.onHorizontalPanEnd(DragEndDetails());
@@ -676,8 +679,66 @@ void main() {
       // Check operations
       final succUpdate = mockSyncClient.sentOperations.firstWhere((op) => op.data['id'] == 'succ');
       final newStart = DateTime.parse(succUpdate.data['start']);
-      // Succ original 10:00. +1h -> 11:00.
+      // Succ original 10:00. Required start is pred.end (11:00).
       expect(newStart.hour, 11);
+    });
+
+    test('Auto-scheduling: Backward move does NOT pull successor', () {
+      final mockSyncClient = MockGanttSyncClient();
+      final predTask = LegacyGanttTask(
+        id: 'pred',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 9),
+        name: 'Predecessor',
+      );
+      final succTask = LegacyGanttTask(
+        id: 'succ',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 10),
+        end: DateTime(2023, 1, 1, 11),
+        name: 'Successor',
+      );
+      const dependency = LegacyGanttTaskDependency(
+        predecessorTaskId: 'pred',
+        successorTaskId: 'succ',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [predTask, succTask],
+        dependencies: [dependency],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        syncClient: mockSyncClient,
+        enableDragAndDrop: true,
+      );
+
+      viewModel.updateLayout(2000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble();
+
+      // Start Drag on Predecessor
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: const Offset(1610, 75),
+            localPosition: const Offset(1610, 75),
+          ),
+          overrideTask: predTask);
+
+      // Drag -200px (-1 hour)
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(1410, 75),
+        delta: const Offset(-200, 0),
+        primaryDelta: -200,
+      ));
+
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      // Check operations: Successor should NOT have an update operation
+      final hasSuccUpdate = mockSyncClient.sentOperations.any((op) => op.data['id'] == 'succ');
+      expect(hasSuccUpdate, isFalse, reason: 'Successor should not be pulled backward');
     });
 
     test('Auto-scheduling: Disabled Globally', () {

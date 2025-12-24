@@ -1297,7 +1297,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final currentTask = queue.removeAt(0);
       final (currentStart, currentEnd) = getNewPosition(currentTask);
 
-      // Type 2 (Static Bucket): Check if this task propagates moves to children.
+      // 1. Child Propagation (Standard Bucket behavior)
       if (currentTask.propagatesMoveToChildren) {
         final children = _tasks.where((t) => t.parentId == currentTask.id);
         final parentDelta = currentStart.difference(currentTask.start);
@@ -1315,58 +1315,72 @@ class LegacyGanttViewModel extends ChangeNotifier {
         }
       }
 
-      final directDependencies = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
-
-      for (final dep in directDependencies) {
+      // 2. Forward Propagation (Predecessor -> Successors)
+      final forwardDeps = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
+      for (final dep in forwardDeps) {
         final successor = _tasks.firstWhere((t) => t.id == dep.successorTaskId, orElse: () => LegacyGanttTask.empty());
-        if (successor.id.isEmpty) continue;
-        if (successor.isAutoScheduled == false) continue;
+        if (successor.id.isEmpty || successor.isAutoScheduled == false) continue;
 
-        // Calculate constraint
-        DateTime? requiredStart;
+        final (succStart, _) = getNewPosition(successor);
+        final succDuration = successor.end.difference(successor.start);
         final lag = dep.lag ?? Duration.zero;
 
-        // Effective successor start/end (current planned state)
-        final (succCurrentStart, succCurrentEnd) = getNewPosition(successor);
-        final succDuration = successor.end.difference(successor.start); // Maintain duration
-
+        DateTime? requiredMinStart;
         switch (dep.type) {
           case DependencyType.finishToStart:
-            requiredStart = currentEnd.add(lag);
+            requiredMinStart = currentEnd.add(lag);
             break;
           case DependencyType.startToStart:
-            requiredStart = currentStart.add(lag);
+            requiredMinStart = currentStart.add(lag);
             break;
           case DependencyType.finishToFinish:
-            // Successor End >= Predecessor End + Lag
-            // Start = End - Duration
-            requiredStart = currentEnd.add(lag).subtract(succDuration);
+            requiredMinStart = currentEnd.add(lag).subtract(succDuration);
             break;
           case DependencyType.startToFinish:
-            // Successor End >= Predecessor Start + Lag
-            requiredStart = currentStart.add(lag).subtract(succDuration);
+            requiredMinStart = currentStart.add(lag).subtract(succDuration);
             break;
           case DependencyType.contained:
             break;
         }
 
-        if (requiredStart != null) {
-          // Standard Constraint: Successor must be >= requiredStart.
-          // This allows "pushing" (moving forward) but prevents "pulling" (moving backward) just to maintain gap.
-          // If successor is ALREADY after requiredStart, we leave it alone.
+        if (requiredMinStart != null && succStart.isBefore(requiredMinStart)) {
+          _bulkGhostTasks[successor.id] = (requiredMinStart, requiredMinStart.add(succDuration));
+          if (!queue.contains(successor)) queue.add(successor);
+        }
+      }
 
-          if (succCurrentStart.isBefore(requiredStart)) {
-            final newStart = requiredStart;
-            final newEnd = newStart.add(succDuration);
+      // 3. Backward Propagation (Successor -> Predecessors)
+      final backwardDeps = dependencies.where((d) => d.successorTaskId == currentTask.id).toList();
+      for (final dep in backwardDeps) {
+        final predecessor =
+            _tasks.firstWhere((t) => t.id == dep.predecessorTaskId, orElse: () => LegacyGanttTask.empty());
+        if (predecessor.id.isEmpty || predecessor.isAutoScheduled == false) continue;
 
-            _bulkGhostTasks[successor.id] = (newStart, newEnd);
+        final (_, predEnd) = getNewPosition(predecessor);
+        final predDuration = predecessor.end.difference(predecessor.start);
+        final lag = dep.lag ?? Duration.zero;
 
-            // Queue for propagation if not already present or visited loop prevention needs checking
-            // Since we only move FORWARD, cycles shouldn't cause infinite loops in DAG, but we use safetyCounter anyway.
-            if (!queue.contains(successor)) {
-              queue.add(successor);
-            }
-          }
+        DateTime? requiredMaxEnd;
+        switch (dep.type) {
+          case DependencyType.finishToStart:
+            requiredMaxEnd = currentStart.subtract(lag);
+            break;
+          case DependencyType.startToStart:
+            requiredMaxEnd = currentStart.subtract(lag).add(predDuration); // pred.start = currentStart - lag
+            break;
+          case DependencyType.finishToFinish:
+            requiredMaxEnd = currentEnd.subtract(lag);
+            break;
+          case DependencyType.startToFinish:
+            requiredMaxEnd = currentEnd.subtract(lag).add(predDuration);
+            break;
+          case DependencyType.contained:
+            break;
+        }
+
+        if (requiredMaxEnd != null && predEnd.isAfter(requiredMaxEnd)) {
+          _bulkGhostTasks[predecessor.id] = (requiredMaxEnd.subtract(predDuration), requiredMaxEnd);
+          if (!queue.contains(predecessor)) queue.add(predecessor);
         }
       }
     }

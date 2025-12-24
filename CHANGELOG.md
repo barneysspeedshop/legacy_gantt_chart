@@ -5,6 +5,7 @@
     * **Static Bucket**: Parent is a fixed container. Moving the parent does *not* move the children.
     * **Constrain**: Parent acts as a constraint. Resizing the parent pushes or clamps children to ensure they stay within bounds.
     * **Elastic**: Resizing the parent proportionally scales the duration and positions of all child tasks.
+* **IMPROVEMENT**: Enhanced **Auto-Scheduling** logic with bidirectional constraint enforcement. Predecessors now push successors forward, and successors push predecessors backward when dependency constraints are violated, maintaining schedule integrity from both directions while preserving existing gaps.
 * **EXAMPLE FEATURE**: Added a "Behavior" submenu to the Task Context Menu in the example app, with visual check indicators for the selected state.
 * **EXAMPLE FEATURE**: Added behavior selection to the Create/Edit Task dialog in the example app.
 
