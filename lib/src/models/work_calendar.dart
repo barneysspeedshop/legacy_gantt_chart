@@ -86,7 +86,6 @@ class WorkCalendar {
     if (start.isAfter(end) || start == end) return [];
 
     final ranges = <(DateTime, DateTime)>[];
-    // Start iteration from the day of 'start'.
     DateTime? nonWorkingStart;
     DateTime iterDay = DateTime(start.year, start.month, start.day);
 
@@ -97,9 +96,6 @@ class WorkCalendar {
         nonWorkingStart ??= iterDay.isBefore(start) ? start : iterDay;
       } else {
         if (nonWorkingStart != null) {
-          // End of a non-working period
-          // The period ends at the start of this working day (midnight).
-          // But wait, if the PREVIOUS day was non-working, it ends at midnight of THIS day.
           ranges.add((nonWorkingStart, iterDay));
           nonWorkingStart = null;
         }
@@ -108,20 +104,15 @@ class WorkCalendar {
       iterDay = iterDay.add(const Duration(days: 1));
     }
 
-    // Handle open-ended non-working period at the end
     if (nonWorkingStart != null) {
-      // It ends at 'end' (or the start of the next day, but clamped to 'end')
       ranges.add((nonWorkingStart, end));
     }
 
-    // Clamp the ranges
     final clampedRanges = <(DateTime, DateTime)>[];
     for (final r in ranges) {
       DateTime s = r.$1;
       DateTime e = r.$2;
 
-      // S is already >= start (handled by initialization)
-      // E needs to be <= end
       if (e.isAfter(end)) e = end;
 
       if (s.isBefore(e)) {

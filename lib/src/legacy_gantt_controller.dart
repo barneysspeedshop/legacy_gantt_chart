@@ -96,17 +96,14 @@ class LegacyGanttController extends ChangeNotifier {
       if (initialTasks != null && initialTasks.isNotEmpty) {
         debugPrint('Warning: `initialTasks` are ignored when `tasksAsync` is provided.');
       }
-      // Perform an initial fetch for the provided date range.
       fetchTasksForVisibleRange();
     } else {
-      // Calculate initial buckets if static data is provided
       _resourceBuckets = aggregateResourceLoad(_tasks, start: _visibleStartDate, end: _visibleEndDate);
     }
     if (holidaysAsync != null) {
       if (initialHolidays != null && initialHolidays.isNotEmpty) {
         debugPrint('Warning: `initialHolidays` are ignored when `holidaysAsync` is provided.');
       }
-      // Perform an initial fetch for the provided date range.
       fetchHolidaysForVisibleRange();
     }
   }
@@ -185,7 +182,6 @@ class LegacyGanttController extends ChangeNotifier {
   ///
   /// Dependencies are not typically fetched asynchronously, so this can be called at any time.
   void setDependencies(List<LegacyGanttTaskDependency> newDependencies) {
-    // Dependencies are not typically fetched async, so no check is needed here.
     _dependencies = List.from(newDependencies);
     notifyListeners();
   }
@@ -246,7 +242,6 @@ class LegacyGanttController extends ChangeNotifier {
     }
 
     setLoading(true);
-    // Notify listeners to show a loading indicator, but keep the old data visible.
     notifyListeners();
 
     try {
@@ -257,7 +252,6 @@ class LegacyGanttController extends ChangeNotifier {
       onDataReceived([]); // On error, clear the data to avoid showing stale data.
     } finally {
       setLoading(false);
-      // Notify again to update the UI with the new data and hide the indicator.
       notifyListeners();
     }
   }

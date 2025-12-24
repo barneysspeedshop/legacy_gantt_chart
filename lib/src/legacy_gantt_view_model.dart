@@ -100,8 +100,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
-  // Setters for totalGridMin/Max were not strictly required by API match (as they were final),
-  // but adding them for consistency if valid.
   set totalGridMin(double? value) {
     updateTotalGridRange(value, _totalGridMax);
   }
@@ -139,6 +137,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// A callback invoked when an empty space on the chart is clicked.
   final Function(String rowId, DateTime time)? onEmptySpaceClick;
+
+  /// A callback invoked when a batch of tasks are updated (e.g. via drag and drop of a summary task).
+  /// If provided, this is called INSTEAD OF [onTaskUpdate] for batch operations.
+  Function(List<(LegacyGanttTask, DateTime, DateTime)>)? onBulkTaskUpdate;
 
   /// A callback invoked when a user completes a draw action for a new task.
   final Function(DateTime start, DateTime end, String rowId)? onTaskDrawEnd;
@@ -201,7 +203,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   StreamSubscription<Operation>? _syncSubscription;
 
-  // --- Remote Cursor State ---
   final Map<String, RemoteCursor> _remoteCursors = {};
   Map<String, RemoteCursor> get remoteCursors => Map.unmodifiable(_remoteCursors);
 
@@ -215,14 +216,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
-  // --- Remote Ghost State ---
   final Map<String, RemoteGhost> _remoteGhosts = {};
   Map<String, RemoteGhost> get remoteGhosts => Map.unmodifiable(_remoteGhosts);
 
   Timer? _ghostUpdateThrottle;
   static const Duration _ghostThrottleDuration = Duration(milliseconds: 50);
 
-  // Helper to get safe timestamp
   int get _currentTimestamp {
     if (syncClient != null && syncClient is WebSocketGanttSyncClient) {
       return (syncClient as WebSocketGanttSyncClient).correctedTimestamp;
@@ -272,7 +271,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (taskId != null) {
       if (startMs == null || endMs == null) {
-        // Clear task drag part of ghost, but keep presence
         if (_remoteGhosts.containsKey(actorId)) {
           final existing = _remoteGhosts[actorId]!;
           _remoteGhosts[actorId] = RemoteGhost(
@@ -287,7 +285,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           );
         }
       } else {
-        // Update ghost with drag info
         final existing = _remoteGhosts[actorId];
         _remoteGhosts[actorId] = RemoteGhost(
           userId: actorId,
@@ -403,6 +400,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.syncClient,
     this.taskGrouper,
     this.onSelectionChanged,
+    this.onBulkTaskUpdate,
     WorkCalendar? workCalendar,
     bool rollUpMilestones = false,
   })  : _tasks = List.from(data),
@@ -413,10 +411,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _totalGridMin = totalGridMin,
         _totalGridMax = totalGridMax,
         _axisHeight = axisHeight {
-    // 0. Calculate initial resource buckets
     _baseResourceBuckets = aggregateResourceLoad(_tasks);
 
-    // 1. Pre-calculate row offsets immediately
     _focusedTaskId = initialFocusedTaskId;
     _calculateRowOffsets();
 
@@ -470,7 +466,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           dependencies = [];
           _tasks.clear();
           conflictIndicators = [];
-          // Force repaint/recalculate
           _calculateDomains();
           notifyListeners();
         } else if (op.type == 'CURSOR_MOVE') {
@@ -496,7 +491,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
-  // --- Resource Histogram State ---
   Map<String, List<ResourceBucket>> _baseResourceBuckets = {};
 
   /// Returns the resource buckets, potentially modified by the current drag operation.
@@ -506,32 +500,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return _baseResourceBuckets;
     }
 
-    // Optimization: If the dragged task has no resource, just return base.
     if (_draggedTask!.resourceId == null) {
       return _baseResourceBuckets;
     }
 
     final resourceId = _draggedTask!.resourceId!;
 
-    // Create a copy of the buckets for this resource only
     final Map<String, List<ResourceBucket>> effectiveBuckets = Map.from(_baseResourceBuckets);
     final List<ResourceBucket> currentResourceBuckets = List.from(effectiveBuckets[resourceId] ?? []);
-
-    // 1. Remove the original task's contribution
-    // We need to iterate over original task days and subtract load.
-    // However, the base buckets are aggregated.
-    // It is cleaner to re-aggregate if we want perfect accuracy, or delta-update.
-    // Given usage of "Bucket System", let's try delta update.
-
-    // Note: Tasks list `_tasks` still contains the original task at its original position.
-    // `_baseResourceBuckets` is derived from `_tasks`.
-    // So we need to subtract the original task and add the ghost task.
 
     final originalStart = _draggedTask!.start;
     final originalEnd = _draggedTask!.end;
     final load = _draggedTask!.load;
 
-    // Subtract original
     DateTime current = DateTime(originalStart.year, originalStart.month, originalStart.day);
     final endDay = DateTime(originalEnd.year, originalEnd.month, originalEnd.day);
 
@@ -540,13 +521,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       if (index != -1) {
         final b = currentResourceBuckets[index];
         final newLoad = b.totalLoad - load;
-        // If load becomes ~0, keep specific logic? Or just allow 0.
         currentResourceBuckets[index] = b.copyWith(totalLoad: max(0.0, newLoad));
       }
       current = current.add(const Duration(days: 1));
     }
 
-    // Add ghost
     final ghostStart = _ghostTaskStart!;
     final ghostEnd = _ghostTaskEnd!;
 
@@ -559,20 +538,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
         final b = currentResourceBuckets[index];
         currentResourceBuckets[index] = b.copyWith(totalLoad: b.totalLoad + load);
       } else {
-        // Create new bucket if it didn't exist
         currentResourceBuckets.add(ResourceBucket(date: current, resourceId: resourceId, totalLoad: load));
       }
       current = current.add(const Duration(days: 1));
     }
 
-    // Sort again just in case new buckets were added out of order
     currentResourceBuckets.sort((a, b) => a.date.compareTo(b.date));
 
     effectiveBuckets[resourceId] = currentResourceBuckets;
     return effectiveBuckets;
   }
-
-  // Internal State
 
   void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
     if (resizeTooltipDateFormat != newFormat) {
@@ -583,18 +558,35 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// Updates the list of dependencies and notifies listeners to trigger a repaint.
   void updateData(List<LegacyGanttTask> data) {
-    if (!listEquals(_tasks, data)) {
+    if (_dragMode != DragMode.none && data.isEmpty && _tasks.isNotEmpty) {
+      return;
+    }
+
+    final mergedData = data.map((incomingTask) {
+      final localTask = _tasks.firstWhere((t) => t.id == incomingTask.id, orElse: () => LegacyGanttTask.empty());
+
+      if (localTask.id.isNotEmpty) {
+        final localProps = localTask.lastUpdated ?? 0;
+        final incomingProps = incomingTask.lastUpdated ?? 0;
+
+        if (localProps > incomingProps) {
+          return localTask;
+        }
+      }
+      return incomingTask;
+    }).toList();
+
+    if (!listEquals(_tasks, mergedData)) {
+      if (mergedData.isNotEmpty) {}
       if (isDisposed) return;
-      _tasks = data;
-      // Recalculate domains as data changed
+      _tasks = mergedData;
       _calculateDomains();
       _recalculateCriticalPath();
-      // Recalculate resource buckets
       _baseResourceBuckets = aggregateResourceLoad(_tasks,
           start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
           end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
       notifyListeners();
-    }
+    } else {}
   }
 
   void updateConflictIndicators(List<LegacyGanttTask> conflictIndicators) {
@@ -625,10 +617,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void updateDependencies(List<LegacyGanttTaskDependency> newDependencies) {
     if (!listEquals(dependencies, newDependencies)) {
-      // updateDependencies is intended to reflect external state changes (e.g. from DB)
-      // It should NOT automatically generate sync operations, as that leads to feedback loops.
-      // Operations are generated by explicit user actions (addDependency, removeDependency).
-
       dependencies = newDependencies;
       _recalculateCriticalPath();
       if (!isDisposed) notifyListeners();
@@ -666,7 +654,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
 
     if (syncClient != null) {
-      // Send single operation
       syncClient!.sendOperation(Operation(
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': task.id},
@@ -684,7 +671,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void _sendCursorMove(DateTime time, String rowId) {
     if (syncClient == null) return;
 
-    // THROTTLING: Only send updates every 100ms to allow GC to keep up and reduce network traffic
     final now = DateTime.now();
     if (_lastCursorSync != null && now.difference(_lastCursorSync!) < const Duration(milliseconds: 100)) {
       return;
@@ -748,7 +734,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DateTime? _originalTaskStart;
   DateTime? _originalTaskEnd;
   MouseCursor _cursor = SystemMouseCursors.basic;
-  // New state for resize tooltip
   bool _showResizeTooltip = false;
   String _resizeTooltipText = '';
   Offset _resizeTooltipPosition = Offset.zero;
@@ -756,7 +741,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DateTime? _hoveredDate;
   String? _focusedTaskId;
 
-  // Dependency Drawing State
   String? _dependencyStartTaskId;
   TaskPart? _dependencyStartSide;
   Offset? _currentDragPosition;
@@ -767,11 +751,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Offset? get currentDragPosition => _currentDragPosition;
   String? get dependencyHoveredTaskId => _dependencyHoveredTaskId;
 
-  // Add this list to your class properties to cache row positions
   List<double> _rowVerticalOffsets = [];
   double _totalContentHeight = 0;
 
-  // Critical Path State
   bool _showCriticalPath = false;
   Set<String> _criticalTaskIds = {};
   Set<LegacyGanttTaskDependency> _criticalDependencies = {};
@@ -799,8 +781,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void _recalculateCriticalPath() {
     if (!_showCriticalPath) return;
 
-    // Run calculation in a microtask or compute isolate if needed for performance.
-    // For now, run synchronously.
     final calculator = CriticalPathCalculator();
     final result = calculator.calculate(tasks: _tasks, dependencies: dependencies);
 
@@ -848,20 +828,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void _selectTasksInRect(Rect rect) {
     _selectedTaskIds.clear();
 
-    // The rect is in local widget coordinates. We need to convert it to "content" coordinates
-    // used by the tasks (which are laid out relative to timeAxisHeight).
-    // Also consider the scroll offset (_translateY).
-    // Content Y = 0 matches Screen Y = timeAxisHeight + _translateY.
-    // Screen Y = Content Y + timeAxisHeight + _translateY.
-    // Content Y = Screen Y - timeAxisHeight - _translateY.
     final contentRect = rect.shift(Offset(0, -timeAxisHeight - _translateY));
-
-    // Optimize: Pre-calculate map if needed, but linear scan is fine for typical N.
-    // We only check tasks in visible rows to be safe? Or all?
-    // "Select" usually means "visual selection", so selecting visible is prioritized.
-    // But if we want to select *everything* in the box even if hidden?
-    // No, if they are hidden (collapsed parent), they have no Y position.
-    // So we iterate `visibleRows`.
 
     final visibleRowIndices = {for (var i = 0; i < visibleRows.length; i++) visibleRows[i].id: i};
 
@@ -869,12 +836,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final rowIndex = visibleRowIndices[task.rowId];
       if (rowIndex == null) continue;
 
-      // Check task intersection
       final rowTop = _rowVerticalOffsets[rowIndex];
       final top = rowTop + (task.stackIndex * rowHeight);
       final bottom = top + rowHeight;
 
-      // Optimization: Check Y overlap first
       if (contentRect.top > bottom || contentRect.bottom < top) continue;
 
       final startX = _totalScale(task.start);
@@ -887,13 +852,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
     }
   }
-
-  // Let's defer exact selection logic to the View or Helper, or implement basic time-range overlap here.
-  // 1. Calculate time range from rect.left / rect.right
-  // 2. Calculate row range from rect.top / rect.bottom
-
-  // Actually, we can do this in the `onPanUpdate` equivalent for selection later.
-  // For now just storing the rect.
 
   /// Clear the current selection.
   void clearSelection() {
@@ -965,13 +923,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _calculateRowOffsets(); // Recalculate if layout changes
     }
 
-    // Fix for scroll synchronization issue:
-    // When the grid collapses rows, the scroll controller's offset might change (clamped by the new smaller extent).
-    // However, this view model might not receive the notification immediately if the listener hasn't fired yet
-    // or if the timing is off. We force a check here.
     if (scrollController != null && scrollController!.hasClients) {
-      // Safely get the offset. If attached to multiple views (e.g. during transition or complex grids),
-      // pick the first one or avoid throwing.
       double? currentControllerOffset;
       if (scrollController!.positions.length == 1) {
         currentControllerOffset = scrollController!.offset;
@@ -980,14 +932,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
 
       if (currentControllerOffset != null) {
-        // _translateY should be negative of the scroll offset.
-        // We use a small epsilon for float comparison.
         if ((_translateY - (-currentControllerOffset)).abs() > 0.1) {
-          // Schedule the update to avoid "setState during build" or similar issues,
-          // although setTranslateY just notifies listeners.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (scrollController != null && scrollController!.hasClients) {
-              // Re-check safely inside the callback
               double? callbackOffset;
               if (scrollController!.positions.length == 1) {
                 callbackOffset = scrollController!.offset;
@@ -1020,7 +967,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (changed) {
       gridMin = newGridMin;
       gridMax = newGridMax;
-      // Recalculate domains and scales based on the new visible range.
       _calculateDomains();
       _calculateRowOffsets(); // Recalculate if visible rows could have changed
       _calculateDomains();
@@ -1053,7 +999,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final int stackDepth = rowMaxStackDepth[rowId] ?? 1;
       currentTop += rowHeight * stackDepth;
     }
-    // Store the final bottom edge as the last element
     _rowVerticalOffsets[visibleRows.length] = currentTop;
     _totalContentHeight = currentTop;
   }
@@ -1075,13 +1020,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
         high = mid - 1;
       }
     }
-    // Check if the found index is correct
     if (result != -1 && y >= _rowVerticalOffsets[result] && y < _rowVerticalOffsets[result + 1]) {
       return result;
     }
-    // Fallback for edge cases, though the above should be sufficient.
-    // A simple binary search for the insertion point is also an option.
-    // For now, let's refine the loop.
     low = 0;
     high = _rowVerticalOffsets.length - 2;
     while (low <= high) {
@@ -1133,7 +1074,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final double totalDurationMs =
         (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
 
-    // Calculate start time based on scroll offset
     final double startOffsetMs = (scrollOffset / totalWidth) * totalDurationMs;
     final double visibleDurationMs = (viewportWidth / totalWidth) * totalDurationMs;
 
@@ -1184,7 +1124,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _totalScale = (date) => 0.0;
     }
 
-    // Override visibleExtent if using horizontal scroll controller
     if (ganttHorizontalScrollController != null && ganttHorizontalScrollController!.hasClients) {
       _updateVisibleExtentFromScroll();
     }
@@ -1192,12 +1131,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// Gesture handler for the start of a pan gesture. Determines if the pan is
   /// for vertical scrolling, moving a task, or resizing a task.
-  // --- Single Axis Gesture Handlers (Preferred) ---
 
   void onHorizontalPanStart(DragStartDetails details) {
     if (_panType != PanType.none) return;
 
-    // Perform hit test for task
     final hit = _getTaskPartAtPosition(details.localPosition);
     if (hit != null) {
       _panType = PanType.horizontal;
@@ -1221,20 +1158,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
       if (!isDisposed) notifyListeners();
     } else {
-      // If we didn't hit a task, we can still pan the chart horizontally
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
       _initialTouchY = details.globalPosition.dy;
       _dragStartGlobalX = details.globalPosition.dx;
       _dragMode = DragMode.none;
-      // We don't sent _draggedTask, so we know it's a pan operation
       if (!isDisposed) notifyListeners();
     }
   }
 
   void onHorizontalPanUpdate(DragUpdateDetails details) {
     if (_panType == PanType.vertical) return;
-    // If we haven't locked yet (e.g. somehow skipped start), try to lock if we have a task or just pan
     if (_panType == PanType.none) {
       _panType = PanType.horizontal;
       _dragStartGlobalX = details.globalPosition.dx; // Re-sync start
@@ -1247,13 +1181,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           _sendGhostUpdate(_draggedTask!.id, _ghostTaskStart!, _ghostTaskEnd!);
         }
       } else {
-        // Panning the view (scrolling)
-        // Delta is purely from the update event for smoother scrolling if we accumulate,
-        // but here we are using delta from start.
-        // Better to use details.delta for incremental updates to avoid state management issues
-        // with "start position". OR strictly use the diff from drag start.
-        // Existing logic for tasks uses start position. Let's stick to details.delta for panning view
-        // as it is more continuous.
         _handleHorizontalScroll(-details.delta.dx);
       }
     }
@@ -1262,71 +1189,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void onHorizontalPanEnd(DragEndDetails details) {
     if (_panType == PanType.horizontal) {
       if (_draggedTask != null && _ghostTaskStart != null) {
-        // Calculate the delta for auto-scheduling
         final delta = _ghostTaskStart!.difference(_draggedTask!.start);
         if (delta.inSeconds != 0) {
           _propagateAutoSchedule(_draggedTask!, delta);
         }
       }
 
-      // Execute existing finish logic
       if (_draggedTask != null) {
         _clearGhostUpdate(_draggedTask!.id);
       }
       if (_draggedTask != null && _ghostTaskStart != null && _ghostTaskEnd != null) {
-        if (syncClient != null) {
-          final op = Operation(
-            type: 'UPDATE_TASK',
-            data: {
-              'id': _draggedTask!.id,
-              'start': _ghostTaskStart!.toIso8601String(),
-              'end': _ghostTaskEnd!.toIso8601String(),
-            },
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-            actorId: 'user',
-          );
-
-          syncClient!.sendOperation(op);
-          _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
-
-          if (taskGrouper != null) {
-            final conflicts = LegacyGanttConflictDetector().run(
-              tasks: _tasks,
-              taskGrouper: taskGrouper!,
-            );
-            conflictIndicators = conflicts;
-            if (!isDisposed) notifyListeners();
-          }
-
-          // Always notify parent app of updates, even in sync mode.
-          // This allows for local persistence or other side effects.
-          onTaskUpdate?.call(_draggedTask!, _ghostTaskStart!, _ghostTaskEnd!);
-        } else {
-          // Local mode: Optimistically update internal state to prevent "snap back"
-          final updatedTask = _draggedTask!.copyWith(
-            start: _ghostTaskStart,
-            end: _ghostTaskEnd,
-          );
-
-          final index = _tasks.indexWhere((t) => t.id == updatedTask.id);
-          if (index != -1) {
-            _tasks[index] = updatedTask;
-
-            // Recalculate conflicts locally if needed
-            if (taskGrouper != null) {
-              final conflicts = LegacyGanttConflictDetector().run(
-                tasks: _tasks,
-                taskGrouper: taskGrouper!,
-              );
-              conflictIndicators = conflicts;
-            }
-            // Notify listeners to show the change immediately
-            notifyListeners();
-          }
-
-          // Then persist the change via callback
-          onTaskUpdate?.call(_draggedTask!, _ghostTaskStart!, _ghostTaskEnd!);
-        }
+        _bulkGhostTasks[_draggedTask!.id] = (_ghostTaskStart!, _ghostTaskEnd!);
       }
     }
     _commitBulkUpdates();
@@ -1337,18 +1210,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_bulkGhostTasks.isEmpty) return;
 
     bool localStateChanged = false;
-
-    // We copy the entries because _bulkGhostTasks might be modified ? No, but safe practice.
     final Map<String, (DateTime, DateTime)> updates = Map.from(_bulkGhostTasks);
-    // Clear immediately to avoid double commits if something recurses? (Unlikely)
-    // But existing code cleared it in _resetDragState, which is called after this.
+    final opsToSend = <Operation>[];
+    final bulkUpdates = <(LegacyGanttTask, DateTime, DateTime)>[];
 
     for (final entry in updates.entries) {
       final taskId = entry.key;
       final (newStart, newEnd) = entry.value;
-      // Use _allGanttTasks or data to find the current state of the task
+
       final task = data.firstWhere((t) => t.id == taskId, orElse: () => LegacyGanttTask.empty());
       if (task.id.isEmpty) continue;
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
+      final index = _tasks.indexWhere((t) => t.id == taskId);
+      if (index != -1) {
+        _tasks[index] = updatedTask;
+        localStateChanged = true;
+      }
 
       if (syncClient != null) {
         final op = Operation(
@@ -1360,21 +1239,25 @@ class LegacyGanttViewModel extends ChangeNotifier {
             },
             timestamp: DateTime.now().millisecondsSinceEpoch,
             actorId: 'user');
-        syncClient!.sendOperation(op);
-        _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
-      } else {
-        final updatedTask = task.copyWith(start: newStart, end: newEnd);
-        final index = _tasks.indexWhere((t) => t.id == taskId);
-        if (index != -1) {
-          _tasks[index] = updatedTask;
-          localStateChanged = true;
-        }
+        opsToSend.add(op);
       }
-      // Notify parent app
-      onTaskUpdate?.call(task, newStart, newEnd);
+
+      if (onBulkTaskUpdate != null) {
+        bulkUpdates.add((task, newStart, newEnd));
+      } else {
+        onTaskUpdate?.call(task, newStart, newEnd);
+      }
     }
 
-    // Recalculate conflicts if needed (mainly for local mode)
+    if (bulkUpdates.isNotEmpty) {
+      onBulkTaskUpdate!(List.from(bulkUpdates));
+    }
+
+    if (opsToSend.isNotEmpty && syncClient != null) {
+      syncClient!.sendOperations(opsToSend);
+      _tasks = _crdtEngine.mergeTasks(_tasks, opsToSend);
+    }
+
     if (localStateChanged && taskGrouper != null) {
       final conflicts = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
       conflictIndicators = conflicts;
@@ -1393,10 +1276,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     while (queue.isNotEmpty) {
       final currentTask = queue.removeAt(0);
 
-      // 1. Find direct children (Hierarchy)
       final children = _tasks.where((t) => t.parentId == currentTask.id).toList();
 
-      // 2. Find direct successors (Dependencies)
       final directDependencies = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
       final successorIds = directDependencies.map((d) => d.successorTaskId).toSet();
       final successors = _tasks.where((t) => successorIds.contains(t.id)).toList();
@@ -1405,7 +1286,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
       for (final task in tasksToUpdate) {
         if (!visited.contains(task.id)) {
-          // Check per-task auto-scheduling setting (default to true if null)
           if (task.isAutoScheduled == false) continue;
 
           visited.add(task.id);
@@ -1442,9 +1322,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void onVerticalPanEnd(DragEndDetails details) {
-    if (_panType == PanType.vertical) {
-      // Momentum logic could go here
-    }
+    if (_panType == PanType.vertical) {}
     _resetDragState();
   }
 
@@ -1481,14 +1359,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Unified Handlers (Restored for backward compatibility if needed, but delegated) ---
-
   void onPanStart(
     DragStartDetails details, {
     LegacyGanttTask? overrideTask,
     TaskPart? overridePart,
   }) {
-    // If overrides are present, this is a programmatic start (not gesture), so force horizontal logic
     if (overrideTask != null) {
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
@@ -1497,7 +1372,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _draggedTask = overrideTask;
       _originalTaskStart = overrideTask.start;
       _originalTaskEnd = overrideTask.end;
-      // Assuming move for override default
       _dragMode = DragMode.move;
       if (!isDisposed) notifyListeners();
       return;
@@ -1505,7 +1379,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (_currentTool == GanttTool.select) {
       _panType = PanType.selection;
-      // Adjust for header height
       final startY = max(0.0, details.localPosition.dy - timeAxisHeight);
       final startPoint = Offset(details.localPosition.dx, startY);
       _initialLocalPosition = startPoint;
@@ -1528,7 +1401,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
 
     if (_currentTool == GanttTool.draw) {
-      // Find row at position
       final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
       if (rowId != null && time != null) {
         _panType = PanType.draw;
@@ -1536,16 +1408,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _ghostTaskStart = time;
         _ghostTaskEnd = time;
         _dragStartGlobalX = details.globalPosition.dx;
-        // Optionally create a temporary "ghost" task to visualize drawing immediately?
-        // For now, _ghostTaskStart/End might be enough if passed to painter.
-        // But painter needs a task ID to draw ghost? Or just start/end?
-        // Painter uses `draggedTaskId` + `ghostTaskStart/End`.
-        // If we don't have a task ID, we might need a dummy one or update painter.
-        // Let's create a dummy task for visualization if needed, or just rely on selection box style?
-        // Re-using ghost bar logic requires `draggedTaskId`.
-        // Let's rely on a new `drawGhost` state or just selection box logic?
-        // The request says "drag to draw a task".
-        // Let's try to set `_draggedTask` to a temporary dummy task.
         _draggedTask = LegacyGanttTask(
           id: 'drawing_ghost',
           rowId: rowId,
@@ -1558,8 +1420,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return;
     }
 
-    // Otherwise heuristic based - this is risky with conflicting recognizers.
-    // We'll leave it simple:
     _panType = PanType.none;
     _initialTranslateY = _translateY;
     _initialTouchY = details.globalPosition.dy;
@@ -1574,7 +1434,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       if (_selectionRect != null) {
         final currentY = max(0.0, details.localPosition.dy - timeAxisHeight);
         final currentPoint = Offset(details.localPosition.dx, currentY);
-        // Create rect from initial point to current point
         final newRect = Rect.fromPoints(_initialLocalPosition, currentPoint);
         _selectionRect = newRect;
         _updateSelectionFromRect(newRect);
@@ -1589,7 +1448,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     } else if (_panType == PanType.dependency) {
       _currentDragPosition = details.localPosition;
       final hit = _getTaskPartAtPosition(details.localPosition);
-      // Only highlight if it's a valid target (start/end handle of DIFFERENT task)
       if (hit != null &&
           hit.task.id != _dependencyStartTaskId &&
           (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
@@ -1601,7 +1459,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     } else if (_panType == PanType.vertical) {
       onVerticalPanUpdate(details);
     } else {
-      // Heuristic
       if (details.delta.dx.abs() > details.delta.dy.abs()) {
         final hit = _getTaskPartAtPosition(_initialLocalPosition);
         if (hit != null) {
@@ -1655,7 +1512,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
         if (hit != null &&
             hit.task.id != _dependencyStartTaskId &&
             (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
-          // Determine dependency type
           DependencyType type;
           if (_dependencyStartSide == TaskPart.endHandle && hit.part == TaskPart.startHandle) {
             type = DependencyType.finishToStart;
@@ -1673,14 +1529,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
               successorTaskId: hit.task.id,
               type: type,
             );
-            // Notify listener (if provided) or update local list?
-            // The logic from `addDependency` was:
-            // if (onDependencyAdd != null) onDependencyAdd!(newDep);
-            // else _dependencies.add(newDep); notifyListeners();
-            //
-            // But existing addDependency call does:
-            // addDependency(newDep); (Method on VM?)
-            // Yes, I verified LegacyGanttViewModel has addDependency.
             addDependency(newDep);
           }
         }
@@ -1715,33 +1563,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_lastTapDownPosition == null) return;
     final localPosition = _lastTapDownPosition!;
 
-    // If in select mode, handle selection logic
     if (_currentTool == GanttTool.select) {
       final hit = _getTaskPartAtPosition(localPosition);
       if (hit != null) {
-        // Toggle selection for this task
         if (_selectedTaskIds.contains(hit.task.id)) {
           _selectedTaskIds.remove(hit.task.id);
         } else {
           _selectedTaskIds.add(hit.task.id);
         }
         notifyListeners();
-        // Also notify listener if needed?
-        // For now, internal selection state is what prevents drag,
-        // but external controller might want to know.
-        // There is no `onSelectionChanged` callback exposed to VM yet?
-        // The controller has `selectedTaskIds` getter.
-        // We might need to sync back to Validatable or just rely on Controller polling?
-        // Actually, the widget syncs selection FROM controller? No, controller has `selectedTaskIds`.
-        // The VM has `_selectedTaskIds`. They need to sync.
-        // But `LegacyGanttChartWidget` doesn't seem to sync selection change UP to controller?
-        // Let's look at `LegacyGanttContent`.
 
-        // Actually, let's just NOT trigger onEmptySpaceClick if select mode.
-        // Notify listener if available
         onSelectionChanged?.call(_selectedTaskIds);
       } else {
-        // Clicked empty space in select mode -> Clear selection
         if (_selectedTaskIds.isNotEmpty) {
           clearSelection();
         }
@@ -1789,7 +1622,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Mouse hover handler. Updates the cursor, manages tooltips, and detects
   /// hovering over empty space for task creation.
   void onHover(PointerHoverEvent details) {
-    // Sync cursor position
     if (syncClient != null && _showRemoteCursors) {
       final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
       if (rowId != null && time != null) {
@@ -1802,25 +1634,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     MouseCursor newCursor = SystemMouseCursors.basic;
 
-    // DIFFERENT LOGIC FOR SELECTION TOOL
     if (_currentTool == GanttTool.select) {
       newCursor = SystemMouseCursors.cell; // Use cell cursor for selection mode
 
-      // If hovering a task, show click to indicate selectable
       if (hit != null) {
         newCursor = SystemMouseCursors.click;
       }
 
-      // Clear any empty space hover highlight from move mode
       _clearEmptySpaceHover();
     } else if (_currentTool == GanttTool.draw) {
       newCursor = SystemMouseCursors.precise; // Pencil-like cursor
       if (onEmptySpaceClick != null || onTaskDrawEnd != null) {
-        // We still want to identify row for potential drawing, but suppress the visual "+" icon?
-        // The user request said "prevent the emptySpaceIcon from being populated".
-        // We can do this by NOT setting _hoveredRowId/_hoveredDate for the purpose of the icon,
-        // OR by updating the painter to check the tool.
-        // Clearing it here is safest for "no icon".
         _clearEmptySpaceHover();
       }
     } else {
@@ -1835,11 +1659,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
             break;
         }
       } else if (onEmptySpaceClick != null) {
-        // No task was hit, check for empty space.
         final (rowId, time) = _getRowAndTimeAtPosition(details.localPosition);
 
         if (rowId != null && time != null) {
-          // Snap time to the start of the day for the highlight box
           final day = DateTime(time.year, time.month, time.day);
           if (_hoveredRowId != rowId || _hoveredDate != day) {
             _hoveredRowId = rowId;
@@ -1848,7 +1670,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
             if (!isDisposed) notifyListeners();
           }
         } else {
-          // Hovering over dead space or feature is disabled
           _clearEmptySpaceHover();
         }
       } else {
@@ -1909,17 +1730,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
       return (null, null);
     }
 
-    // Adjust Y to be relative to the scrollable content
     final pointerYRelativeToBarsArea = localPosition.dy - timeAxisHeight - _translateY;
 
-    // FAST LOOKUP: Use binary search instead of iterating
     final rowIndex = _findRowIndex(pointerYRelativeToBarsArea);
 
     if (rowIndex == -1) return (null, null);
 
     final rowId = visibleRows[rowIndex].id;
 
-    // Find time by inverting the scale function (Unchanged logic)
     final totalDomainDurationMs =
         (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
     if (totalDomainDurationMs <= 0 || _width <= 0) return (rowId, null);
@@ -1943,21 +1761,16 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final double rowTop = currentTop;
       final double rowBottom = rowTop + rowHeightTotal;
 
-      // Check if row vertically intersects the selection rect
       if (rect.top < rowBottom && rect.bottom > rowTop) {
-        // Row is involved. Check its tasks.
         final tasksInRow =
             data.where((t) => t.rowId == row.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator && !t.isSummary);
 
         for (final task in tasksInRow) {
-          // Calculate task geometry
           final double taskLeft = _totalScale(task.start);
           final double taskRight = _totalScale(task.end);
           final double taskTop = rowTop + (task.stackIndex * rowHeight);
           final double taskBottom = taskTop + rowHeight;
 
-          // Check intersection
-          // Note: rect.left/right are X coordinates.
           if (rect.left < taskRight && rect.right > taskLeft && rect.top < taskBottom && rect.bottom > taskTop) {
             newSelection.add(task.id);
           }
@@ -1970,7 +1783,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (!_setEquals(_selectedTaskIds, newSelection)) {
       _selectedTaskIds.clear();
       _selectedTaskIds.addAll(newSelection);
-      // Notify controller if needed
       onSelectionChanged?.call(_selectedTaskIds);
     }
   }
@@ -1986,14 +1798,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final focusedTask = data.firstWhere((t) => t.id == _focusedTaskId, orElse: () => LegacyGanttTask.empty());
     if (focusedTask.id.isEmpty) return;
 
-    // Check if the task's row is currently visible. If not, its parent is collapsed.
     final isRowVisible = visibleRows.any((r) => r.id == focusedTask.rowId);
     if (!isRowVisible) {
-      // Request the parent widget to make this row visible by expanding its parent.
       onRowRequestVisible?.call(focusedTask.rowId);
       return; // Stop here. Scrolling will happen on the next frame after rebuild.
     }
-    // --- Vertical Scrolling ---
     if (scrollController != null && scrollController!.hasClients) {
       final rowIndex = visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
       if (rowIndex != -1) {
@@ -2003,17 +1812,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
         final currentOffset = scrollController!.offset;
 
         if (rowTop < currentOffset) {
-          // Row is above the viewport, scroll up.
           scrollController!.animateTo(rowTop, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
         } else if (rowBottom > currentOffset + viewportHeight) {
-          // Row is below the viewport, scroll down.
           scrollController!.animateTo(rowBottom - viewportHeight,
               duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
         }
       }
     }
 
-    // --- Horizontal Scrolling ---
     if (ganttHorizontalScrollController != null && ganttHorizontalScrollController!.hasClients) {
       final taskStartPx = _totalScale(focusedTask.start);
       final taskEndPx = _totalScale(focusedTask.end);
@@ -2026,14 +1832,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       double targetOffset = currentOffset;
 
       if (taskStartPx < currentOffset) {
-        // Task starts before the visible area, scroll left.
         targetOffset = taskStartPx - 20; // Add some padding
       } else if (taskEndPx > currentOffset + viewportWidth) {
-        // Task ends after the visible area, scroll right.
         targetOffset = taskEndPx - viewportWidth + 20; // Add some padding
       }
 
-      // Clamp the target offset to valid scroll bounds.
       final clampedOffset = targetOffset.clamp(0.0, maxScroll);
 
       if ((clampedOffset - currentOffset).abs() > 1.0) {
@@ -2091,26 +1894,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final double barStartX = _totalScale(task.start);
       final double barEndX = _totalScale(task.end);
 
-      // Check for rolled-up milestones on summary tasks
       if (task.isSummary && rollUpMilestones) {
-        // Find child milestones (inefficient for large datasets, consider optimizing with a map if needed)
         final childMilestones = data.where((t) => t.isMilestone && t.parentId == task.id);
         for (final milestone in childMilestones) {
           final double mStartX = _totalScale(milestone.start);
           final double diamondSize = rowHeight * 0.8;
-          // Milestones are drawn centered vertically on the summary bar.
-          // Since we are iterating tasksInTappedStack which matched the pointerY,
-          // and summary tasks usually take the slot, this vertical check is implicitly satisfied
-          // by the fact we are looking at the summary task's slot.
-          // However, we should check X bounds.
           if (pointerXOnTotalContent >= mStartX && pointerXOnTotalContent <= mStartX + diamondSize) {
             return (task: milestone, part: TaskPart.body);
           }
         }
       }
 
-      // If this task is focused, the hit area for its handles should be larger
-      // to account for the externally drawn handles.
       final double effectiveHandleWidth = task.id == _focusedTaskId ? resizeHandleWidth * 2 : resizeHandleWidth;
       if (task.isMilestone) {
         final double diamondSize = rowHeight * 0.8; // Matches painter's barHeightRatio
@@ -2118,7 +1912,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           return (task: task, part: TaskPart.body);
         }
       }
-      // Check if the pointer is within the task's bounds, including the potentially larger handle areas.
       if (pointerXOnTotalContent >= barStartX - effectiveHandleWidth &&
           pointerXOnTotalContent <= barEndX + effectiveHandleWidth) {
         if (enableResize) {
@@ -2126,7 +1919,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           final bool onEndHandle = pointerXOnTotalContent > barEndX - effectiveHandleWidth;
 
           if (onStartHandle && onEndHandle && !task.isMilestone) {
-            // Overlapping handles (short task), pick the closest one.
             final distToStart = pointerXOnTotalContent - barStartX;
             final distToEnd = barEndX - pointerXOnTotalContent;
             return distToStart < distToEnd
@@ -2175,24 +1967,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
         newStart = _originalTaskStart!.add(durationDelta);
 
         if (_workCalendar != null) {
-          // Smart Duration Logic
-          // 1. Calculate original working duration
           final int workingDuration = _workCalendar!.getWorkingDuration(_originalTaskStart!, _originalTaskEnd!);
 
-          // 2. Snap newStart to next working day if needed
           while (!_workCalendar!.isWorkingDay(newStart)) {
             newStart = newStart.add(const Duration(days: 1));
           }
 
-          // 3. Calculate newEnd to preserve working duration
           newEnd = _workCalendar!.addWorkingDays(newStart, workingDuration);
 
-          // Milestones: Ensure start == end if it was a milestone
           if (_draggedTask?.isMilestone ?? false) {
             newEnd = newStart;
           }
         } else {
-          // Standard Logic
           if (_draggedTask?.isMilestone ?? false) {
             newEnd = newStart;
           } else {
@@ -2240,18 +2026,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _resizeTooltipText = tooltipText;
     _showResizeTooltip = showTooltip;
     if (showTooltip) {
-      // Offset the tooltip to appear slightly above the cursor.
       if (_dragMode == DragMode.move) {
-        // For move operations, position the tooltip higher to be distinct
-        // from the resize tooltips and less likely to obscure other bars.
         _resizeTooltipPosition = details.localPosition.translate(0, -60);
       } else {
-        // For resize operations.
         _resizeTooltipPosition = details.localPosition.translate(0, -40);
       }
     }
 
-    // Bulk Move Logic
     if (_dragMode == DragMode.move && _draggedTask != null && _selectedTaskIds.contains(_draggedTask!.id)) {
       _bulkGhostTasks.clear();
       for (final taskId in _selectedTaskIds) {
@@ -2287,29 +2068,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _handleHorizontalScroll(double deltaPixels) {
-    // If delta is positive (drag left / wheel right), we move forward in time.
-    // If delta is negative (drag right / wheel left), we move backward in time.
-
     if (totalDomain.isEmpty || _width <= 0) return;
 
     final durationDelta = _pixelToDuration(deltaPixels);
 
-    // If we update gridMin/gridMax, we effectively scroll.
-    // gridMin/Max are the start/end of the visible range.
-
     if (gridMin == null || gridMax == null) {
-      // If we are in "fit fit" mode or auto-mode (nulls), setting them
-      // switches to manual control.
       gridMin = _visibleExtent.first.millisecondsSinceEpoch.toDouble();
       gridMax = _visibleExtent.last.millisecondsSinceEpoch.toDouble();
     }
 
     double newGridMin = gridMin! + durationDelta.inMilliseconds;
     double newGridMax = gridMax! + durationDelta.inMilliseconds;
-
-    // Optional: Clamp to totalDomain if desired, or allow infinite scroll.
-    // Usually infinite scroll or clamped to totalGridMin/Max if they are strict bounds.
-    // Let's clamp if totalGridMin/Max are provided.
 
     if (totalGridMin != null && newGridMin < totalGridMin!) {
       final diff = totalGridMin! - newGridMin;

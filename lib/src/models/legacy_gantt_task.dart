@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 
 int? _colorToHex(Color? color) {
   if (color == null) return null;
-  // Use toARGB32() for an explicit conversion to a 32-bit integer.
   return color.toARGB32();
 }
 
@@ -132,8 +131,6 @@ class LegacyGanttTask {
         'completion': completion,
         'segments': segments?.map((s) => s.toJson()).toList(),
         'isMilestone': isMilestone,
-        // Note: copyWith does not support functions, so cellBuilder is not included here.
-        // cellBuilder is a function and cannot be serialized to JSON.
         'hasCellBuilder': cellBuilder != null,
         'lastUpdated': lastUpdated,
         'lastUpdatedBy': lastUpdatedBy,

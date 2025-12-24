@@ -23,32 +23,24 @@ class CursorPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (remoteCursors.isEmpty) return;
 
-    // Cache row Y positions
     final Map<String, double> rowYPositions = {};
     double currentTop = 0.0;
 
-    // Optimization: Skip loop if we know we are past visible area?
-    // Actually we need to build the map, but we can stop populating if we go way past?
-    // But valid rows are needed. Let's just iterate, it's cheap compared to painting.
     for (final row in visibleRows) {
       final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
       final double rowHeightTotal = rowHeight * stackDepth;
 
-      // Store center Y
       rowYPositions[row.id] = currentTop + (rowHeight / 2);
 
       currentTop += rowHeightTotal;
     }
 
-    // Paint each cursor
     for (final cursor in remoteCursors.values) {
       final rowCenterY = rowYPositions[cursor.rowId];
 
       if (rowCenterY != null) {
         final y = rowCenterY + translateY; // Apply scroll translation
 
-        // Vertical Culling
-        // Check if the cursor is roughly on screen (allow some buffer for label/arrow size)
         if (y < -50 || y > size.height + 50) {
           continue;
         }
@@ -64,7 +56,6 @@ class CursorPainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.fill;
 
-    // Draw a simple pointer arrow
     final path = Path();
     path.moveTo(position.dx, position.dy);
     path.lineTo(position.dx + 5, position.dy + 14);
@@ -75,7 +66,6 @@ class CursorPainter extends CustomPainter {
     path.lineTo(position.dx + 16, position.dy + 12); // arrow right wing
     path.close();
 
-    // Simplified Arrow:
     final simplePath = Path();
     simplePath.moveTo(position.dx, position.dy);
     simplePath.lineTo(position.dx + 6, position.dy + 16);
@@ -84,7 +74,6 @@ class CursorPainter extends CustomPainter {
 
     canvas.drawPath(simplePath, paint);
 
-    // Draw shadow/outline for visibility
     canvas.drawPath(
       simplePath,
       Paint()
@@ -93,7 +82,6 @@ class CursorPainter extends CustomPainter {
         ..strokeWidth = 1.0,
     );
 
-    // Draw Label (User ID)
     final textSpan = TextSpan(
       text: label,
       style: TextStyle(
@@ -115,6 +103,4 @@ class CursorPainter extends CustomPainter {
       oldDelegate.translateY != translateY ||
       oldDelegate.totalScale != totalScale ||
       oldDelegate.remoteCursors != remoteCursors; // Map ref check (VM creates new map?)
-  // VM uses simple map, mutation might not trigger.
-  // We need to ensure VM calls notifyListeners when cursors change.
 }

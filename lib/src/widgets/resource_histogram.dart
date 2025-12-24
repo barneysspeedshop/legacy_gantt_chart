@@ -18,11 +18,8 @@ class ResourceHistogramWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Access buckets from VM (handling live updates)
     final bucketsMap = viewModel.resourceBuckets;
     final resources = bucketsMap.keys.toList()..sort();
-
-    // if (resources.isEmpty) return const SizedBox.shrink();
 
     return Container(
       height: height,
@@ -57,7 +54,6 @@ class ResourceHistogramWidget extends StatelessWidget {
                         height: 30, // Fixed row height
                         child: Stack(
                           children: [
-                            // Bar Chart synced with Gantt (Full Width)
                             Positioned.fill(
                               child: ClipRect(
                                 child: CustomPaint(
@@ -70,8 +66,6 @@ class ResourceHistogramWidget extends StatelessWidget {
                                 ),
                               ),
                             ),
-
-                            // Resource Label (Overlay on left)
                             Positioned(
                               left: 0,
                               top: 0,
@@ -80,7 +74,6 @@ class ResourceHistogramWidget extends StatelessWidget {
                               child: Container(
                                 alignment: Alignment.centerLeft,
                                 padding: const EdgeInsets.only(left: 8.0, right: 8.0),
-                                // Optional: standard background to make text readable if bars slide under
                                 color: (theme?.backgroundColor ?? Theme.of(context).cardColor).withValues(alpha: 0.8),
                                 child: Text(
                                   resourceId,

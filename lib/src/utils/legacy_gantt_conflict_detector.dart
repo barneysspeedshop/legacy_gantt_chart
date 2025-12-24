@@ -24,7 +24,6 @@ class LegacyGanttConflictDetector {
     final List<LegacyGanttTask> conflictIndicators = [];
     final eventTasksForOverlapDetection = tasks.where((t) => !t.isTimeRangeHighlight).toList();
 
-    // 1. Group tasks using the provided grouper function.
     final Map<T, List<LegacyGanttTask>> groupedTasks = {};
     for (final task in eventTasksForOverlapDetection) {
       final key = taskGrouper(task);
@@ -33,21 +32,17 @@ class LegacyGanttConflictDetector {
       }
     }
 
-    // 2. Find and create indicators for overlaps within each group.
     groupedTasks.forEach((groupId, shifts) {
       final actualShifts = shifts.where((s) => !s.isSummary).toList();
       if (actualShifts.length < 2) {
         return;
       }
 
-      // Find raw overlaps between child shifts
       final rawOverlaps = _findRawOverlaps(actualShifts);
       if (rawOverlaps.isEmpty) {
         return;
       }
 
-      // Add indicators for the conflicting child tasks
-      // Add indicators for the conflicting child tasks
       for (int i = 0; i < rawOverlaps.length; i++) {
         final overlap = rawOverlaps[i];
         conflictIndicators
@@ -56,24 +51,19 @@ class LegacyGanttConflictDetector {
             .add(_createIndicator(task: overlap.taskB, start: overlap.start, end: overlap.end, idSuffix: 'b-$i'));
       }
 
-      // Merge overlap intervals to handle complex multi-shift conflicts
       final mergedOverlaps = _mergeOverlapIntervals(rawOverlaps.map((o) => (start: o.start, end: o.end)).toList());
 
-      // Find all summary tasks within the same group
       final allParentSummaryTasks = shifts.where((task) => task.isSummary).toList();
 
-      // For each distinct conflict period, create an indicator on the parent summary bar
       for (int i = 0; i < mergedOverlaps.length; i++) {
         final mergedOverlap = mergedOverlaps[i];
 
-        // Find parent summary bars that intersect with this conflict period
         final involvedParentSummaryTasks = allParentSummaryTasks.where(
           (summaryTask) =>
               summaryTask.start.isBefore(mergedOverlap.end) && summaryTask.end.isAfter(mergedOverlap.start),
         );
 
         for (final summaryTask in involvedParentSummaryTasks) {
-          // The indicator should only cover the intersection of the summary bar and the conflict
           final indicatorStart =
               summaryTask.start.isAfter(mergedOverlap.start) ? summaryTask.start : mergedOverlap.start;
           final indicatorEnd = summaryTask.end.isBefore(mergedOverlap.end) ? summaryTask.end : mergedOverlap.end;
@@ -113,20 +103,15 @@ class LegacyGanttConflictDetector {
         final taskA = shifts[i];
         final taskB = shifts[j];
 
-        // Get the work intervals for each task (segments or the whole task)
         final intervalsA = _getWorkIntervals(taskA);
         final intervalsB = _getWorkIntervals(taskB);
 
-        // Compare each interval of taskA with each interval of taskB
         for (final intervalA in intervalsA) {
           for (final intervalB in intervalsB) {
-            // Check for a time overlap between the two intervals
             if (intervalA.start.isBefore(intervalB.end) && intervalA.end.isAfter(intervalB.start)) {
-              // Calculate the exact start and end of the overlap
               final overlapStart = intervalA.start.isAfter(intervalB.start) ? intervalA.start : intervalB.start;
               final overlapEnd = intervalA.end.isBefore(intervalB.end) ? intervalA.end : intervalB.end;
 
-              // If the overlap has a positive duration, record it
               if (overlapEnd.isAfter(overlapStart)) {
                 overlaps.add((taskA: taskA, taskB: taskB, start: overlapStart, end: overlapEnd));
               }

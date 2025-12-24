@@ -38,8 +38,6 @@ class CRDTEngine {
 
   void _applyOp(Map<String, LegacyGanttTask> taskMap, Operation op) {
     final opData = op.data;
-    // Handle both 'id' and 'taskId' for robustness
-    // Also handle nested 'data' wrapper if present (common in deserialization)
     var effectiveData = opData;
     if (effectiveData.containsKey('data') && effectiveData['data'] is Map) {
       effectiveData = effectiveData['data'];
@@ -48,17 +46,13 @@ class CRDTEngine {
     final String? taskId = effectiveData['id'] as String? ?? effectiveData['taskId'] as String?;
 
     if (taskId == null) {
-      // Skip operations without a valid task ID
-      // print('CRDTEngine Warning: Operation ${op.type} missing id. Data: $opData');
       return;
     }
 
     if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
       final existingTask = taskMap[taskId];
 
-      // LWW check
       if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
-        // Apply update
         if (effectiveData.containsKey('start') ||
             effectiveData.containsKey('end') ||
             effectiveData.containsKey('name') ||

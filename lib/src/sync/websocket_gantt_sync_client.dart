@@ -14,11 +14,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   final _inboundProgressController = StreamController<SyncProgress>.broadcast();
   final _outboundPendingCountController = StreamController<int>.broadcast();
 
-  // Progress tracking state
   int _totalToSync = 0;
   int _processedSyncOps = 0;
 
-  // Time Synchronization State
   int _clockSkew = 0;
   bool _isClockSynced = false;
 
@@ -63,7 +61,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }
 
   void connect(String tenantId, {int? lastSyncedTimestamp}) {
-    // Append token to URL for handshake verification
     var finalUri = uri;
     if (authToken != null) {
       finalUri = uri.replace(queryParameters: {
@@ -76,10 +73,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       _channel = _channelFactory(finalUri);
       _isClockSynced = false; // Reset sync state on new connection
 
-      // No longer sending 'auth' message explicitly.
-      // Handshake handles it.
-
-      // Send subscribe message immediately (will be processed after auth)
       _channel!.sink.add(jsonEncode({
         'type': 'subscribe', // ProtocolMessage.subscribe
         'channel': tenantId,
@@ -93,14 +86,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             final type = envelope['type'] as String;
             final dataMap = envelope['data'];
 
-            // --- TIME SYNC LOGIC ---
-            // We use the timestamp from the server to calculate skew.
-            // We prefer SYNC_METADATA as it's the first authoritative timestamp.
             if (!_isClockSynced && envelope.containsKey('timestamp')) {
               final serverTime = envelope['timestamp'] as int;
               final localTime = DateTime.now().millisecondsSinceEpoch;
-              // Calculate skew. We ignore latency here, which effectively means
-              // we are slightly "in the past" relative to server, which is safe.
               _clockSkew = serverTime - localTime;
               _isClockSynced = true;
               print('Time Sync: Local=$localTime, Server=$serverTime, Skew=$_clockSkew');
@@ -117,8 +105,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             }
 
             if (type == 'BATCH_UPDATE') {
-              // OPTIMIZATION: Emit BATCH_UPDATE as a single operation so the UI can process it in bulk
-              // instead of receiving hundreds of individual updates that trigger repaints.
               final op = Operation(
                 type: 'BATCH_UPDATE',
                 data: dataMap ?? {},
@@ -131,7 +117,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               return;
             }
 
-            // Normal single operation logic
             final timestamp = envelope['timestamp'];
             final actorId = envelope['actorId'];
 
@@ -145,24 +130,14 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               return;
             }
 
-            // Increment progress if we are in a sync phase (total > 0)
-            // We assume ops coming after SYNC_METADATA are part of the sync until we reach total
             if (_totalToSync > 0) {
               _processedSyncOps++;
               _inboundProgressController.add(SyncProgress(processed: _processedSyncOps, total: _totalToSync));
-              // Optimization: Maybe don't emit every single op if high volume?
-              // But for now correct logic is fine.
-              if (_processedSyncOps >= _totalToSync) {
-                // Reset or keep at 100%?
-                // Let's keep it until next sync starts.
-              }
+              if (_processedSyncOps >= _totalToSync) {}
             }
 
-            // Construct Operation from envelope fields
             var opData = dataMap != null ? dataMap as Map<String, dynamic> : <String, dynamic>{};
 
-            // Auto-unwrap 'data' wrapper if present (Server sends {'data': {'id':...}})
-            // This ensures CRDTEngine and other consumers get flat data
             if (opData.containsKey('data') && opData['data'] is Map) {
               final innerData = opData['data'] as Map<String, dynamic>;
               if (opData.containsKey('gantt_type')) {
@@ -234,8 +209,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       envelopeType = operation.type;
     }
 
-    // Wrap operation data in envelope
-    // The server expects the task data directly in the 'data' field, with 'id' at the top level
     final envelope = {
       'type': envelopeType,
       'data': operation.data, // Send operation.data directly, not the full operation
@@ -244,7 +217,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     };
 
     final encodedEnvelope = jsonEncode(envelope);
-    // print('WebSocketClient Sending: $encodedEnvelope'); // Reduced noise
     _channel!.sink.add(encodedEnvelope);
   }
 
@@ -256,13 +228,11 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     if (operations.isEmpty) return;
 
-    // OPTIMIZATION: If only one operation, send it directly to avoid batch overhead
     if (operations.length == 1) {
       await sendOperation(operations.first);
       return;
     }
 
-    // Convert operations to envelopes
     final envelopes = operations.map((operation) {
       String envelopeType;
       if (operation.type == 'INSERT') {

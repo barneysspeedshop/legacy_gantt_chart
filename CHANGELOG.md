@@ -1,3 +1,7 @@
+## 5.0.0-alpha.7
+
+* **FEATURE**: Use atomic batch persistence for bulk task movement (e.g. moving auto-scheduled tasks). This also fixes a potential race condition where rapid updates could cause state inconsistency.
+
 ## 5.0.0-alpha.6
 
 * **FIX**: Send `isMilestone` to the backend so that its state isn't ignored by other clients

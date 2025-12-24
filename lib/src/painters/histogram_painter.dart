@@ -26,24 +26,14 @@ class HistogramPainter extends CustomPainter {
     final pxPerMs = size.width / visibleDuration;
     final firstVisibleMs = visibleExtent.first.millisecondsSinceEpoch;
 
-    // Draw baseline
     for (final bucket in buckets) {
       final dateMs = bucket.date.millisecondsSinceEpoch;
 
-      // Calculate start and end X based on local/visible scale
-      // Map date relative to visible start, then scale to width.
       final startX = (dateMs - firstVisibleMs) * pxPerMs;
       final endX = (bucket.date.add(const Duration(days: 1)).millisecondsSinceEpoch - firstVisibleMs) * pxPerMs;
       final width = endX - startX;
 
-      // Skip if completely out of bounds
       if (endX < 0 || startX > size.width) continue;
-
-      // Calculate Height
-      // 1.0 = 100% capacity = full height? Or should we allow >100% to go higher/clip?
-      // Let's say 1.0 is 80% of height, to allow space for overage?
-      // Or just clamp to 100% for bar, and color red?
-      // User request: "Conflict Indicators... highlight buckets that exceed 100% capacity in red."
 
       final barHeight = (bucket.totalLoad * size.height * 0.8).clamp(0.0, size.height);
 

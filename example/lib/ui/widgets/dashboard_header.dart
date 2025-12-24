@@ -28,11 +28,6 @@ class DashboardHeader extends StatelessWidget {
     final iconColor = Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black;
 
     return Column(
-      // padding: const EdgeInsets.all(_filterRowPadding),
-      // decoration: BoxDecoration(
-      //   color: Theme.of(context).cardColor,
-      //   border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
-      // ),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,

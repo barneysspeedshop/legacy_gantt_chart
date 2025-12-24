@@ -25,7 +25,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     if (_innerClient != null) {
       _attachInnerClient(_innerClient!);
     } else {
-      // Start in disconnected state
       _connectionStateController.add(false);
     }
   }
@@ -74,7 +73,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     try {
       _db = await _dbFuture; // Wait for the passed future
 
-      // Ensure the offline queue table exists
       await _db.execute('''
           CREATE TABLE IF NOT EXISTS offline_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,6 +174,21 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           }
           final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
 
+          if (dataMap.containsKey('start') && dataMap['start'] is String) {
+            try {
+              final dt = DateTime.parse(dataMap['start']);
+              dataMap['start_date'] = dt.millisecondsSinceEpoch;
+              dataMap.remove('start');
+            } catch (_) {}
+          }
+          if (dataMap.containsKey('end') && dataMap['end'] is String) {
+            try {
+              final dt = DateTime.parse(dataMap['end']);
+              dataMap['end_date'] = dt.millisecondsSinceEpoch;
+              dataMap.remove('end');
+            } catch (_) {}
+          }
+
           final op = Operation(
             type: row['type'] as String,
             data: dataMap,
@@ -196,7 +209,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       if (opsToSend.isNotEmpty && _innerClient != null && _isConnected) {
         try {
           print('Flushing batch of ${opsToSend.length} operations...');
-          // Send as batch
           await _innerClient!.sendOperations(opsToSend);
 
           if (idsToDelete.isNotEmpty) {
@@ -206,11 +218,9 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           }
         } catch (e) {
           print('Error flushing batch: $e');
-          // If send failed, do not delete. Break loop.
           break;
         }
       } else if (idsToDelete.isNotEmpty) {
-        // Should clean up skipped/malformed ones even if no valid ops to send
         final placeholder = List.filled(idsToDelete.length, '?').join(',');
         await _lock
             .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
@@ -233,24 +243,33 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperation(Operation operation) async {
-    // Ephemeral operations should bypass persistence if possible to avoid DB contention.
-    // They are only useful in real-time.
     const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
     if (transientOps.contains(operation.type)) {
       if (_innerClient != null && _isConnected) {
-        // Send directly, skip queue
         await _innerClient!.sendOperation(operation);
         return;
       }
-      // If offline, we just drop them, as they are real-time only.
       print('OfflineClient: Dropping transient operation ${operation.type} because offline');
       return;
     }
 
-    // Outbox pattern: Always queue first to ensure persistence against crashes/network loss
+    if (operation.data.containsKey('start') && operation.data['start'] is String) {
+      try {
+        final dt = DateTime.parse(operation.data['start']);
+        operation.data['start_date'] = dt.millisecondsSinceEpoch;
+        operation.data.remove('start');
+      } catch (_) {}
+    }
+    if (operation.data.containsKey('end') && operation.data['end'] is String) {
+      try {
+        final dt = DateTime.parse(operation.data['end']);
+        operation.data['end_date'] = dt.millisecondsSinceEpoch;
+        operation.data.remove('end');
+      } catch (_) {}
+    }
+
     await _queueOperation(operation);
 
-    // Then attempt to flush (send to server)
     _flushQueue();
   }
 
@@ -264,15 +283,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperations(List<Operation> operations) async {
-    // Filter transient operations
     const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
     final opsToQueue = <Operation>[];
 
     for (final op in operations) {
       if (transientOps.contains(op.type)) {
         if (_innerClient != null && _isConnected) {
-          // Send directly (fire and forget for transient in batch?)
-          // We can just await it.
           await _innerClient!.sendOperation(op);
         } else {
           print('OfflineClient: Dropping transient operation ${op.type} because offline');
@@ -328,7 +344,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> dispose() async {
     await _detachInnerClient();
-    // Wait for any active flush to complete/exit
     if (_activeFlushFuture != null) {
       try {
         await _activeFlushFuture;
@@ -341,5 +356,4 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 }
 
-// Helper for web check
 const bool kIsWeb = identical(0, 0.0);

@@ -81,7 +81,6 @@ class AxisPainter extends CustomPainter {
 
     if (domain.isEmpty || visibleDomain.isEmpty) return;
 
-    // Draw weekend highlights
     if (weekendColor != null && weekendDays != null && weekendDays!.isNotEmpty) {
       final weekendPaint = Paint()..color = weekendColor!;
       DateTime currentDay = DateTime(visibleDomain.first.year, visibleDomain.first.month, visibleDomain.first.day);
@@ -98,24 +97,14 @@ class AxisPainter extends CustomPainter {
     }
 
     final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
-
-    // Filter steps that are too small for the current visible duration.
-    // E.g., don't try 1-minute ticks if looking at a year.
-    // We want at least 2 ticks on screen to be useful, so step < visibleDuration / 2
     final usableSteps = _tickSteps.where((s) => s.interval.inMilliseconds * 2 <= visibleDuration.inMilliseconds);
 
     _TickStep? selectedStep;
 
-    // Adaptive Logic: Find the smallest interval where labels fit.
     for (final step in usableSteps) {
-      // Calculate screen width of this interval
-      // (scale is essentially linear for small intervals, so we can mock it)
-      // Actually, better to take two points.
       final t1 = visibleDomain.first;
       final t2 = t1.add(step.interval);
       final pixelsPerTick = (scale(t2) - scale(t1)).abs();
-
-      // Measure label width
       final testLabel = step.labelFormat(DateTime(2023, 1, 1, 10, 0)); // Sample date
       final textStyle = theme.axisTextStyle;
       final textSpan = TextSpan(text: testLabel, style: textStyle);
@@ -126,14 +115,12 @@ class AxisPainter extends CustomPainter {
       );
       textPainter.layout();
 
-      // Check fit with some padding (e.g., 8px)
       if (pixelsPerTick > textPainter.width + 8) {
         selectedStep = step;
-        break; // Found the best fit!
+        break;
       }
     }
 
-    // Fallback if nothing fits or list empty
     selectedStep ??= usableSteps.isNotEmpty ? usableSteps.last : _tickSteps.last;
 
     final Duration tickInterval = selectedStep.interval;
@@ -141,11 +128,9 @@ class AxisPainter extends CustomPainter {
 
     final List<MapEntry<double, DateTime>> tickPositions = [];
 
-    // Find the first tick position that is on or after the start of the visible domain.
     if (visibleDomain.isNotEmpty && domain.first.isBefore(domain.last)) {
       DateTime currentTick = _roundDownTo(visibleDomain.first, tickInterval);
 
-      // Ensure we don't start before the absolute domain start
       if (currentTick.isBefore(domain.first)) {
         currentTick = _roundDownTo(domain.first, tickInterval);
         if (currentTick.isBefore(domain.first)) {
@@ -172,14 +157,9 @@ class AxisPainter extends CustomPainter {
 
       String label;
       final bool isSubDaily = tickInterval.inHours < 24 && tickInterval.inDays < 1;
-
-      // Check if this tick represents the start of a new day compared to the previous tick.
-      // This is more robust than checking for midnight (00:00) because large intervals (e.g. 6h)
-      // might land on 1AM, 7AM etc. in local timezones.
       final bool isNewDay = previousTickTime != null && tickTime.day != previousTickTime.day;
       final bool isVisible = tickX >= x;
 
-      // Show full date for the first visible tick or when the day changes.
       if (isSubDaily && ((isVisible && !isFirstVisibleTickFound) || isNewDay)) {
         label = DateFormat('MMM d').format(tickTime);
         if (isVisible) {
@@ -213,10 +193,8 @@ class AxisPainter extends CustomPainter {
 
         double textY;
         if (verticallyCenterLabels) {
-          // Center vertically within the provided height starting from y
           textY = y + (height - textPainter.height) / 2;
         } else {
-          // Draw just above y (bottom alignment)
           textY = y - textPainter.height;
         }
 
@@ -242,17 +220,9 @@ class AxisPainter extends CustomPainter {
           : listEquals(visibleDomain, oldDelegate.visibleDomain));
 
   DateTime _roundDownTo(DateTime dt, Duration delta) {
-    if (delta.inDays >= 7) {
-      // Special handling for weeks if needed, for now standard math works relative to epoch
-      // but weeks don't align perfectly with epoch if you want "Monday" start.
-      // The original code didn't do strict Monday alignment, so we stick to epoch math for consistency
-      // unless refined later.
-    }
+    if (delta.inDays >= 7) {}
     final int ms = dt.millisecondsSinceEpoch;
     final int deltaMs = delta.inMilliseconds;
-
-    // Adjust for timezone offset to align ticks to local time (e.g. Midnight)
-    // rather than UTC epoch (which might be 7pm local).
     final int offset = dt.timeZoneOffset.inMilliseconds;
     final int localMs = ms + offset;
     final int roundedLocalMs = (localMs ~/ deltaMs) * deltaMs;
@@ -272,7 +242,6 @@ class _TickStep {
   const _TickStep(this.interval, this.labelFormat);
 }
 
-// Ordered from smallest to largest
 final List<_TickStep> _tickSteps = [
   _TickStep(const Duration(minutes: 1), (dt) => DateFormat('h:mm:ss').format(dt)),
   _TickStep(const Duration(minutes: 5), (dt) => DateFormat('h:mm').format(dt)),
@@ -287,7 +256,6 @@ final List<_TickStep> _tickSteps = [
   _TickStep(const Duration(days: 7), (dt) => 'Week ${_weekNumber(dt)}'),
 ];
 
-// Helper for week number outside the class to access in _tickSteps
 int _weekNumber(DateTime date) {
   final dayOfYear = int.parse(DateFormat('D').format(date));
   final woy = ((dayOfYear - date.weekday + 10) / 7).floor();

@@ -159,6 +159,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Provides the updated [LegacyGanttTask] and its new `start` and `end` times.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
 
+  /// A callback function invoked when a batch of tasks are updated.
+  final Function(List<(LegacyGanttTask, DateTime, DateTime)>)? onBulkTaskUpdate;
+
   /// A callback function invoked when a user double-taps or double-clicks on a task bar.
   ///
   /// Provides the [LegacyGanttTask] that was double-tapped.
@@ -387,6 +390,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.timelineAxisHeaderBuilder,
     this.emptyStateBuilder,
     this.showEmptyRows = false,
+    this.onBulkTaskUpdate,
     this.height,
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
@@ -423,8 +427,6 @@ class LegacyGanttChartWidget extends StatefulWidget {
 }
 
 class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
-  // A direct reference to the internal view model is needed to push updates
-  // when the widget's properties change.
   LegacyGanttViewModel? _internalViewModel;
 
   @override
@@ -462,10 +464,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       }
 
       if (oldWidget.gridMin != widget.gridMin || oldWidget.gridMax != widget.gridMax) {
-        // Only update if not controlled by internal controller logic?
-        // Actually, internal VM listens to controller logic usually via updateVisibleRange call in build().
-        // But if we are in non-controller mode (using params), we must update.
-        // Even in controller mode, if parent params change, we might want to respect them.
         _internalViewModel!.minMaxOverrides(widget.gridMin, widget.gridMax);
       }
 
@@ -481,7 +479,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         _internalViewModel!.rollUpMilestones = widget.rollUpMilestones;
       }
 
-      // Ensure callback is fresh (captures latest scope/closures)
+      _internalViewModel!.onBulkTaskUpdate = widget.onBulkTaskUpdate;
       _internalViewModel!.onTaskHover = widget.onTaskHover;
       _internalViewModel!.onTaskLongPress = widget.onTaskLongPress;
     }
@@ -518,7 +516,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final conflictIndicators = controller.conflictIndicators;
           final allItems = [...tasks, ...holidays]; // Conflicts are handled separately
 
-          // Push updates to internal view model
           if (_internalViewModel != null) {
             _internalViewModel!.updateData(allItems);
             _internalViewModel!.updateDependencies(dependencies);
@@ -588,7 +585,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           final tasks = (snapshot.data?[0] as List<LegacyGanttTask>?) ?? [];
           final holidays = (snapshot.data?[1] as List<LegacyGanttTask>?) ?? [];
           final allItems = [...tasks, ...holidays];
-          // Conflicts are derived from tasks, so we pass them separately.
           final conflictIndicators = widget.conflictIndicators ?? [];
           if (allItems.isEmpty && !widget.showEmptyRows) {
             return _buildEmptyView(context, effectiveTheme);
@@ -655,6 +651,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
             workCalendar: widget.workCalendar,
             rollUpMilestones: widget.rollUpMilestones,
+            onBulkTaskUpdate: widget.onBulkTaskUpdate,
             onSelectionChanged: (ids) {
               if (widget.controller != null) {
                 widget.controller!.setSelectedTaskIds(ids);
@@ -667,12 +664,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         },
         child: Consumer<LegacyGanttViewModel>(
           builder: (context, vm, child) {
-            // Force update of view model properties that might have changed
-            // This is a bit of a hack to ensure the VM is up to date with the widget
-            // Ideally we would trigger updates via `didUpdateWidget`, which we do, but
-            // this ensures it happens within the build cycle if needed.
-            // Actually, `didUpdateWidget` handles most updates.
-            // The postFrameCallback handles updates that depend on layout or focus.
             SchedulerBinding.instance.addPostFrameCallback((_) {
               if (!vm.isDisposed) {
                 vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
@@ -684,7 +675,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
             return Column(
               children: [
-                // Toolbar
                 Expanded(
                   child: LayoutBuilder(
                     builder: (BuildContext context, BoxConstraints constraints) {
@@ -753,12 +743,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                   child: ClipRect(
                                     child: Stack(
                                       children: [
-                                        // 1. Chart Content Area (Grid, Bars, Tasks, Cursors)
                                         Padding(
                                           padding: EdgeInsets.only(top: vm.timeAxisHeight),
                                           child: Stack(
                                             children: [
-                                              // 1.1 Grid Painter (Background)
                                               RepaintBoundary(
                                                 child: CustomPaint(
                                                   size: Size(
@@ -779,7 +767,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   ),
                                                 ),
                                               ),
-                                              // 1.2 Bars Painter (Main Content)
                                               RepaintBoundary(
                                                 child: CustomPaint(
                                                   size: Size(
@@ -821,7 +808,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   ),
                                                 ),
                                               ),
-                                              // 1.3 Selection Box Painter
                                               if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
                                                 CustomPaint(
                                                   size: Size(
@@ -832,7 +818,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                     fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                                                   ),
                                                 ),
-                                              // 1.4 Custom Task Widgets
                                               if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
                                                 ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
                                               ..._buildCustomCellWidgets(vm, vm.data),
@@ -842,7 +827,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   effectiveTheme,
                                                   widget.focusedTaskResizeHandleBuilder,
                                                   widget.focusedTaskResizeHandleWidth),
-                                              // 1.5 Cursors
                                               if (vm.showRemoteCursors)
                                                 IgnorePointer(
                                                   child: RepaintBoundary(
@@ -864,8 +848,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                             ],
                                           ),
                                         ),
-
-                                        // 2. Header Painter (Top Axis) - Fixed at Top
                                         Positioned(
                                           top: 0,
                                           left: 0,
@@ -904,8 +886,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   ),
                                                 ),
                                         ),
-
-                                        // 3. Resize Tooltip - Absolute Position
                                         if (vm.showResizeTooltip)
                                           Positioned(
                                             left: vm.resizeTooltipPosition.dx + 15,
@@ -1073,7 +1053,6 @@ List<Widget> _buildFocusedTaskWidgets(
   final focusedTask = tasks.firstWhere((t) => t.id == vm.focusedTaskId, orElse: () => LegacyGanttTask.empty());
   if (focusedTask.id.isEmpty) return [];
 
-  // Find the row index and its vertical offset.
   final rowIndex = vm.visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
   if (rowIndex == -1) return [];
 
@@ -1102,7 +1081,6 @@ List<Widget> _buildFocusedTaskWidgets(
     )
   ];
 
-  // Add custom resize handles if a builder is provided
   if (handleBuilder != null) {
     final startHandle = handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth);
     final endHandle = handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth);

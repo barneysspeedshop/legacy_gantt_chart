@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:collection/collection.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:synchronized/synchronized.dart';
 
@@ -14,7 +15,7 @@ class LocalGanttRepository {
   Stream<List<LegacyGanttTask>> watchTasks() async* {
     final db = await GanttDb.db;
     yield* db
-        .watch('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY rowid ASC')
+        .watch('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY start_date, id ASC')
         .map((rows) => rows.map((row) => _rowToTask(row)).toList());
   }
 
@@ -372,9 +373,11 @@ class LocalGanttRepository {
   // Resources CRUD
   Stream<List<LocalResource>> watchResources() async* {
     final db = await GanttDb.db;
-    yield* db
-        .watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY rowid ASC')
-        .map((rows) => rows.map((row) => _rowToResource(row)).toList());
+    yield* db.watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY id ASC').map((rows) {
+      final resources = rows.map((row) => _rowToResource(row)).toList();
+      resources.sort((a, b) => compareNatural(a.id, b.id));
+      return resources;
+    });
   }
 
   Future<void> insertResources(List<LocalResource> resources) async {

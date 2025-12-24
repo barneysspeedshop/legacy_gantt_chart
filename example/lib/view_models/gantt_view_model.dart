@@ -2307,19 +2307,32 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
-      _syncClient!.sendOperation(Operation(
-        type: 'UPDATE_TASK',
-        data: {
-          'id': task.id,
-          'start_date': newStart.millisecondsSinceEpoch,
-          'end_date': newEnd.millisecondsSinceEpoch,
-          'name': task.name,
-        },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-        actorId: 'local-user',
-      ));
-    }
+    // NOTE(patrick): This is crucial.
+    // The internal `LegacyGanttViewModel` (inside the package) now handles the syncing of
+    // drag/drop operations directly using `_syncClient`.
+    // It sends atomic BATCH updates for summary task moves.
+    //
+    // If we ALSO send an operation here (in the example app wrapper), we introduce a Race Condition:
+    // 1. Internal VM sends BATCH (Parent + Children).
+    // 2. Loop iterates, calling this method for EACH task.
+    // 3. This method sends INDIVIDUAL 'UPDATE_TASK' operations.
+    //
+    // This results in double-syncing and potential "jumbling" as the server processes interleaved messages.
+    // Therefore, we MUST NOT send sync operations here for Drag/Drop updates if the internal VM controls sync.
+
+    // if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
+    //   _syncClient!.sendOperation(Operation(
+    //     type: 'UPDATE_TASK',
+    //     data: {
+    //       'id': task.id,
+    //       'start_date': newStart.millisecondsSinceEpoch,
+    //       'end_date': newEnd.millisecondsSinceEpoch,
+    //       'name': task.name,
+    //     },
+    //     timestamp: DateTime.now().millisecondsSinceEpoch,
+    //     actorId: 'local-user',
+    //   ));
+    // }
 
     if (!_useLocalDatabase) {
       final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
@@ -2329,11 +2342,88 @@ class GanttViewModel extends ChangeNotifier {
         if (_apiResponse != null) {
           final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
               .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
-
           _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
         }
       }
     }
+  }
+
+  Future<void> handleBatchTaskUpdate(List<(LegacyGanttTask, DateTime, DateTime)> updates) async {
+    debugPrint(
+        '${DateTime.now().toIso8601String()} GanttViewModel: handleBatchTaskUpdate received ${updates.length} updates');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    bool needsCalculations = false;
+    final List<LegacyGanttTask> dbUpdates = [];
+
+    // 1. Update in-memory state IMMEDIATELY (Synchronously)
+    for (final update in updates) {
+      final task = update.$1;
+      final newStart = update.$2;
+      final newEnd = update.$3;
+
+      if (_useLocalDatabase) {
+        // Create updated task
+        final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
+
+        // Update Memory
+        final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+        if (index != -1) {
+          _allGanttTasks[index] = updatedTask;
+          needsCalculations = true;
+        }
+
+        // Queue for DB
+        dbUpdates.add(updatedTask);
+      } else if (_apiResponse != null) {
+        // Mock API Update logic (Keep existing logic for non-DB mode)
+        final parentResource =
+            _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
+        if (parentResource != null) {
+          final jobIndex = parentResource.children.indexWhere((j) => j.id == task.rowId);
+          if (jobIndex != -1) {
+            final assignment = _apiResponse?.assignmentsData.firstWhereOrNull((a) => a.id == task.id);
+            if (assignment != null) {
+              final eventIndex = _apiResponse!.eventsData.indexWhere((e) => e.id == assignment.event);
+              if (eventIndex != -1) {
+                final oldEvent = _apiResponse!.eventsData[eventIndex];
+                _apiResponse!.eventsData[eventIndex] = GanttEventData(
+                  id: oldEvent.id,
+                  name: oldEvent.name,
+                  utcStartDate: newStart.toIso8601String(),
+                  utcEndDate: newEnd.toIso8601String(),
+                  referenceData: oldEvent.referenceData,
+                  resourceId: oldEvent.resourceId,
+                );
+              }
+            }
+          }
+        }
+
+        final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+        if (index != -1) {
+          _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd);
+          needsCalculations = true;
+        }
+      }
+    }
+
+    // 2. Recalculate and Notify UI (Synchronous-ish, but before await)
+    if (needsCalculations && _apiResponse != null) {
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
+          _scheduleService.publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+      // This triggers notifyListeners() inside
+      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+    }
+
+    // 3. Persist to DB (Asynchronously)
+    if (_useLocalDatabase && dbUpdates.isNotEmpty) {
+      // We can await this, but the UI is already updated.
+      // Or we can fire and forget?
+      // Better to await to ensure consistency, but we already notified listeners.
+      // Let's await to avoid errors, but it won't block the UI update that happened above.
+      await _localRepository.insertTasks(dbUpdates);
+    }
+    // NOTE: Sync operations are handled internally by the package for batch drag/drop.
   }
 
   /// A callback from the Gantt chart widget when the user clicks on an empty

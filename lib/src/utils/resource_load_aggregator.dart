@@ -15,14 +15,12 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
   for (final task in tasks) {
     if (task.resourceId == null) continue;
 
-    // Use task's specific load or default to 1.0 (100%)
     final double taskLoad = task.load;
 
     DateTime current = DateTime(task.start.year, task.start.month, task.start.day);
     final taskEndDay = DateTime(task.end.year, task.end.month, task.end.day);
 
     while (current.isBefore(taskEndDay) || current.isAtSameMomentAs(taskEndDay)) {
-      // Filter by optional start/end range if provided
       if ((start == null || !current.isBefore(start)) && (end == null || !current.isAfter(end))) {
         if (!resourceDailyLoad.containsKey(task.resourceId)) {
           resourceDailyLoad[task.resourceId!] = {};
@@ -36,7 +34,6 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
     }
   }
 
-  // Convert to List<ResourceBucket>
   final Map<String, List<ResourceBucket>> result = {};
   resourceDailyLoad.forEach((resourceId, dailyMap) {
     final buckets = dailyMap.entries
@@ -47,7 +44,6 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
             ))
         .toList();
 
-    // Sort by date
     buckets.sort((a, b) => a.date.compareTo(b.date));
 
     result[resourceId] = buckets;
