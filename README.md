@@ -99,8 +99,8 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Task Behaviors:** Summary tasks can be configured with specialized behaviors to control how they interact with their children during moving and resizing:
     -   **Standard (Group):** The default behavior. The parent's date range is driven by its children. Moving the parent moves all children with it.
     -   **Static Bucket:** The parent acts as a fixed container. Moving the parent does *not* move the children. This is useful for defining fixed time buckets (sprints, quarters) where tasks are dropped in.
-    -   **Enforcer:** The parent acts as a boundary. Resizing the parent pushes or clamps children to ensure they stay strictly within the parent's date range.
-    -   **Time Warper (Elastic):** Resizing the parent proportionally scales the duration and start/end times of all children. Stretching the parent stretches the entire schedule inside it.
+    -   **Constrain:** The parent acts as a boundary. Resizing the parent pushes or clamps children to ensure they stay strictly within the parent's date range.
+    -   **Elastic:** Resizing the parent proportionally scales the duration and start/end times of all children. Stretching the parent stretches the entire schedule inside it.
 -   **Customizable Zoom Levels:** Zoom from a multi-year overview down to the millisecond level.
 -   **Auto-Scheduling:** Enable auto-scheduling to automatically adjust the start and end dates of dependent tasks when a predecessor or parent task is moved. This maintains the integrity of your project schedule. You can enable this globally or on a per-task basis.
 -   **Work Calendar Support:** Define working days (e.g., Mon-Fri) and holidays. Tasks with `usesWorkCalendar` enabled will automatically skip non-working days when calculating their duration and end dates, ensuring realistic scheduling.

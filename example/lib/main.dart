@@ -276,8 +276,8 @@ class _GanttViewState extends State<GanttView> {
           submenuBuilder: (context) async {
             final isStandard = task.propagatesMoveToChildren && task.resizePolicy == ResizePolicy.none;
             final isStatic = !task.propagatesMoveToChildren;
-            final isEnforcer = task.resizePolicy == ResizePolicy.constrain;
-            final isWarper = task.resizePolicy == ResizePolicy.elastic;
+            final isConstrain = task.resizePolicy == ResizePolicy.constrain;
+            final isElastic = task.resizePolicy == ResizePolicy.elastic;
 
             return [
               ContextMenuItem(
@@ -291,13 +291,13 @@ class _GanttViewState extends State<GanttView> {
                 onTap: () => _viewModel.updateTaskBehavior(task, propagates: false, policy: ResizePolicy.none),
               ),
               ContextMenuItem(
-                caption: 'Enforcer',
-                trailing: isEnforcer ? const Icon(Icons.check, size: 16) : null,
+                caption: 'Constrain',
+                trailing: isConstrain ? const Icon(Icons.check, size: 16) : null,
                 onTap: () => _viewModel.updateTaskBehavior(task, propagates: true, policy: ResizePolicy.constrain),
               ),
               ContextMenuItem(
-                caption: 'Time Warper',
-                trailing: isWarper ? const Icon(Icons.check, size: 16) : null,
+                caption: 'Elastic',
+                trailing: isElastic ? const Icon(Icons.check, size: 16) : null,
                 onTap: () => _viewModel.updateTaskBehavior(task, propagates: true, policy: ResizePolicy.elastic),
               ),
             ];

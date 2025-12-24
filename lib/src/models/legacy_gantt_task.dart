@@ -45,10 +45,10 @@ enum ResizePolicy {
   /// unless standard dependency rules apply.
   none,
 
-  /// Enforcer (Type 4): Children are pushed/clamped to stay inside the parent.
+  /// Constrain (Type 4): Children are pushed/clamped to stay inside the parent.
   constrain,
 
-  /// Time Warper (Type 5): Children are scaled proportionally to the parent's new duration.
+  /// Elastic (Type 5): Children are scaled proportionally to the parent's new duration.
   elastic,
 }
 

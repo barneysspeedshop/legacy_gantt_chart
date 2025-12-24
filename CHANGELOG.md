@@ -3,8 +3,8 @@
 * **FEATURE**: Implemented **Task Behaviors** for summary tasks, allowing advanced scheduling logic:
     * **Standard**: Default behavior. Parent expands to fit children; moving parent moves children.
     * **Static Bucket**: Parent is a fixed container. Moving the parent does *not* move the children.
-    * **Enforcer**: Parent acts as a constraint. Resizing the parent pushes or clamps children to ensure they stay within bounds.
-    * **Time Warper (Elastic)**: Resizing the parent proportionally scales the duration and positions of all child tasks.
+    * **Constrain**: Parent acts as a constraint. Resizing the parent pushes or clamps children to ensure they stay within bounds.
+    * **Elastic**: Resizing the parent proportionally scales the duration and positions of all child tasks.
 * **EXAMPLE FEATURE**: Added a "Behavior" submenu to the Task Context Menu in the example app, with visual check indicators for the selected state.
 * **EXAMPLE FEATURE**: Added behavior selection to the Create/Edit Task dialog in the example app.
 

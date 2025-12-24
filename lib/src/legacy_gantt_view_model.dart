@@ -2146,14 +2146,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
         DateTime childNewEnd = child.end;
 
         if (policy == ResizePolicy.elastic && originalDuration > 0) {
-          // Type 5: Time Warper (Elastic)
+          // Type 5: Elastic
           final startRatio = child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration;
           final endRatio = child.end.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration;
 
           childNewStart = newStart.add(Duration(milliseconds: (newDuration * startRatio).round()));
           childNewEnd = newStart.add(Duration(milliseconds: (newDuration * endRatio).round()));
         } else if (policy == ResizePolicy.constrain) {
-          // Type 4: Enforcer (Constrain)
+          // Type 4: Constrain
           // Push/Clamp children to stay inside.
           if (childNewStart.isBefore(newStart)) {
             final duration = childNewEnd.difference(childNewStart);

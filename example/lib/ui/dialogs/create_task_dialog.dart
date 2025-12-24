@@ -12,10 +12,10 @@ class TaskDialog extends StatefulWidget {
   final TimeOfDay defaultStartTime;
   final TimeOfDay defaultEndTime;
 
-  static const BEHAVIOR_STANDARD = 'Standard (Group)';
-  static const BEHAVIOR_STATIC = 'Static Bucket';
-  static const BEHAVIOR_ENFORCER = 'Enforcer';
-  static const BEHAVIOR_WARPER = 'Time Warper';
+  static const behaviorStandard = 'Standard (Group)';
+  static const behaviorStatic = 'Static Bucket';
+  static const behaviorConstrain = 'Constrain';
+  static const behaviorElastic = 'Elastic';
 
   const TaskDialog({
     super.key,
@@ -290,36 +290,36 @@ class _TaskDialogState extends State<TaskDialog> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: !_propagatesMoveToChildren
-                      ? TaskDialog.BEHAVIOR_STATIC
+                      ? TaskDialog.behaviorStatic
                       : _resizePolicy == ResizePolicy.constrain
-                          ? TaskDialog.BEHAVIOR_ENFORCER
+                          ? TaskDialog.behaviorConstrain
                           : _resizePolicy == ResizePolicy.elastic
-                              ? TaskDialog.BEHAVIOR_WARPER
-                              : TaskDialog.BEHAVIOR_STANDARD,
+                              ? TaskDialog.behaviorElastic
+                              : TaskDialog.behaviorStandard,
                   isDense: true,
                   items: const [
-                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_STANDARD, child: Text(TaskDialog.BEHAVIOR_STANDARD)),
-                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_STATIC, child: Text(TaskDialog.BEHAVIOR_STATIC)),
-                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_ENFORCER, child: Text(TaskDialog.BEHAVIOR_ENFORCER)),
-                    DropdownMenuItem(value: TaskDialog.BEHAVIOR_WARPER, child: Text(TaskDialog.BEHAVIOR_WARPER)),
+                    DropdownMenuItem(value: TaskDialog.behaviorStandard, child: Text(TaskDialog.behaviorStandard)),
+                    DropdownMenuItem(value: TaskDialog.behaviorStatic, child: Text(TaskDialog.behaviorStatic)),
+                    DropdownMenuItem(value: TaskDialog.behaviorConstrain, child: Text(TaskDialog.behaviorConstrain)),
+                    DropdownMenuItem(value: TaskDialog.behaviorElastic, child: Text(TaskDialog.behaviorElastic)),
                   ],
                   onChanged: (value) {
                     if (value != null) {
                       setState(() {
                         switch (value) {
-                          case TaskDialog.BEHAVIOR_STATIC:
+                          case TaskDialog.behaviorStatic:
                             _propagatesMoveToChildren = false;
                             _resizePolicy = ResizePolicy.none;
                             break;
-                          case TaskDialog.BEHAVIOR_ENFORCER:
+                          case TaskDialog.behaviorConstrain:
                             _propagatesMoveToChildren = true;
                             _resizePolicy = ResizePolicy.constrain;
                             break;
-                          case TaskDialog.BEHAVIOR_WARPER:
+                          case TaskDialog.behaviorElastic:
                             _propagatesMoveToChildren = true;
                             _resizePolicy = ResizePolicy.elastic;
                             break;
-                          case TaskDialog.BEHAVIOR_STANDARD:
+                          case TaskDialog.behaviorStandard:
                           default:
                             _propagatesMoveToChildren = true;
                             _resizePolicy = ResizePolicy.none;

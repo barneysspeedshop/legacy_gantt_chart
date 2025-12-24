@@ -141,7 +141,7 @@ void main() {
       expect(mockSyncClient!.sentOperations.any((op) => op.data['id'] == 'child'), isFalse);
     });
 
-    test('Type 5: Time Warper (Elastic) - Scales children', () {
+    test('Type 5: Elastic - Scales children', () {
       final parent = LegacyGanttTask(
         id: 'parent',
         rowId: 'r1',
@@ -213,7 +213,7 @@ void main() {
       expect(cEnd.hour, 12);
     });
 
-    test('Type 4: Enforcer (Constrain) - Clamps children', () {
+    test('Type 4: Constrain - Clamps children', () {
       final parent = LegacyGanttTask(
         id: 'parent',
         rowId: 'r1',
