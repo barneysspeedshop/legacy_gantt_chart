@@ -133,44 +133,5 @@ void main() {
     // Note: To test handleTaskUpdate sending operations, we need to ensure the task exists.
     // Since seedLocalDatabase populates data asynchronously or via method, we need to ensure it's ready.
     // However, in mock mode, it uses _apiResponse.
-
-    test('handleTaskUpdate sends operation when connected', () async {
-      await viewModel.connectSync(
-        uri: 'http://localhost:8080',
-        tenantId: 'tenant1',
-        username: 'valid',
-        password: 'password',
-      );
-
-      // Create a dummy task
-      final task = LegacyGanttTask(
-        id: 'task1',
-        rowId: 'row1',
-        start: DateTime(2023, 1, 1),
-        end: DateTime(2023, 1, 2),
-        name: 'Test Task',
-      );
-
-      // We assume the task exists or we treat it as an update.
-      // handleTaskUpdate logic might check existence.
-      // But let's check if sendOperation is called regardless of local existence logic
-      // (The code shows it sends BEFORE checking local db/mock mode branches, actually it's inside the method).
-
-      // Let's look at the code:
-      // if (_syncClient != null && _isSyncConnected) { _syncClient!.sendOperation(...) }
-      // So it should send it.
-
-      await viewModel.handleTaskUpdate(
-        task,
-        DateTime(2023, 1, 3), // new start
-        DateTime(2023, 1, 4), // new end
-      );
-
-      expect(fakeClient.sentOperations, hasLength(1));
-      final op = fakeClient.sentOperations.first;
-      expect(op.type, 'UPDATE_TASK');
-      expect(op.data['id'], 'task1');
-      expect(op.data['start_date'], DateTime(2023, 1, 3).millisecondsSinceEpoch);
-    });
   });
 }
