@@ -47,16 +47,21 @@ class RemoteGhost {
   }
 
   @override
-  int get hashCode =>
-      userId.hashCode ^
-      taskId.hashCode ^
-      start.hashCode ^
-      end.hashCode ^
-      lastUpdated.hashCode ^
-      viewportStart.hashCode ^
-      viewportEnd.hashCode ^
-      verticalScrollOffset.hashCode ^
-      userName.hashCode ^
-      userColor.hashCode ^
-      tasks.hashCode;
+  int get hashCode {
+    final sortedKeys = tasks.keys.toList()..sort();
+    return Object.hash(
+      userId,
+      taskId,
+      start,
+      end,
+      lastUpdated,
+      viewportStart,
+      viewportEnd,
+      verticalScrollOffset,
+      userName,
+      userColor,
+      Object.hashAll(sortedKeys),
+      Object.hashAll(sortedKeys.map((k) => tasks[k])),
+    );
+  }
 }
