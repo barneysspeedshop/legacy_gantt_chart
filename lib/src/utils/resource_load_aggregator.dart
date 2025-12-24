@@ -5,15 +5,23 @@ import '../models/resource_bucket.dart';
 ///
 /// Returns a map where the key is the `resourceId` and the value is a list of
 /// [ResourceBucket]s sorted by date.
+import '../models/work_calendar.dart';
+
+/// Aggregates the load for each resource from the provided list of [tasks].
+///
+/// Returns a map where the key is the `resourceId` and the value is a list of
+/// [ResourceBucket]s sorted by date.
 Map<String, List<ResourceBucket>> aggregateResourceLoad(
   List<LegacyGanttTask> tasks, {
   DateTime? start,
   DateTime? end,
+  WorkCalendar? workCalendar,
 }) {
   final Map<String, Map<DateTime, double>> resourceDailyLoad = {};
 
   for (final task in tasks) {
     if (task.resourceId == null) continue;
+    if (task.isSummary || task.isMilestone) continue;
 
     final double taskLoad = task.load;
 
@@ -21,7 +29,16 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
     final taskEndDay = DateTime(task.end.year, task.end.month, task.end.day);
 
     while (current.isBefore(taskEndDay) || current.isAtSameMomentAs(taskEndDay)) {
-      if ((start == null || !current.isBefore(start)) && (end == null || !current.isAfter(end))) {
+      bool shouldAddLoad = true;
+
+      // Check Work Calendar if applicable
+      if (task.usesWorkCalendar && workCalendar != null) {
+        if (!workCalendar.isWorkingDay(current)) {
+          shouldAddLoad = false;
+        }
+      }
+
+      if (shouldAddLoad && (start == null || !current.isBefore(start)) && (end == null || !current.isAfter(end))) {
         if (!resourceDailyLoad.containsKey(task.resourceId)) {
           resourceDailyLoad[task.resourceId!] = {};
         }

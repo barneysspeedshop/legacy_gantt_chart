@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class RemoteGhost {
   final String userId;
   final String taskId;
@@ -10,6 +12,8 @@ class RemoteGhost {
   final String? userName;
   final String? userColor; // Hex string
 
+  final Map<String, ({DateTime start, DateTime end})> tasks;
+
   RemoteGhost({
     required this.userId,
     this.taskId = '',
@@ -21,7 +25,8 @@ class RemoteGhost {
     this.verticalScrollOffset,
     this.userName,
     this.userColor,
-  });
+    Map<String, ({DateTime start, DateTime end})>? tasks,
+  }) : tasks = tasks ?? {};
 
   @override
   bool operator ==(Object other) {
@@ -37,7 +42,8 @@ class RemoteGhost {
         other.viewportEnd == viewportEnd &&
         other.verticalScrollOffset == verticalScrollOffset &&
         other.userName == userName &&
-        other.userColor == userColor;
+        other.userColor == userColor &&
+        mapEquals(other.tasks, tasks);
   }
 
   @override
@@ -51,5 +57,6 @@ class RemoteGhost {
       viewportEnd.hashCode ^
       verticalScrollOffset.hashCode ^
       userName.hashCode ^
-      userColor.hashCode;
+      userColor.hashCode ^
+      tasks.hashCode;
 }

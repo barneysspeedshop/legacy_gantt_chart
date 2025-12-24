@@ -707,39 +707,40 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                       }
                       final double contentHeight = chartHeight - vm.timeAxisHeight;
 
-                      return Listener(
-                        onPointerSignal: (event) {
-                          if (event is PointerScrollEvent) {
-                            if (event.scrollDelta.dx != 0) {
-                              vm.onHorizontalScroll(event.scrollDelta.dx);
-                            }
-                            if (event.scrollDelta.dy != 0) {
-                              if (vm.scrollController != null && vm.scrollController!.hasClients) {
-                                final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
-                                vm.scrollController!.jumpTo(newOffset.clamp(
-                                    vm.scrollController!.position.minScrollExtent,
-                                    vm.scrollController!.position.maxScrollExtent));
-                              }
-                            }
-                          }
-                        },
-                        child: GestureDetector(
-                          onPanStart: (details) => vm.onPanStart(details),
-                          onPanUpdate: (details) => vm.onPanUpdate(details),
-                          onPanEnd: (details) => vm.onPanEnd(details),
-                          onTapDown: (details) => vm.onTapDown(details),
-                          onTap: () => vm.onTap(),
-                          onSecondaryTapUp: (details) =>
-                              vm.onSecondaryTap(details.localPosition, details.globalPosition),
-                          onLongPressStart: (details) => vm.onLongPress(details.localPosition, details.globalPosition),
-                          onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
-                          child: MouseRegion(
-                            cursor: vm.cursor,
-                            onHover: (event) => vm.onHover(event),
-                            onExit: (event) => vm.onHoverExit(event),
-                            child: Column(
-                              children: [
-                                Expanded(
+                      return Column(
+                        children: [
+                          Expanded(
+                            child: Listener(
+                              onPointerSignal: (event) {
+                                if (event is PointerScrollEvent) {
+                                  if (event.scrollDelta.dx != 0) {
+                                    vm.onHorizontalScroll(event.scrollDelta.dx);
+                                  }
+                                  if (event.scrollDelta.dy != 0) {
+                                    if (vm.scrollController != null && vm.scrollController!.hasClients) {
+                                      final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
+                                      vm.scrollController!.jumpTo(newOffset.clamp(
+                                          vm.scrollController!.position.minScrollExtent,
+                                          vm.scrollController!.position.maxScrollExtent));
+                                    }
+                                  }
+                                }
+                              },
+                              child: GestureDetector(
+                                onPanStart: (details) => vm.onPanStart(details),
+                                onPanUpdate: (details) => vm.onPanUpdate(details),
+                                onPanEnd: (details) => vm.onPanEnd(details),
+                                onTapDown: (details) => vm.onTapDown(details),
+                                onTap: () => vm.onTap(),
+                                onSecondaryTapUp: (details) =>
+                                    vm.onSecondaryTap(details.localPosition, details.globalPosition),
+                                onLongPressStart: (details) =>
+                                    vm.onLongPress(details.localPosition, details.globalPosition),
+                                onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
+                                child: MouseRegion(
+                                  cursor: vm.cursor,
+                                  onHover: (event) => vm.onHover(event),
+                                  onExit: (event) => vm.onHoverExit(event),
                                   child: ClipRect(
                                     child: Stack(
                                       children: [
@@ -896,18 +897,18 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                     ),
                                   ),
                                 ),
-                                if (widget.showResourceHistogram) ...[
-                                  const Divider(height: 1),
-                                  ResourceHistogramWidget(
-                                    viewModel: vm,
-                                    height: 150,
-                                    theme: effectiveTheme,
-                                  ),
-                                ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
+                          if (widget.showResourceHistogram) ...[
+                            const Divider(height: 1),
+                            ResourceHistogramWidget(
+                              viewModel: vm,
+                              height: 150,
+                              theme: effectiveTheme,
+                            ),
+                          ],
+                        ],
                       );
                     },
                   ),

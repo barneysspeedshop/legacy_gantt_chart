@@ -213,6 +213,148 @@ void main() {
       expect(cEnd.hour, 12);
     });
 
+    test('Elastic scaling (Standard) - Start Handle Resize should NOT push children outside', () {
+      final parent = LegacyGanttTask(
+        id: 'parent',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 12), // 4h
+        isSummary: true,
+        resizePolicy: ResizePolicy.elastic,
+      );
+      // Child at the very end: 11:00 - 12:00
+      final child = LegacyGanttTask(
+        id: 'child',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 11),
+        end: DateTime(2023, 1, 1, 12),
+        parentId: 'parent',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        data: [parent, child],
+        conflictIndicators: [],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        enableResize: true,
+      );
+
+      viewModel.updateLayout(1000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 24).millisecondsSinceEpoch.toDouble();
+
+      // Parent is 8:00 - 12:00.
+      // Resize Start from 8:00 to 9:00 (Shrink by 1h).
+      // New Parent: 9:00 - 12:00. Duration 3h.
+      // Child was at 75% point (3h / 4h).
+      // New Child Start: 9:00 + (0.75 * 3h) = 9:00 + 2.25h = 11:15.
+      // New Child End: 9:00 + (1.0 * 3h) = 12:00.
+
+      // Let's try shrinking heavily. 8:00 to 11:00. (3h shift).
+      // New Parent: 11:00 to 12:00. Duration 1h.
+      // Or extending?
+      // The user said "adjusted the start date only... last few tasks got pushed outside".
+
+      // Let's try to simulate a scenario where floating point math might push it over.
+      // 8:00 (pixel X) to 9:00.
+
+      // 08:00 is offset X. 12:00 is offset Y.
+      // We drag 8:00 handle to the right.
+
+      viewModel.onPanStart(
+        DragStartDetails(globalPosition: const Offset(0, 0)), // Dummy, will be overridden by logic using task times
+        overrideTask: parent,
+        overridePart: TaskPart.startHandle,
+      );
+
+      // Move +1 hour (approx).
+      // 1000px / 24h = 41.66 px/h.
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(42, 0),
+        delta: const Offset(42, 0), // +1h
+      ));
+
+      final (cStart, cEnd) = viewModel.bulkGhostTasks['child']!;
+
+      expect(cEnd.isAfter(parent.end), isFalse,
+          reason: 'Child end ($cEnd) should not be after parent end ${parent.end}');
+    });
+
+    test('Elastic Resize Start should NOT be overridden by PropagateMoveToChildren', () {
+      final parent = LegacyGanttTask(
+        id: 'parent',
+        rowId: 'r1',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 12), // 4h
+        isSummary: true,
+        resizePolicy: ResizePolicy.elastic,
+        propagatesMoveToChildren: true, // This defaults to true usually
+      );
+      // Child: 8:00 - 9:00 (1st hour)
+      final child = LegacyGanttTask(
+        id: 'child',
+        rowId: 'r2',
+        start: DateTime(2023, 1, 1, 8),
+        end: DateTime(2023, 1, 1, 9),
+        parentId: 'parent',
+      );
+
+      viewModel = LegacyGanttViewModel(
+        data: [parent, child],
+        conflictIndicators: [],
+        dependencies: [],
+        visibleRows: [row1, row2],
+        rowMaxStackDepth: {'r1': 1, 'r2': 1},
+        rowHeight: 50.0,
+        enableResize: true,
+        enableAutoScheduling: true, // Required for propagte logic to run
+      );
+
+      viewModel.updateLayout(1000, 500);
+      viewModel.gridMin = DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble();
+      viewModel.gridMax = DateTime(2023, 1, 1, 24).millisecondsSinceEpoch.toDouble();
+
+      // Resize START from 8:00 to 9:00 (Shrink 1h).
+      // Delta = +1h.
+
+      // Elastic Expectation:
+      // Parent: 9:00 - 12:00 (3h).
+      // Child (orig 0-25%): New 0-25% of 9:00-12:00.
+      // New Start: 9:00. New End: 9:45.
+
+      // Bug Expectation (Move Propagation):
+      // Parent Start +1h. Delta = +1h.
+      // Child Start = 8:00 + 1h = 9:00.
+      // Child End = 9:00 + 1h = 10:00 (Duration kept as 1h). -> "Moved without resizing".
+
+      viewModel.onPanStart(
+        DragStartDetails(globalPosition: const Offset(333, 0)),
+        overrideTask: parent,
+        overridePart: TaskPart.startHandle,
+      );
+
+      viewModel.onHorizontalPanUpdate(DragUpdateDetails(
+        globalPosition: const Offset(375, 0), // +42px ~ 1h
+        delta: const Offset(42, 0),
+      ));
+
+      // Trigger pan end to run auto-schedule logic
+      viewModel.onHorizontalPanEnd(DragEndDetails());
+
+      final processedChild = viewModel.data.firstWhere((t) => t.id == 'child');
+
+      // If duration is 1h (60 mins), it was just shifted.
+      // If duration is 45 mins, it was scaled.
+
+      final durationMins = processedChild.end.difference(processedChild.start).inMinutes;
+      // 44 or 45 depending on rounding. 60 would be fail (shift).
+      expect(durationMins, lessThan(60),
+          reason: 'Child should be scaled (<60 mins), not shifted (got $durationMins mins)');
+      expect(durationMins, greaterThan(40), reason: 'Child should be scaled reasonably (got $durationMins mins)');
+    });
+
     test('Type 4: Constrain - Clamps children', () {
       final parent = LegacyGanttTask(
         id: 'parent',

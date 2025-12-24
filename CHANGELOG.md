@@ -1,3 +1,17 @@
+## 5.0.0-alpha.9
+
+* **IMPROVEMENT**: Refactored **Elastic Scaling** to be **Work-Calendar Aware**. Resizing summary tasks now scales child tasks proportionally based on working days/hours rather than absolute duration, ensuring effort is preserved across weekends and holidays.
+* **FEATURE**: Enhanced **Remote Ghost Syncing** to broadcast *all* moving tasks (summary, children, dependents) in real-time, providing a complete visual representation of the drag operation to remote colleagues.
+* **IMPROVEMENT**: Updated **Ghost Visuals** for better clarity:
+    *   **Summary Tasks**: Now display a high-contrast angled pattern.
+    *   **Milestones**: Now correctly render as diamond shapes.
+    *   **Grouping**: Dragging a summary task now displays a subtle background indicating the scope of affected child rows.
+* **BETA**: Upgrade Resource Histogram to beta status. Please note that its usage is still experimental at this time. 
+* **FIX**: Resolved an interaction issue where mouse events (clicks, drags) on the **Resource Histogram** would fall through to the underlying Gantt chart.
+* **FIX**: Updated Resource Histogram logic to respect **Work Calendars**. Resource load is now correctly calculated by skipping non-working days (weekends/holidays) during both static aggregation and interactive drag operations. 
+
+* **NOTE**: We expect this to be the last release before 5.0.0 
+
 ## 5.0.0-alpha.8
 
 * **FEATURE**: Implemented **Task Behaviors** for summary tasks, allowing advanced scheduling logic:
@@ -57,7 +71,7 @@
 
 ## 4.8.0
 
-* **PRE-ALPHA**: Added **Resource Histogram View** to visualize resource allocation and identify over-booked days (`showResourceHistogram: true`) NOTE: This doesn't work yet
+* **BETA**: Added **Resource Histogram View** to visualize resource allocation and identify over-booked days (`showResourceHistogram: true`) 
 * **FEATURE**: Added **Work Calendars** support. Define `WorkCalendar` with custom weekends and holidays to manage working days.
 * **FEATURE**: Added **Smart Duration Logic**. When a `WorkCalendar` is provided, moving tasks respects working days (skipping non-working days) to preserve the effective working duration.
 * **IMPROVEMENT**: Conflict detection now defaults to grouping tasks by `resourceId` to automatically highlight double-bookings.

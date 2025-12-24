@@ -193,13 +193,24 @@ class BarsCollectionPainter extends CustomPainter {
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
-          final RRect barRRect = RRect.fromRectAndRadius(
-            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, max(0.0, barEndX - barStartX), barHeight),
-            theme.barCornerRadius,
-          );
+          if (task.isMilestone) {
+            final double milestoneX = barStartX;
+            final double milestoneY = barTop + barVerticalCenterOffset;
+            _drawMilestone(canvas, task, milestoneX, milestoneY, barHeight, true);
+          } else {
+            final double barWidth = max(0, barEndX - barStartX);
+            final RRect barRRect = RRect.fromRectAndRadius(
+              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+              theme.barCornerRadius,
+            );
 
-          canvas.drawRRect(barRRect, ghostPaint);
-          canvas.drawRRect(barRRect, ghostBorderPaint);
+            canvas.drawRRect(barRRect, ghostPaint);
+            canvas.drawRRect(barRRect, ghostBorderPaint);
+
+            if (task.isSummary) {
+              _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
+            }
+          }
         }
         cumulativeRowTop += dynamicRowHeight;
       }
@@ -226,6 +237,18 @@ class BarsCollectionPainter extends CustomPainter {
     final visibleContentTop = -translateY;
     final visibleContentBottom = -translateY + size.height;
 
+    // Optimization: Pre-compute dragged task and child row logic outside the loop
+    LegacyGanttTask? draggedSummaryTask;
+    Set<String> summaryChildRowIds = {};
+    if (draggedTaskId != null && ghostTaskStart != null && ghostTaskEnd != null) {
+      final task = data.firstWhere((t) => t.id == draggedTaskId, orElse: () => LegacyGanttTask.empty());
+      if (task.id.isNotEmpty && task.isSummary) {
+        draggedSummaryTask = task;
+        // Identify all rows that contain direct children
+        summaryChildRowIds = data.where((t) => t.parentId == task.id).map((t) => t.rowId).toSet();
+      }
+    }
+
     for (var rowData in visibleRows) {
       final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
       final double dynamicRowHeight = rowHeight * stackDepth;
@@ -243,6 +266,21 @@ class BarsCollectionPainter extends CustomPainter {
       }
 
       final tasksInThisRow = tasksByRow[rowData.id] ?? [];
+
+      // Summary Ghost Background (Child Rows)
+      if (draggedSummaryTask != null && summaryChildRowIds.contains(rowData.id)) {
+        final double gStart = scale(ghostTaskStart!);
+        final double gEnd = scale(ghostTaskEnd!);
+        final double barStartX = min(gStart, gEnd);
+        final double barEndX = max(gStart, gEnd);
+        final double barWidth = max(0, barEndX - barStartX);
+
+        if (barWidth > 0 && barStartX < size.width) {
+          final rect = Rect.fromLTWH(barStartX, cumulativeRowTop, barWidth, dynamicRowHeight);
+          final paint = Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2);
+          canvas.drawRect(rect, paint);
+        }
+      }
 
       for (final task in tasksInThisRow.where((t) => t.isTimeRangeHighlight)) {
         final double barStartX = scale(task.start);
@@ -536,54 +574,112 @@ class BarsCollectionPainter extends CustomPainter {
             );
             final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
             canvas.drawRRect(barRRect, barPaint);
+
+            if (originalTask.isSummary) {
+              _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
+            }
           }
         }
       }
     }
 
     for (final ghost in remoteGhosts.values) {
-      if (ghost.taskId.isEmpty) continue;
+      if (ghost.tasks.isEmpty && ghost.taskId.isEmpty) continue;
 
-      final originalTask = data.firstWhere((t) => t.id == ghost.taskId,
-          orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+      // Unify tasks: If 'tasks' is populated, use it.
+      // If only legacy fields are present, wrap them in a list for iteration.
+      final Iterable<({String taskId, DateTime start, DateTime end})> ghostItems;
+      if (ghost.tasks.isNotEmpty) {
+        ghostItems = ghost.tasks.entries.map((e) => (taskId: e.key, start: e.value.start, end: e.value.end));
+      } else {
+        if (ghost.start == null || ghost.end == null) continue;
+        ghostItems = [(taskId: ghost.taskId, start: ghost.start!, end: ghost.end!)];
+      }
 
-      if (originalTask.id.isNotEmpty) {
-        double ghostRowTop = 0;
-        bool foundRow = false;
-        for (var rowData in visibleRows) {
-          if (rowData.id == originalTask.rowId) {
-            foundRow = true;
-            break;
+      for (final item in ghostItems) {
+        final originalTask = data.firstWhere((t) => t.id == item.taskId,
+            orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+
+        if (originalTask.id.isNotEmpty) {
+          // Draw summary background for remote ghosts
+          if (originalTask.isSummary) {
+            final summaryChildRowIds = data.where((t) => t.parentId == originalTask.id).map((t) => t.rowId).toSet();
+
+            double currentRowTop = 0;
+            for (var rowData in visibleRows) {
+              final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
+              final double dynamicRowHeight = rowHeight * stackDepth;
+
+              if (summaryChildRowIds.contains(rowData.id)) {
+                final double barStartX = scale(item.start);
+                final double barEndX = scale(item.end);
+                final double rectX = min(barStartX, barEndX);
+                final double rectW = max(0, max(barStartX, barEndX) - rectX);
+
+                if (rectW > 0 && rectX < size.width) {
+                  final rect = Rect.fromLTWH(rectX, currentRowTop, rectW, dynamicRowHeight);
+                  final paint = Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2);
+                  canvas.drawRect(rect, paint);
+                }
+              }
+
+              currentRowTop += dynamicRowHeight;
+            }
           }
-          final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-          ghostRowTop += rowHeight * stackDepth;
-        }
 
-        if (foundRow) {
-          final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
-          final double barHeight = rowHeight * theme.barHeightRatio;
-          final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
+          double ghostRowTop = 0;
+          bool foundRow = false;
+          for (var rowData in visibleRows) {
+            if (rowData.id == originalTask.rowId) {
+              foundRow = true;
+              break;
+            }
+            final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
+            ghostRowTop += rowHeight * stackDepth;
+          }
 
-          if (ghost.start == null || ghost.end == null) continue;
+          if (foundRow) {
+            final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
+            final double barHeight = rowHeight * theme.barHeightRatio;
+            final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
-          final double barStartX = scale(ghost.start!);
-          final double barEndX = scale(ghost.end!);
-          final double barWidth = max(0, barEndX - barStartX);
+            final double barStartX = scale(item.start);
+            final double barEndX = scale(item.end);
+            final double barWidth = max(0, barEndX - barStartX);
 
-          final RRect barRRect = RRect.fromRectAndRadius(
-            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
-            theme.barCornerRadius,
-          );
+            final RRect barRRect = RRect.fromRectAndRadius(
+              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+              theme.barCornerRadius,
+            );
 
-          final userColor = Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
+            final userColor = ghost.userColor != null
+                ? (Color(int.parse(ghost.userColor!.replaceAll('#', '0xff'))))
+                : Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
 
-          if (originalTask.isMilestone) {
-            final double milestoneX = scale(ghost.start!);
-            final double milestoneY = barTop + barVerticalCenterOffset;
-            _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
-          } else {
-            final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
-            canvas.drawRRect(barRRect, barPaint);
+            if (originalTask.isMilestone) {
+              final double milestoneX = scale(item.start);
+              final double milestoneY = barTop + barVerticalCenterOffset;
+              // Pass userColor to drawMilestone? Currently it uses task color.
+              // We should probably override color for remote ghosts.
+              // _drawMilestone uses task.color.
+              // We'll manually draw diamond here to match userColor.
+              final paint = Paint()..color = userColor.withValues(alpha: 0.5);
+              final double diamondSize = barHeight;
+              final path = Path();
+              path.moveTo(milestoneX, milestoneY + diamondSize / 2);
+              path.lineTo(milestoneX + diamondSize / 2, milestoneY);
+              path.lineTo(milestoneX + diamondSize, milestoneY + diamondSize / 2);
+              path.lineTo(milestoneX + diamondSize / 2, milestoneY + diamondSize);
+              path.close();
+              canvas.drawPath(path, paint);
+            } else {
+              final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
+              canvas.drawRRect(barRRect, barPaint);
+
+              if (originalTask.isSummary) {
+                _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
+              }
+            }
           }
         }
       }
