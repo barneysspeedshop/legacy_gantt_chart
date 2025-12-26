@@ -71,10 +71,10 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     try {
       _channel = _channelFactory(finalUri);
-      _isClockSynced = false; // Reset sync state on new connection
+      _isClockSynced = false;
 
       _channel!.sink.add(jsonEncode({
-        'type': 'subscribe', // ProtocolMessage.subscribe
+        'type': 'subscribe',
         'channel': tenantId,
         'lastSyncedTimestamp': lastSyncedTimestamp,
       }));
@@ -83,7 +83,16 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
         (message) {
           try {
             final envelope = jsonDecode(message as String) as Map<String, dynamic>;
-            final type = envelope['type'] as String;
+            if (envelope.containsKey('error')) {
+              print('Server error received: ${envelope['error']}');
+              return;
+            }
+
+            final type = envelope['type'] as String?;
+            if (type == null) {
+              print('Invalid message format: missing type');
+              return;
+            }
             final dataMap = envelope['data'];
 
             if (!_isClockSynced && envelope.containsKey('timestamp')) {
@@ -113,6 +122,13 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
                     : DateTime.now().millisecondsSinceEpoch,
                 actorId: envelope['actorId'] as String? ?? 'unknown',
               );
+
+              if (_totalToSync > 0 && dataMap != null && dataMap['operations'] is List) {
+                final ops = dataMap['operations'] as List;
+                _processedSyncOps += ops.length;
+                _inboundProgressController.add(SyncProgress(processed: _processedSyncOps, total: _totalToSync));
+              }
+
               _operationController.add(op);
               return;
             }
@@ -123,7 +139,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             if (timestamp == null || actorId == null) {
               if (type == 'SUBSCRIBE_SUCCESS') {
                 print('Subscription confirmed: ${envelope['channel']}');
-                _connectionStateController.add(true); // Now we are ready
+                _connectionStateController.add(true);
               } else {
                 print('Skipping message without timestamp/actorId: $type');
               }
@@ -160,11 +176,11 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
         },
         onDone: () {
           print('WebSocket connection closed');
-          _connectionStateController.add(false); // Disconnected
+          _connectionStateController.add(false);
         },
         onError: (error) {
           print('WebSocket error: $error');
-          _connectionStateController.add(false); // Disconnected
+          _connectionStateController.add(false);
         },
       );
     } catch (e) {
@@ -211,7 +227,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     final envelope = {
       'type': envelopeType,
-      'data': operation.data, // Send operation.data directly, not the full operation
+      'data': operation.data,
       'timestamp': operation.timestamp,
       'actorId': operation.actorId,
     };
@@ -256,7 +272,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     final batchEnvelope = {
       'type': 'BATCH_UPDATE',
       'data': {'operations': envelopes},
-      'timestamp': correctedTimestamp, // Use corrected time for batch container
+      'timestamp': correctedTimestamp,
       'actorId': operations.first.actorId,
     };
 

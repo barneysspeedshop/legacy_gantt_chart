@@ -37,7 +37,6 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final task in tasks) {
-        // SPLIT INTO UPDATE + INSERT OR IGNORE to avoid parser crash on ON CONFLICT
         batch.execute(
           '''
           UPDATE tasks SET
@@ -125,13 +124,8 @@ class LocalGanttRepository {
   }
 
   Future<void> insertOrUpdateTask(LegacyGanttTask task) async {
-    // Use lock to prevent concurrent writes that cause "database is locked" errors
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      // SPLIT INTO UPDATE + INSERT OR IGNORE to avoid parser crash on ON CONFLICT
-      // Note: For single execution we *could* check results, but db.execute return value is implementation dependent for affected rows.
-      // So we use the same robust double-statement pattern essentially.
-      // Actually, since this is not a batch, we can be slightly more optimized if we want, but for consistency:
       await db.execute(
         '''
         UPDATE tasks SET
@@ -231,7 +225,6 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final dependency in dependencies) {
-        // SPLIT INTO UPDATE + INSERT OR IGNORE
         batch.execute(
           '''
           UPDATE dependencies SET
@@ -272,7 +265,6 @@ class LocalGanttRepository {
   Future<void> insertOrUpdateDependency(LegacyGanttTaskDependency dependency) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      // SPLIT INTO UPDATE + INSERT OR IGNORE
       await db.execute(
         '''
         UPDATE dependencies SET
@@ -342,7 +334,6 @@ class LocalGanttRepository {
     });
   }
 
-  // Helper to convert DB row to LegacyGanttTask
   LegacyGanttTask _rowToTask(Map<String, Object?> row) => LegacyGanttTask(
         id: row['id'] as String,
         rowId: row['row_id'] as String,
@@ -366,6 +357,7 @@ class LocalGanttRepository {
         isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
         propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
         resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
+        lastUpdated: row['last_updated'] as int?,
       );
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(
@@ -384,7 +376,6 @@ class LocalGanttRepository {
     }
   }
 
-  // Resources CRUD
   Stream<List<LocalResource>> watchResources() async* {
     final db = await GanttDb.db;
     yield* db.watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY id ASC').map((rows) {
@@ -399,7 +390,6 @@ class LocalGanttRepository {
       final db = await GanttDb.db;
       final batch = db.batch();
       for (final resource in resources) {
-        // SPLIT INTO UPDATE + INSERT OR IGNORE
         batch.execute(
           '''
           UPDATE resources SET
@@ -441,7 +431,6 @@ class LocalGanttRepository {
   Future<void> insertOrUpdateResource(LocalResource resource) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      // SPLIT INTO UPDATE + INSERT OR IGNORE
       await db.execute(
         '''
         UPDATE resources SET
@@ -513,8 +502,6 @@ class LocalGanttRepository {
 
   Future<int> getMaxLastUpdated() async {
     final db = await GanttDb.db;
-    // We want the maximum of last_updated OR deleted_at across all tables.
-    // We can do this with a few queries.
 
     int maxTs = 0;
 

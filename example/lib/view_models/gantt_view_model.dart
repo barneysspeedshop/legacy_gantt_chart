@@ -1824,8 +1824,11 @@ class GanttViewModel extends ChangeNotifier {
         });
       }
 
+      Future<void> opChain = Future.value();
       _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
-        _handleIncomingOperation(op);
+        opChain = opChain.then((_) => _handleIncomingOperation(op)).catchError((e) {
+          print('Error processing operation in chain: $e');
+        });
       });
 
       _isSyncConnected = true;
@@ -1926,7 +1929,13 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      await _processLocalData();
+      try {
+        await _processLocalData();
+      } catch (e) {
+        print('Error in _processLocalData during batch update: $e');
+      } finally {
+        notifyListeners();
+      }
     } else {
       await _processOperationInternal(op, notify: true);
     }
@@ -1939,6 +1948,8 @@ class GanttViewModel extends ChangeNotifier {
     List<LegacyGanttTaskDependency>? batchDependencies,
     List<LocalResource>? batchResources,
   }) async {
+    // Removed actorId check as it is unreliable when server overwrites it
+
     final data = op.data;
     final taskData = data;
 
@@ -1949,9 +1960,9 @@ class GanttViewModel extends ChangeNotifier {
       ganttType = innerData['gantt_type'] as String?;
 
       if (innerData.containsKey('data') && innerData['data'] is Map) {
-        ganttType ??= innerData['gantt_type'] as String?;
+        ganttType ??= (innerData['gantt_type'] ?? innerData['ganttType']) as String?;
         innerData = innerData['data'] as Map<String, dynamic>;
-        ganttType ??= innerData['gantt_type'] as String?;
+        ganttType ??= (innerData['gantt_type'] ?? innerData['ganttType']) as String?;
       }
 
       final taskIdRaw = innerData['id'];
@@ -1965,7 +1976,7 @@ class GanttViewModel extends ChangeNotifier {
       if (sourceIndex != -1) {
         final existingTask = _allGanttTasks[sourceIndex];
 
-        if (existingTask.lastUpdated != null && op.timestamp < existingTask.lastUpdated!) {
+        if (existingTask.lastUpdated != null && op.timestamp <= existingTask.lastUpdated!) {
           return;
         }
 
@@ -1976,8 +1987,10 @@ class GanttViewModel extends ChangeNotifier {
           return null;
         }
 
-        final newStart = parseDate(innerData['start_date']) ?? parseDate(innerData['start']);
-        final newEnd = parseDate(innerData['end_date']) ?? parseDate(innerData['end']);
+        final newStart =
+            parseDate(innerData['start_date']) ?? parseDate(innerData['start']) ?? parseDate(innerData['startDate']);
+        final newEnd =
+            parseDate(innerData['end_date']) ?? parseDate(innerData['end']) ?? parseDate(innerData['endDate']);
 
         final updatedTask = existingTask.copyWith(
           name: innerData['name'] ?? existingTask.name,
@@ -1987,16 +2000,17 @@ class GanttViewModel extends ChangeNotifier {
           isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
           isSummary: ganttType != null
               ? (ganttType == 'summary')
-              : (innerData['is_summary'] == true ? true : existingTask.isSummary),
+              : (innerData['is_summary'] == true || innerData['isSummary'] == true ? true : existingTask.isSummary),
           color: _parseColor(innerData['color']) ?? existingTask.color,
-          textColor: _parseColor(innerData['text_color']) ?? existingTask.textColor,
+          textColor:
+              _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']) ?? existingTask.textColor,
           completion: (innerData['completion'] as num?)?.toDouble() ?? existingTask.completion,
           resourceId: innerData['resourceId'] as String? ?? existingTask.resourceId,
           baselineStart: parseDate(innerData['baseline_start']) ?? existingTask.baselineStart,
           baselineEnd: parseDate(innerData['baseline_end']) ?? existingTask.baselineEnd,
           notes: innerData['notes'] as String? ?? existingTask.notes,
-          parentId: innerData['parentId'] as String? ?? existingTask.parentId,
-          usesWorkCalendar: innerData['uses_work_calendar'] == true
+          parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String? ?? existingTask.parentId,
+          usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true
               ? true
               : (innerData['uses_work_calendar'] == false ? false : existingTask.usesWorkCalendar),
           isAutoScheduled: innerData['is_auto_scheduled'] == true
@@ -2029,16 +2043,16 @@ class GanttViewModel extends ChangeNotifier {
           id: taskId,
           rowId: innerData['rowId'] ?? 'unknown_row',
           name: innerData['name'] ?? 'Unnamed Task',
-          start: innerData['start_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['start_date'] as int)
+          start: (innerData['start_date'] ?? innerData['startDate']) != null
+              ? DateTime.fromMillisecondsSinceEpoch((innerData['start_date'] ?? innerData['startDate']) as int)
               : DateTime.now(),
-          end: innerData['end_date'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['end_date'] as int)
+          end: (innerData['end_date'] ?? innerData['endDate']) != null
+              ? DateTime.fromMillisecondsSinceEpoch((innerData['end_date'] ?? innerData['endDate']) as int)
               : DateTime.now().add(const Duration(days: 1)),
-          isSummary: ganttType == 'summary' || innerData['is_summary'] == true,
+          isSummary: (ganttType == 'summary') || (innerData['is_summary'] == true) || (innerData['isSummary'] == true),
           isMilestone: ganttType == 'milestone',
           color: _parseColor(innerData['color']),
-          textColor: _parseColor(innerData['text_color']),
+          textColor: _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']),
           completion: (innerData['completion'] as num?)?.toDouble() ?? 0.0,
           resourceId: innerData['resourceId'] as String?,
           baselineStart: innerData['baseline_start'] != null
@@ -2048,8 +2062,8 @@ class GanttViewModel extends ChangeNotifier {
               ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_end'] as int)
               : null,
           notes: innerData['notes'] as String?,
-          parentId: innerData['parentId'] as String?,
-          usesWorkCalendar: innerData['uses_work_calendar'] == true,
+          parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String?,
+          usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true,
           isAutoScheduled: innerData['is_auto_scheduled'] != false,
         );
 
@@ -2068,16 +2082,25 @@ class GanttViewModel extends ChangeNotifier {
       var data = op.data;
       String? ganttType;
 
-      ganttType = data['gantt_type'] as String?;
+      ganttType = (data['gantt_type'] ?? data['ganttType']) as String?;
 
       if (data.containsKey('data') && data['data'] is Map) {
-        ganttType ??= data['gantt_type'] as String?;
+        ganttType ??= (data['gantt_type'] ?? data['ganttType']) as String?;
         data = data['data'] as Map<String, dynamic>;
-        ganttType ??= data['gantt_type'] as String?;
+        ganttType ??= (data['gantt_type'] ?? data['ganttType']) as String?;
+      }
+
+      final taskId = data['id']?.toString().trim() ?? '';
+      final existingIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
+      if (existingIndex != -1) {
+        final existing = _allGanttTasks[existingIndex];
+        if (existing.lastUpdated != null && op.timestamp <= existing.lastUpdated!) {
+          return;
+        }
       }
 
       final newTask = LegacyGanttTask(
-        id: data['id']?.toString().trim() ?? '',
+        id: taskId,
         rowId: data['rowId']?.toString().trim() ?? '',
         name: data['name'],
         start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
@@ -2106,7 +2129,12 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
+      if (existingIndex != -1) {
+        _allGanttTasks = List.from(_allGanttTasks);
+        _allGanttTasks[existingIndex] = newTask;
+      } else {
+        _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
+      }
       if (notify) await _processLocalData();
     } else if (op.type == 'DELETE_TASK') {
       final taskId = taskData['id'];
@@ -2147,14 +2175,14 @@ class GanttViewModel extends ChangeNotifier {
       }
     } else if (op.type == 'INSERT_DEPENDENCY') {
       final data = op.data;
-      final dependencyTypeString = (data['dependency_type'] ?? data['type']) as String;
+      final dependencyTypeString = (data['dependency_type'] ?? data['type'] ?? 'finishToStart').toString();
       final dependencyType = DependencyType.values.firstWhere(
-        (e) => e.name == dependencyTypeString,
+        (e) => e.name.toLowerCase() == dependencyTypeString.toLowerCase(),
         orElse: () => DependencyType.finishToStart,
       );
       final newDep = LegacyGanttTaskDependency(
-        predecessorTaskId: data['predecessorTaskId'],
-        successorTaskId: data['successorTaskId'],
+        predecessorTaskId: data['predecessorTaskId'] ?? data['predecessor_task_id'],
+        successorTaskId: data['successorTaskId'] ?? data['successor_task_id'],
         type: dependencyType,
       );
 
@@ -2706,8 +2734,8 @@ class GanttViewModel extends ChangeNotifier {
             actorId: 'local-user',
           ));
         }
-        _recalculateStackingAndNotify(); // Rebuild UI
-        return; // Exit early
+        _recalculateStackingAndNotify();
+        return;
       }
     }
 
