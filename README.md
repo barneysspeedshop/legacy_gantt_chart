@@ -65,7 +65,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 -   **Full CRUD Support:** Create, read, update, and delete tasks with intuitive callbacks.
 -   **Custom Data Fields:** Add custom data to your own models and display it using builders.
 -   **Inactive Tasks:** Filter your data source or use custom styling to represent inactive tasks or dependencies.
--   **CRDT Support:** Implemented alpha support for Conflict-Free Replicated Data Types (CRDTs) for building robust offline-first and real-time collaborative applications.
+-   **Sovereign Sync (CRDT & HLC):** Implements Hybrid Logical Clocks and Merkle-tree-like structures for robust, conflict-free offline editing.
 
 ### Interactivity
 -   **Task Creation:** Create new tasks by clicking on empty chart space.
@@ -119,7 +119,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  legacy_gantt_chart: ^4.9.0
+  legacy_gantt_chart: ^5.0.0
 ```
 
 Then, you can install the package using the command-line:
@@ -139,6 +139,56 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 ---
 
 ## Migration Guide
+
+### Migrating to 5.0.0
+
+Version 5.0.0 introduces breaking changes to the sync API and the underlying data model to support more robust Hybrid Logical Clocks (HLC).
+
+*   **Breaking Change (Data Model):** `LegacyGanttTask.lastUpdated` is now type `Hlc` (Hybrid Logical Clock) instead of `int?`. You must use `Hlc.parse()` or `Hlc.fromDate()` when manually instantiating tasks with timestamps.
+*   **Breaking Change (Sync Interface):** `GanttSyncClient` now requires `Stream<SyncProgress> get inboundProgress` and `Stream<int> get outboundPendingCount`.
+*   **Breaking Change (Protocol):** The sync protocol now uses string-based HLC timestamps (`"2024-01-01T12:00:00.000Z-0000-nodeId"`) instead of integer epochs.
+*   **BREAKING (UI):** Refactor `noDataWidgetBuilder` to `emptyStateBuilder` to align with package convention and reduce duplication.
+*   **BREAKING (Theming):** Refactor `loadingIndicatorHeight` to `linearProgressHeight` to align with package convention.
+
+#### How to Migrate
+
+**1. Data Model (HLC)**
+If you are manually creating tasks, replace `int` timestamps with `Hlc` objects.
+```dart
+// Before
+LegacyGanttTask(lastUpdated: DateTime.now().millisecondsSinceEpoch);
+
+// After
+LegacyGanttTask(lastUpdated: Hlc.fromDate(DateTime.now(), 'device-id'));
+```
+
+**2. Sync Client Interface**
+Update your custom `GanttSyncClient` implementations to include the new progress streams.
+```dart
+class MySyncClient implements GanttSyncClient {
+  @override
+  Stream<SyncProgress> get inboundProgress => _inboundController.stream;
+  @override
+  Stream<int> get outboundPendingCount => _outboundController.stream;
+  // ...
+}
+```
+
+**3. UI & Theming Property Renames**
+Rename the following parameters in `LegacyGanttChartWidget` and associated theme classes:
+```dart
+// Before
+LegacyGanttChartWidget(
+  noDataWidgetBuilder: (context) => MyCustomEmptyView(),
+  loadingIndicatorHeight: 4.0,
+)
+
+// After
+LegacyGanttChartWidget(
+  emptyStateBuilder: (context) => MyCustomEmptyView(),
+  linearProgressHeight: 4.0,
+)
+```
 
 ### Migrating to v3.0.0
 
@@ -434,14 +484,14 @@ LegacyGanttChartWidget(
 
 ### Customizing the "No Data" View
 
-You can provide a custom widget to be displayed when `data` is empty using the `noDataWidgetBuilder`.
+You can provide a custom widget to be displayed when `data` is empty using the `emptyStateBuilder`.
 
 ```dart
 LegacyGanttChartWidget(
   data: [], // Empty data
   visibleRows: [],
   rowMaxStackDepth: {},
-  noDataWidgetBuilder: (context) {
+  emptyStateBuilder: (context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -541,18 +591,25 @@ The package now includes experimental support for real-time synchronization and 
 To use the sync client, you typically initialize it and pass it to your `LegacyGanttController` or view model.
 
 ```dart
-// Example initialization (simplified)
+// 1. Authenticate (Optional - depends on server)
+final token = 'your-jwt-token'; 
+
+// 2. Initialize
 final syncClient = WebSocketGanttSyncClient(
-  uri: 'ws://your-server.com/ws',
-  tenantId: 'your-tenant-id',
-  username: 'user-1',
+  uri: Uri.parse('ws://your-server.com/ws'),
+  authToken: token,
 );
 
-// Connect
-await syncClient.connect();
+// 3. Connect
+syncClient.connect('your-tenant-id');
 
-// Send an operation
-syncClient.insertTask(newTask);
+// 4. Send Operation
+syncClient.sendOperation(Operation(
+  type: 'INSERT_TASK',
+  data: newTask.toJson(),
+  timestamp: Hlc.fromDate(DateTime.now(), 'my-device-id'),
+  actorId: 'user-1',
+));
 ```
 
 For a full implementation reference, check the `example/lib/main.dart` file which implements a complete sync-enabled Gantt chart.

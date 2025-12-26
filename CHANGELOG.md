@@ -1,3 +1,7 @@
+## 5.0.1
+
+* **DOC**: Update `README.md` to provide migration instructions
+
 ## 5.0.0
 
 🔄 Sync & Sovereignty (Major Architecture Overhaul)
