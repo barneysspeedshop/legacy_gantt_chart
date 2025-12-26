@@ -1895,8 +1895,10 @@ class GanttViewModel extends ChangeNotifier {
           final opType = opMap['type'] as String;
           var opData = opMap['data'] as Map<String, dynamic>;
           final opTsRaw = opMap['timestamp'];
-          final opTs = opTsRaw is int ? Hlc.fromIntTimestamp(opTsRaw) : Hlc.parse(opTsRaw as String);
-          final opActor = opMap['actorId'] as String;
+          final opTs = opTsRaw is int
+              ? Hlc.fromIntTimestamp(opTsRaw)
+              : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
+          final opActor = opMap['actorId'] as String? ?? 'unknown';
 
           if (opData.containsKey('data') && opData['data'] is Map) {
             final innerData = opData['data'] as Map<String, dynamic>;
@@ -1988,22 +1990,16 @@ class GanttViewModel extends ChangeNotifier {
           return;
         }
 
-        DateTime? parseDate(dynamic value) {
-          if (value == null) return null;
-          if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
-          if (value is String) return DateTime.tryParse(value);
-          return null;
-        }
-
-        final newStart =
-            parseDate(innerData['start_date']) ?? parseDate(innerData['start']) ?? parseDate(innerData['startDate']);
-        final newEnd =
-            parseDate(innerData['end_date']) ?? parseDate(innerData['end']) ?? parseDate(innerData['endDate']);
-
         final updatedTask = existingTask.copyWith(
           name: innerData['name'] ?? existingTask.name,
-          start: newStart ?? existingTask.start,
-          end: newEnd ?? existingTask.end,
+          start: parseDate(innerData['start_date']) ??
+              parseDate(innerData['start']) ??
+              parseDate(innerData['startDate']) ??
+              existingTask.start,
+          end: parseDate(innerData['end_date']) ??
+              parseDate(innerData['end']) ??
+              parseDate(innerData['endDate']) ??
+              existingTask.end,
           lastUpdated: op.timestamp,
           isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
           isSummary: ganttType != null
@@ -2014,8 +2010,11 @@ class GanttViewModel extends ChangeNotifier {
               _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']) ?? existingTask.textColor,
           completion: (innerData['completion'] as num?)?.toDouble() ?? existingTask.completion,
           resourceId: innerData['resourceId'] as String? ?? existingTask.resourceId,
-          baselineStart: parseDate(innerData['baseline_start']) ?? existingTask.baselineStart,
-          baselineEnd: parseDate(innerData['baseline_end']) ?? existingTask.baselineEnd,
+          baselineStart: parseDate(innerData['baseline_start']) ??
+              parseDate(innerData['baselineStart']) ??
+              existingTask.baselineStart,
+          baselineEnd:
+              parseDate(innerData['baseline_end']) ?? parseDate(innerData['baselineEnd']) ?? existingTask.baselineEnd,
           notes: innerData['notes'] as String? ?? existingTask.notes,
           parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String? ?? existingTask.parentId,
           usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true
@@ -2047,32 +2046,31 @@ class GanttViewModel extends ChangeNotifier {
           print('Error processing UPDATE_TASK for $taskId: $e');
         }
       } else {
+        final start =
+            parseDate(innerData['start_date'] ?? innerData['startDate'] ?? innerData['start']) ?? DateTime.now();
+        final end = parseDate(innerData['end_date'] ?? innerData['endDate'] ?? innerData['end']) ??
+            start.add(const Duration(days: 1));
+
         final newTask = LegacyGanttTask(
           id: taskId,
           rowId: innerData['rowId'] ?? 'unknown_row',
           name: innerData['name'] ?? 'Unnamed Task',
-          start: (innerData['start_date'] ?? innerData['startDate']) != null
-              ? DateTime.fromMillisecondsSinceEpoch((innerData['start_date'] ?? innerData['startDate']) as int)
-              : DateTime.now(),
-          end: (innerData['end_date'] ?? innerData['endDate']) != null
-              ? DateTime.fromMillisecondsSinceEpoch((innerData['end_date'] ?? innerData['endDate']) as int)
-              : DateTime.now().add(const Duration(days: 1)),
+          start: start,
+          end: end,
           isSummary: (ganttType == 'summary') || (innerData['is_summary'] == true) || (innerData['isSummary'] == true),
           isMilestone: ganttType == 'milestone',
           color: _parseColor(innerData['color']),
           textColor: _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']),
           completion: (innerData['completion'] as num?)?.toDouble() ?? 0.0,
           resourceId: innerData['resourceId'] as String?,
-          baselineStart: innerData['baseline_start'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_start'] as int)
-              : null,
-          baselineEnd: innerData['baseline_end'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(innerData['baseline_end'] as int)
-              : null,
+          baselineStart:
+              parseDate(innerData['baseline_start'] ?? innerData['baselineStart'] ?? innerData['baseline_start']),
+          baselineEnd: parseDate(innerData['baseline_end'] ?? innerData['baselineEnd'] ?? innerData['baseline_end']),
           notes: innerData['notes'] as String?,
           parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String?,
           usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true,
           isAutoScheduled: innerData['is_auto_scheduled'] != false,
+          lastUpdated: op.timestamp,
         );
 
         if (_useLocalDatabase) {
@@ -2107,26 +2105,28 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
+      final start = parseDate(data['start_date'] ?? data['start'] ?? data['startDate']) ?? DateTime.now();
+      final end = parseDate(data['end_date'] ?? data['end'] ?? data['endDate']) ?? start.add(const Duration(days: 1));
+
       final newTask = LegacyGanttTask(
         id: taskId,
         rowId: data['rowId']?.toString().trim() ?? '',
         name: data['name'],
-        start: DateTime.fromMillisecondsSinceEpoch(data['start_date']),
-        end: DateTime.fromMillisecondsSinceEpoch(data['end_date']),
+        start: start,
+        end: end,
         isSummary: ganttType == 'summary' || data['is_summary'] == true,
         isMilestone: ganttType == 'milestone',
         color: _parseColor(data['color']),
         textColor: _parseColor(data['textColor']),
         completion: (data['completion'] as num?)?.toDouble() ?? 0.0,
         resourceId: data['resourceId'] as String?,
-        baselineStart:
-            data['baseline_start'] != null ? DateTime.fromMillisecondsSinceEpoch(data['baseline_start'] as int) : null,
-        baselineEnd:
-            data['baseline_end'] != null ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'] as int) : null,
+        baselineStart: parseDate(data['baseline_start'] ?? data['baselineStart']),
+        baselineEnd: parseDate(data['baseline_end'] ?? data['baselineEnd']),
         notes: data['notes'] as String?,
         parentId: data['parentId'] as String?,
         usesWorkCalendar: data['uses_work_calendar'] == true,
         isAutoScheduled: data['is_auto_scheduled'] != false,
+        lastUpdated: op.timestamp,
       );
 
       if (_useLocalDatabase) {
@@ -3335,6 +3335,19 @@ class GanttViewModel extends ChangeNotifier {
         actorId: 'local-user',
       ));
     }
+  }
+
+  DateTime? parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is String) {
+      final dt = DateTime.tryParse(value);
+      if (dt != null) return dt;
+      final ms = int.tryParse(value);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
   }
 }
 

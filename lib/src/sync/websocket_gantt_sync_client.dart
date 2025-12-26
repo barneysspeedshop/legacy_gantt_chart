@@ -153,6 +153,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
                 batchTimestamp = currentHlc;
               }
 
+              // Update local clock using receive
+              _lastHlc = _lastHlc.receive(batchTimestamp, correctedTimestamp);
+
               final op = Operation(
                 type: 'BATCH_UPDATE',
                 data: dataMap ?? {},
@@ -207,6 +210,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             } else {
               parsedTimestamp = currentHlc;
             }
+
+            // Update local clock using receive
+            _lastHlc = _lastHlc.receive(parsedTimestamp, correctedTimestamp);
 
             final op = Operation(
               type: type,

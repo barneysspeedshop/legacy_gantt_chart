@@ -1,61 +1,46 @@
-## 5.0.0-alpha.9
+## 5.0.0
 
-* **IMPROVEMENT**: Refactored **Elastic Scaling** to be **Work-Calendar Aware**. Resizing summary tasks now scales child tasks proportionally based on working days/hours rather than absolute duration, ensuring effort is preserved across weekends and holidays.
-* **FEATURE**: Enhanced **Remote Ghost Syncing** to broadcast *all* moving tasks (summary, children, dependents) in real-time, providing a complete visual representation of the drag operation to remote colleagues.
-* **IMPROVEMENT**: Updated **Ghost Visuals** for better clarity:
+🔄 Sync & Sovereignty (Major Architecture Overhaul)
+
+*   **PROTOCOL**: Standardized **Hybrid Logical Clocks (HLC)** and task serialization to use UTC consistently across all clients. Timestamps are now monotonic, unique, and causal, replacing simple wall-clock time to ensure robust data integrity across distributed, offline-first clients.
+*   **SECURITY**: Implemented **Time Traveler Mitigation**. The server now validates incoming HLCs to prevent future-dated operations from "locking" data, while strictly enforcing client-authority for valid operations.
+*   **IMPROVEMENT**: Hardened **Data Integrity**. The system now deterministically resolves conflicts using **CRDT-based rules**, preventing data corruption and ensuring eventual consistency across the cluster even after prolonged offline periods.
+*   **BREAKING**: Updated `GanttSyncClient` interface. Added `inboundProgress` and `outboundPendingCount` streams for better UI feedback during sync.
+*   **PROTOCOL**: Introduced `SYNC_METADATA` message type for transmitting total operation counts during initial sync.
+
+✨ New Features & Improvements
+
+*   **IMPROVEMENT**: Hardened synchronization logic with **Robust Date Parsing**. The system now gracefully handles various timestamp formats (ISO 8601, milliseconds, numeric strings) and applies defensive defaults to prevent 0-duration tasks during initial sync.
+*   **FEATURE**: Added **Timezone-Aware Tooltips**. When `projectTimezoneOffset` is configured, task tooltips now display both the user's local time and the designated project time.
+*   **FEATURE**: Added **Sync Progress UI** to display real-time inbound sync status and pending outbound operations count.
+*   **FIX**: Corrected **HLC Merging logic** in sync clients to ensure logical clocks correctly advance upon receiving remote operations, preventing state drift.
+*   **FIX**: Resolved an edge case in `GanttViewModel` where tasks could appear with 0 duration due to mismatched data keys (`start_date` vs `start`) or unparseable timestamps from the server.
+*   **IMPROVEMENT**: Refactored **Elastic Scaling** to be **Work-Calendar Aware**. Resizing summary tasks now scales child tasks proportionally based on working days/hours rather than absolute duration, ensuring effort is preserved across weekends and holidays.
+*   **FEATURE**: Enhanced **Remote Ghost Syncing** to broadcast *all* moving tasks (summary, children, dependents) in real-time, providing a complete visual representation of the drag operation to remote colleagues.
+*   **IMPROVEMENT**: Updated **Ghost Visuals** for better clarity:
     *   **Summary Tasks**: Now display a high-contrast angled pattern.
     *   **Milestones**: Now correctly render as diamond shapes.
     *   **Grouping**: Dragging a summary task now displays a subtle background indicating the scope of affected child rows.
-* **BETA**: Upgrade Resource Histogram to beta status. Please note that its usage is still experimental at this time. 
-* **FIX**: Resolved an interaction issue where mouse events (clicks, drags) on the **Resource Histogram** would fall through to the underlying Gantt chart.
-* **FIX**: Updated Resource Histogram logic to respect **Work Calendars**. Resource load is now correctly calculated by skipping non-working days (weekends/holidays) during both static aggregation and interactive drag operations. 
-
-* **NOTE**: We expect this to be the last release before 5.0.0 
-
-## 5.0.0-alpha.8
-
-* **FEATURE**: Implemented **Task Behaviors** for summary tasks, allowing advanced scheduling logic:
-    * **Standard**: Default behavior. Parent expands to fit children; moving parent moves children.
-    * **Static Bucket**: Parent is a fixed container. Moving the parent does *not* move the children.
-    * **Constrain**: Parent acts as a constraint. Resizing the parent pushes or clamps children to ensure they stay within bounds.
-    * **Elastic**: Resizing the parent proportionally scales the duration and positions of all child tasks.
-* **IMPROVEMENT**: Enhanced **Auto-Scheduling** logic with bidirectional constraint enforcement. Predecessors now push successors forward, and successors push predecessors backward when dependency constraints are violated, maintaining schedule integrity from both directions while preserving existing gaps.
-* **EXAMPLE FEATURE**: Added a "Behavior" submenu to the Task Context Menu in the example app, with visual check indicators for the selected state.
-* **EXAMPLE FEATURE**: Added behavior selection to the Create/Edit Task dialog in the example app.
-
-## 5.0.0-alpha.7
-
-* **FEATURE**: Use atomic batch persistence for bulk task movement (e.g. moving auto-scheduled tasks). This also fixes a potential race condition where rapid updates could cause state inconsistency.
-
-## 5.0.0-alpha.6
-
-* **FIX**: Send `isMilestone` to the backend so that its state isn't ignored by other clients
-
-## 5.0.0-alpha.5
-
-* **FIX**: Fix for an issue that prevented proper association of milestones with `parentId`
-
-## 5.0.0-alpha.4
-
-* **FEATURE**: Added `rollUpMilestones` property to `LegacyGanttChartWidget`. When enabled, milestones assigned to a summary task (via `parentId`) will be displayed on the summary task's bar.
-* **FEATURE**: Rolled-up milestones are now interactive, supporting hover tooltips and cursor changes identical to standard tasks.
-* **EXAMPLE FEATURE**: Added a "Roll Up Milestones" toggle to the example application's control panel to demonstrate the new functionality. 
-
-## 5.0.0-alpha.3
-
-* **SECURITY**: Implemented client-server clock synchronization and server-side timestamp validation to prevent future-dated operations from overwriting valid data (Time Traveler Mitigation).
-
-## 5.0.0-alpha.2
-
-* **FEATURE**: Added Sync Progress UI to display inbound sync status and pending outbound operations count.
-* **PROTOCOL**: Introduced `SYNC_METADATA` message type for transmitting total operation counts during initial sync.
-* **BREAKING**: Updated `GanttSyncClient` interface to include `inboundProgress` and `outboundPendingCount` streams.
-
-## 5.0.0-alpha.1
-
-* **ALPHA FEATURE**: Implemented the ability to invoke an "optimize schedule" function
-* **BREAKING**: Refactor `noDataWidgetBuilder` to align with package convention and reduce duplication. Use `emptyStateBuilder` to replace it
-* **BREAKINg**: Refactor `loadingIndicatorHeight` to align with package convention. Use `linearProgressHeight` to replace it
+*   **BETA**: Upgrade **Resource Histogram** to beta status. Please note that its usage is still experimental at this time. 
+*   **FIX**: Resolved an interaction issue where mouse events (clicks, drags) on the **Resource Histogram** would fall through to the underlying Gantt chart.
+*   **FIX**: Updated Resource Histogram logic to respect **Work Calendars**. Resource load is now correctly calculated by skipping non-working days (weekends/holidays) during both static aggregation and interactive drag operations. 
+*   **FEATURE**: Implemented **Task Behaviors** for summary tasks, allowing advanced scheduling logic:
+    *   **Standard**: Default behavior. Parent expands to fit children; moving parent moves children.
+    *   **Static Bucket**: Parent is a fixed container. Moving the parent does *not* move the children.
+    *   **Constrain**: Parent acts as a constraint. Resizing the parent pushes or clamps children to ensure they stay within bounds.
+    *   **Elastic**: Resizing the parent proportionally scales the duration and positions of all child tasks.
+*   **IMPROVEMENT**: Enhanced **Auto-Scheduling** logic with bidirectional constraint enforcement. Predecessors now push successors forward, and successors push predecessors backward when dependency constraints are violated, maintaining schedule integrity from both directions while preserving existing gaps.
+*   **EXAMPLE FEATURE**: Added a "Behavior" submenu to the Task Context Menu in the example app, with visual check indicators for the selected state.
+*   **EXAMPLE FEATURE**: Added behavior selection to the Create/Edit Task dialog in the example app.
+*   **FEATURE**: Use atomic batch persistence for bulk task movement (e.g. moving auto-scheduled tasks). This also fixes a potential race condition where rapid updates could cause state inconsistency.
+*   **FIX**: Send `isMilestone` to the backend so that its state isn't ignored by other clients
+*   **FIX**: Fix for an issue that prevented proper association of milestones with `parentId`
+*   **FEATURE**: Added `rollUpMilestones` property to `LegacyGanttChartWidget`. When enabled, milestones assigned to a summary task (via `parentId`) will be displayed on the summary task's bar.
+*   **FEATURE**: Rolled-up milestones are now interactive, supporting hover tooltips and cursor changes identical to standard tasks.
+*   **EXAMPLE FEATURE**: Added a "Roll Up Milestones" toggle to the example application's control panel to demonstrate the new functionality. 
+*   **ALPHA FEATURE**: Implemented the ability to invoke an "optimize schedule" function.
+*   **BREAKING**: Refactor `noDataWidgetBuilder` to align with package convention and reduce duplication. Use `emptyStateBuilder` to replace it.
+*   **BREAKING**: Refactor `loadingIndicatorHeight` to align with package convention. Use `linearProgressHeight` to replace it.
 
 ## 4.9.0
 

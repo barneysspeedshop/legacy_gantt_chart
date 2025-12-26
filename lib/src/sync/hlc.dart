@@ -20,7 +20,7 @@ class Hlc implements Comparable<Hlc> {
 
   /// Creates an HLC from a DateTime and nodeId.
   factory Hlc.fromDate(DateTime dateTime, String nodeId) =>
-      Hlc(millis: dateTime.millisecondsSinceEpoch, counter: 0, nodeId: nodeId);
+      Hlc(millis: dateTime.toUtc().millisecondsSinceEpoch, counter: 0, nodeId: nodeId);
 
   /// Creates an HLC from a legacy int timestamp.
   factory Hlc.fromIntTimestamp(int timestamp) => Hlc(millis: timestamp, counter: 0, nodeId: 'legacy');
@@ -32,27 +32,50 @@ class Hlc implements Comparable<Hlc> {
       return Hlc.fromIntTimestamp(int.parse(hlc));
     }
 
-    final parts = hlc.split('-');
-    if (parts.length < 3) {
-      throw FormatException('Invalid HLC format: $hlc');
+    // Try standard format: ISO-Counter(hex)-NodeId
+    // Counter is typically 4 hex digits.
+    // Use non-greedy match for ISO part to ensure we pick up the distinct separators
+    final standardRegex = RegExp(r'^(.+)-([0-9a-fA-F]{4})-(.+)$');
+    var match = standardRegex.firstMatch(hlc);
+
+    if (match != null) {
+      final isoTimestamp = match.group(1)!;
+      final counterString = match.group(2)!;
+      final nodeId = match.group(3)!;
+
+      // Ensure UTC parsing by appending Z if missing
+      final normalizedIso = isoTimestamp.endsWith('Z') ? isoTimestamp : '${isoTimestamp}Z';
+      final dateTime = DateTime.parse(normalizedIso);
+      return Hlc(millis: dateTime.millisecondsSinceEpoch, counter: int.parse(counterString, radix: 16), nodeId: nodeId);
     }
 
-    final lastDashIndex = hlc.lastIndexOf('-');
-    if (lastDashIndex == -1) throw FormatException('Invalid HLC format: $hlc');
+    // Try format without NodeId: ISO-Counter(hex)
+    final noNodeRegex = RegExp(r'^(.+)-([0-9a-fA-F]{4})$');
+    match = noNodeRegex.firstMatch(hlc);
 
-    final secondLastDashIndex = hlc.lastIndexOf('-', lastDashIndex - 1);
-    if (secondLastDashIndex == -1) throw FormatException('Invalid HLC format: $hlc');
+    if (match != null) {
+      final isoTimestamp = match.group(1)!;
+      final counterString = match.group(2)!;
+      try {
+        final normalizedIso = isoTimestamp.endsWith('Z') ? isoTimestamp : '${isoTimestamp}Z';
+        final dateTime = DateTime.parse(normalizedIso);
+        return Hlc(
+            millis: dateTime.millisecondsSinceEpoch, counter: int.parse(counterString, radix: 16), nodeId: 'unknown');
+      } catch (_) {
+        // Validation for date parse failure
+      }
+    }
 
-    final isoTimestamp = hlc.substring(0, secondLastDashIndex);
-    final counterString = hlc.substring(secondLastDashIndex + 1, lastDashIndex);
-    final nodeId = hlc.substring(lastDashIndex + 1);
+    // Fallback: Try parsing as pure ISO timestamp
+    try {
+      final normalizedIso = hlc.endsWith('Z') ? hlc : '${hlc}Z';
+      final dateTime = DateTime.parse(normalizedIso);
+      return Hlc(millis: dateTime.millisecondsSinceEpoch, counter: 0, nodeId: 'unknown');
+    } catch (_) {
+      // Ignore
+    }
 
-    final dateTime = DateTime.parse(isoTimestamp);
-    final millis = dateTime.millisecondsSinceEpoch;
-
-    final counter = int.parse(counterString, radix: 16);
-
-    return Hlc(millis: millis, counter: counter, nodeId: nodeId);
+    throw FormatException('Invalid HLC format: $hlc');
   }
 
   /// Generates the next HLC for a local event with the given wall time.

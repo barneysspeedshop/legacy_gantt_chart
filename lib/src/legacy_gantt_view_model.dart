@@ -174,6 +174,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// The width of the resize handles at the start and end of a task bar.
   final double resizeHandleWidth;
 
+  /// The timezone abbreviation for the project (e.g., "EST", "UTC").
+  String? projectTimezoneAbbreviation;
+
+  /// The offset of the project timezone from UTC.
+  Duration? projectTimezoneOffset;
+
   /// The synchronization client for multiplayer features.
   final GanttSyncClient? syncClient;
 
@@ -281,27 +287,26 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
 
     final taskId = actualData['taskId'] as String?;
-    final startMs = actualData['start'] as int?;
-    final endMs = actualData['end'] as int?;
+    final start = _parseDate(actualData['start']);
+    final end = _parseDate(actualData['end']);
 
     final Map<String, ({DateTime start, DateTime end})> tasks = {};
     if (actualData.containsKey('ghosts') && actualData['ghosts'] is List) {
       for (final item in actualData['ghosts']) {
         if (item is Map) {
           final tId = item['taskId'] as String?;
-          final s = item['start'] as int?;
-          final e = item['end'] as int?;
+          final s = _parseDate(item['start']);
+          final e = _parseDate(item['end']);
           if (tId != null && s != null && e != null) {
-            tasks[tId] = (start: DateTime.fromMillisecondsSinceEpoch(s), end: DateTime.fromMillisecondsSinceEpoch(e));
+            tasks[tId] = (start: s, end: e);
           }
         }
       }
     }
 
-    if (taskId != null && startMs != null && endMs != null) {
+    if (taskId != null && start != null && end != null) {
       if (!tasks.containsKey(taskId)) {
-        tasks[taskId] =
-            (start: DateTime.fromMillisecondsSinceEpoch(startMs), end: DateTime.fromMillisecondsSinceEpoch(endMs));
+        tasks[taskId] = (start: start, end: end);
       }
     }
 
@@ -343,9 +348,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void _handlePresenceUpdate(Map<String, dynamic> data, String actorId) {
     if (isDisposed) return;
     final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
-    final viewportStartMs = actualData['viewportStart'] as int?;
-    final viewportEndMs = actualData['viewportEnd'] as int?;
-    final scrollOffset = (actualData['verticalScrollOffset'] as num?)?.toDouble();
+    final viewportStart = _parseDate(actualData['viewportStart']);
+    final viewportEnd = _parseDate(actualData['viewportEnd']);
+    final verticalScrollOffset = (actualData['verticalScrollOffset'] as num?)?.toDouble();
     final name = actualData['userName'] as String?;
     final color = actualData['userColor'] as String?;
 
@@ -356,10 +361,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       start: existing?.start,
       end: existing?.end,
       lastUpdated: DateTime.now(),
-      viewportStart:
-          viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : existing?.viewportStart,
-      viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : existing?.viewportEnd,
-      verticalScrollOffset: scrollOffset ?? existing?.verticalScrollOffset,
+      viewportStart: viewportStart ?? existing?.viewportStart,
+      viewportEnd: viewportEnd ?? existing?.viewportEnd,
+      verticalScrollOffset: verticalScrollOffset ?? existing?.verticalScrollOffset,
       userName: name ?? existing?.userName,
       userColor: color ?? existing?.userColor,
     );
@@ -368,11 +372,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void _handleRemoteCursorMove(Map<String, dynamic> data, String actorId) {
     final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
-    final timeMs = actualData['time'] as int?;
+    final time = _parseDate(actualData['time']);
     final rowId = actualData['rowId'] as String?;
 
-    if (timeMs != null && rowId != null) {
-      final time = DateTime.fromMillisecondsSinceEpoch(timeMs);
+    if (time != null && rowId != null) {
       _remoteCursors[actorId] = RemoteCursor(
         userId: actorId,
         time: time,
@@ -439,6 +442,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onBulkTaskUpdate,
     WorkCalendar? workCalendar,
     bool rollUpMilestones = false,
+    this.projectTimezoneAbbreviation,
+    this.projectTimezoneOffset,
   })  : _tasks = List.from(data),
         _rollUpMilestones = rollUpMilestones,
         _workCalendar = workCalendar,
@@ -2133,9 +2138,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
           }
         }
 
-        if (resizeTooltipDateFormat != null) {
-          final startStr = resizeTooltipDateFormat!(newStart).replaceAll(' ', '\u00A0');
-          final endStr = resizeTooltipDateFormat!(newEnd).replaceAll(' ', '\u00A0');
+        if (resizeTooltipDateFormat != null || projectTimezoneOffset != null) {
+          final startStr = _formatDateTimeWithTimezone(newStart);
+          final endStr = _formatDateTimeWithTimezone(newEnd);
           tooltipText = 'Start:\u00A0$startStr\nEnd:\u00A0$endStr';
         } else {
           tooltipText =
@@ -2148,10 +2153,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         if (newStart.isAfter(newEnd.subtract(const Duration(minutes: 1)))) {
           newStart = newEnd.subtract(const Duration(minutes: 1));
         }
-        tooltipText = (resizeTooltipDateFormat != null
-                ? resizeTooltipDateFormat!(newStart)
-                : newStart.toLocal().toIso8601String().substring(0, 16))
-            .replaceAll(' ', '\u00A0');
+        tooltipText = _formatDateTimeWithTimezone(newStart);
         showTooltip = true;
         break;
       case DragMode.resizeEnd:
@@ -2159,10 +2161,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         if (newEnd.isBefore(newStart.add(const Duration(minutes: 1)))) {
           newEnd = newStart.add(const Duration(minutes: 1));
         }
-        tooltipText = (resizeTooltipDateFormat != null
-                ? resizeTooltipDateFormat!(newEnd)
-                : newEnd.toLocal().toIso8601String().substring(0, 16))
-            .replaceAll(' ', '\u00A0');
+        tooltipText = _formatDateTimeWithTimezone(newEnd);
         showTooltip = true;
         break;
       case DragMode.none:
@@ -2353,5 +2352,41 @@ class LegacyGanttViewModel extends ChangeNotifier {
       queue.addAll(nextSteps);
     }
     return false;
+  }
+
+  @visibleForTesting
+  String formatDateTimeWithTimezoneForTest(DateTime dateTime) => _formatDateTimeWithTimezone(dateTime);
+
+  String _formatDateTimeWithTimezone(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    final localStr = resizeTooltipDateFormat != null
+        ? resizeTooltipDateFormat!(localTime)
+        : localTime.toIso8601String().substring(0, 16);
+
+    if (projectTimezoneOffset != null) {
+      final projectTime = dateTime.toUtc().add(projectTimezoneOffset!);
+      final projectStr = resizeTooltipDateFormat != null
+          ? resizeTooltipDateFormat!(projectTime)
+          : projectTime.toIso8601String().substring(0, 16);
+
+      final tzAbbr = projectTimezoneAbbreviation ?? 'Project';
+      // Use non-breaking spaces for alignment and grouping
+      return "${localStr.replaceAll(' ', '\u00A0')}\u00A0(Local)\n${projectStr.replaceAll(' ', '\u00A0')}\u00A0($tzAbbr)";
+    }
+
+    return localStr.replaceAll(' ', '\u00A0');
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is String) {
+      final dt = DateTime.tryParse(value);
+      if (dt != null) return dt;
+      final ms = int.tryParse(value);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
   }
 }

@@ -21,8 +21,8 @@ class LegacyGanttTaskSegment {
   });
 
   Map<String, dynamic> toJson() => {
-        'start': start.toIso8601String(),
-        'end': end.toIso8601String(),
+        'start': start.toUtc().toIso8601String(),
+        'end': end.toUtc().toIso8601String(),
         'color': _colorToHex(color)?.toRadixString(16),
       };
 
@@ -127,8 +127,8 @@ class LegacyGanttTask {
   factory LegacyGanttTask.empty() => LegacyGanttTask(
         id: '',
         rowId: '',
-        start: DateTime(0),
-        end: DateTime(0),
+        start: DateTime.utc(0),
+        end: DateTime.utc(0),
         name: '',
       );
 
@@ -157,8 +157,8 @@ class LegacyGanttTask {
   Map<String, dynamic> toJson() => {
         'id': id,
         'rowId': rowId,
-        'start': start.toIso8601String(),
-        'end': end.toIso8601String(),
+        'start': start.toUtc().toIso8601String(),
+        'end': end.toUtc().toIso8601String(),
         'name': name,
         'color': _colorToHex(color)?.toRadixString(16),
         'textColor': _colorToHex(textColor)?.toRadixString(16),
@@ -175,8 +175,8 @@ class LegacyGanttTask {
         'lastUpdatedBy': lastUpdatedBy,
         'resourceId': resourceId,
         'parentId': parentId,
-        'baselineStart': baselineStart?.toIso8601String(),
-        'baselineEnd': baselineEnd?.toIso8601String(),
+        'baselineStart': baselineStart?.toUtc().toIso8601String(),
+        'baselineEnd': baselineEnd?.toUtc().toIso8601String(),
         'notes': notes,
         'usesWorkCalendar': usesWorkCalendar,
         'load': load,

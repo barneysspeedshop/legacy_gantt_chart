@@ -95,51 +95,53 @@ class CRDTEngine {
     return null;
   }
 
-  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) =>
-      LegacyGanttTask(
-        id: data['id'],
-        rowId: data['rowId'] ?? existing?.rowId ?? '',
-        start: data['start'] != null
-            ? DateTime.parse(data['start'])
-            : (data['startDate'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(data['startDate'])
-                : (data['start_date'] != null
-                    ? DateTime.fromMillisecondsSinceEpoch(data['start_date'])
-                    : (existing?.start ?? DateTime.now()))),
-        end: data['end'] != null
-            ? DateTime.parse(data['end'])
-            : (data['endDate'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(data['endDate'])
-                : (data['end_date'] != null
-                    ? DateTime.fromMillisecondsSinceEpoch(data['end_date'])
-                    : (existing?.end ?? DateTime.now().add(const Duration(days: 1))))),
-        name: data['name'] ?? existing?.name,
-        color: _parseColor(data['color']) ?? existing?.color,
-        textColor: _parseColor(data['text_color']) ?? existing?.textColor,
-        stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
-        originalId: data['originalId'] ?? existing?.originalId,
-        isSummary: data['isSummary'] ?? existing?.isSummary ?? false,
-        isTimeRangeHighlight: data['isTimeRangeHighlight'] ?? existing?.isTimeRangeHighlight ?? false,
-        isOverlapIndicator: data['isOverlapIndicator'] ?? existing?.isOverlapIndicator ?? false,
-        completion: (data['completion'] as num?)?.toDouble() ?? existing?.completion ?? 0.0,
-        lastUpdated: op.timestamp,
-        lastUpdatedBy: op.actorId,
-        resourceId: data['resourceId'] ?? existing?.resourceId,
-        baselineStart: data['baselineStart'] != null
-            ? DateTime.parse(data['baselineStart'])
-            : (data['baseline_start'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(data['baseline_start'])
-                : existing?.baselineStart),
-        baselineEnd: data['baselineEnd'] != null
-            ? DateTime.parse(data['baselineEnd'])
-            : (data['baseline_end'] != null
-                ? DateTime.fromMillisecondsSinceEpoch(data['baseline_end'])
-                : existing?.baselineEnd),
-        notes: data['notes'] ?? existing?.notes,
-        isMilestone: data['isMilestone'] ?? existing?.isMilestone ?? false,
-        parentId: data['parentId'] ?? existing?.parentId,
-        usesWorkCalendar: data['usesWorkCalendar'] ?? existing?.usesWorkCalendar ?? false,
-        load: (data['load'] as num?)?.toDouble() ?? existing?.load ?? 1.0,
-        isAutoScheduled: data['isAutoScheduled'] ?? existing?.isAutoScheduled,
-      );
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is String) {
+      final dt = DateTime.tryParse(value);
+      if (dt != null) return dt;
+      final ms = int.tryParse(value);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  DateTime? _parseNullableDate(dynamic value) => _parseDate(value);
+
+  LegacyGanttTask _createTaskFromOp(Operation op, LegacyGanttTask? existing, Map<String, dynamic> data) {
+    final start =
+        _parseDate(data['start'] ?? data['startDate'] ?? data['start_date']) ?? existing?.start ?? DateTime.now();
+    final end = _parseDate(data['end'] ?? data['endDate'] ?? data['end_date']) ??
+        existing?.end ??
+        start.add(const Duration(days: 1));
+
+    return LegacyGanttTask(
+      id: data['id'],
+      rowId: data['rowId'] ?? existing?.rowId ?? '',
+      start: start,
+      end: end,
+      name: data['name'] ?? existing?.name,
+      color: _parseColor(data['color']) ?? existing?.color,
+      textColor: _parseColor(data['text_color']) ?? existing?.textColor,
+      stackIndex: data['stackIndex'] ?? existing?.stackIndex ?? 0,
+      originalId: data['originalId'] ?? existing?.originalId,
+      isSummary: data['isSummary'] ?? existing?.isSummary ?? false,
+      isTimeRangeHighlight: data['isTimeRangeHighlight'] ?? existing?.isTimeRangeHighlight ?? false,
+      isOverlapIndicator: data['isOverlapIndicator'] ?? existing?.isOverlapIndicator ?? false,
+      completion: (data['completion'] as num?)?.toDouble() ?? existing?.completion ?? 0.0,
+      lastUpdated: op.timestamp,
+      lastUpdatedBy: op.actorId,
+      resourceId: data['resourceId'] ?? existing?.resourceId,
+      baselineStart: _parseNullableDate(data['baselineStart'] ?? data['baseline_start'] ?? existing?.baselineStart),
+      baselineEnd: _parseNullableDate(data['baselineEnd'] ?? data['baseline_end'] ?? existing?.baselineEnd),
+      notes: data['notes'] ?? existing?.notes,
+      isMilestone: data['isMilestone'] ?? existing?.isMilestone ?? false,
+      parentId: data['parentId'] ?? existing?.parentId,
+      usesWorkCalendar: data['usesWorkCalendar'] ?? existing?.usesWorkCalendar ?? false,
+      load: (data['load'] as num?)?.toDouble() ?? existing?.load ?? 1.0,
+      isAutoScheduled: data['isAutoScheduled'] ?? existing?.isAutoScheduled,
+    );
+  }
 }

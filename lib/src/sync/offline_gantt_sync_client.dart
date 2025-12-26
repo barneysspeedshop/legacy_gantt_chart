@@ -184,19 +184,20 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           }
           final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
 
-          if (dataMap.containsKey('start') && dataMap['start'] is String) {
-            try {
-              final dt = DateTime.parse(dataMap['start']);
-              dataMap['start_date'] = dt.millisecondsSinceEpoch;
+          // Legacy: Normalize data if it uses old keys or formats, but keep them robust
+          if (dataMap.containsKey('start')) {
+            final startVal = dataMap['start'];
+            if (startVal is String || startVal is int) {
+              dataMap['start_date'] = startVal;
               dataMap.remove('start');
-            } catch (_) {}
+            }
           }
-          if (dataMap.containsKey('end') && dataMap['end'] is String) {
-            try {
-              final dt = DateTime.parse(dataMap['end']);
-              dataMap['end_date'] = dt.millisecondsSinceEpoch;
+          if (dataMap.containsKey('end')) {
+            final endVal = dataMap['end'];
+            if (endVal is String || endVal is int) {
+              dataMap['end_date'] = endVal;
               dataMap.remove('end');
-            } catch (_) {}
+            }
           }
 
           final op = Operation(
@@ -263,19 +264,20 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       return;
     }
 
-    if (operation.data.containsKey('start') && operation.data['start'] is String) {
-      try {
-        final dt = DateTime.parse(operation.data['start']);
-        operation.data['start_date'] = dt.millisecondsSinceEpoch;
+    // Legacy: Normalize data if it uses old keys or formats, but keep them robust
+    if (operation.data.containsKey('start')) {
+      final startVal = operation.data['start'];
+      if (startVal is String || startVal is int) {
+        operation.data['start_date'] = startVal;
         operation.data.remove('start');
-      } catch (_) {}
+      }
     }
-    if (operation.data.containsKey('end') && operation.data['end'] is String) {
-      try {
-        final dt = DateTime.parse(operation.data['end']);
-        operation.data['end_date'] = dt.millisecondsSinceEpoch;
+    if (operation.data.containsKey('end')) {
+      final endVal = operation.data['end'];
+      if (endVal is String || endVal is int) {
+        operation.data['end_date'] = endVal;
         operation.data.remove('end');
-      } catch (_) {}
+      }
     }
 
     await _queueOperation(operation);

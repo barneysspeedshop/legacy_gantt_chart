@@ -150,3 +150,4 @@ pubspec.lock
 /web/.dart_tool/
 /web/lib/
 example/.flutter-plugins-dependencies
+.flutter-plugins-dependencies
