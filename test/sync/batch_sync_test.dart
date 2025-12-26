@@ -5,6 +5,7 @@ import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'dart:convert';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 // Minimal implementation of WebSocketChannel for testing
 class TestWebSocketChannel with StreamChannelMixin implements WebSocketChannel {
@@ -90,8 +91,8 @@ void main() {
       // It is set synchronously in connect.
 
       final ops = [
-        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: 100, actorId: 'user1'),
-        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: 101, actorId: 'user1'),
+        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
+        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
       ];
 
       await client.sendOperations(ops);
@@ -112,8 +113,8 @@ void main() {
       // Should have 'subscribe'
 
       final ops = [
-        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: 100, actorId: 'user1'),
-        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: 101, actorId: 'user1'),
+        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
+        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
       ];
 
       await client.sendOperations(ops);
@@ -148,18 +149,18 @@ void main() {
             {
               'type': 'INSERT_TASK',
               'data': {'id': '1'},
-              'timestamp': 100,
+              'timestamp': Hlc.fromIntTimestamp(100).toString(),
               'actorId': 'server'
             },
             {
               'type': 'UPDATE_TASK',
               'data': {'id': '2'},
-              'timestamp': 101,
+              'timestamp': Hlc.fromIntTimestamp(101).toString(),
               'actorId': 'server'
             },
           ]
         },
-        'timestamp': 200,
+        'timestamp': Hlc.fromIntTimestamp(200).toString(),
         'actorId': 'server'
       });
 

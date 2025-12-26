@@ -10,7 +10,9 @@ import 'models/remote_cursor.dart';
 import 'models/remote_ghost.dart';
 import 'sync/gantt_sync_client.dart';
 import 'sync/websocket_gantt_sync_client.dart';
+
 import 'sync/crdt_engine.dart';
+import 'sync/hlc.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
@@ -222,11 +224,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Timer? _ghostUpdateThrottle;
   static const Duration _ghostThrottleDuration = Duration(milliseconds: 50);
 
-  int get _currentTimestamp {
+  Hlc get _currentTimestamp {
     if (syncClient != null && syncClient is WebSocketGanttSyncClient) {
-      return (syncClient as WebSocketGanttSyncClient).correctedTimestamp;
+      return (syncClient as WebSocketGanttSyncClient).currentHlc;
     }
-    return DateTime.now().millisecondsSinceEpoch;
+    return Hlc(millis: DateTime.now().millisecondsSinceEpoch, counter: 0, nodeId: 'local-vm');
   }
 
   void _sendGhostUpdate(String taskId, DateTime start, DateTime end) {
@@ -632,8 +634,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final localTask = _tasks.firstWhere((t) => t.id == incomingTask.id, orElse: () => LegacyGanttTask.empty());
 
       if (localTask.id.isNotEmpty) {
-        final localProps = localTask.lastUpdated ?? 0;
-        final incomingProps = incomingTask.lastUpdated ?? 0;
+        final localProps = localTask.lastUpdated;
+        final incomingProps = incomingTask.lastUpdated;
 
         if (localProps > incomingProps) {
           return localTask;
@@ -1293,7 +1295,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final task = data.firstWhere((t) => t.id == taskId, orElse: () => LegacyGanttTask.empty());
       if (task.id.isEmpty) continue;
 
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final now = syncClient?.currentHlc ?? Hlc.fromDate(DateTime.now(), 'local');
       final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
       final index = _tasks.indexWhere((t) => t.id == taskId);
       if (index != -1) {
@@ -1309,7 +1311,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
               'start': newStart.toIso8601String(),
               'end': newEnd.toIso8601String(),
             },
-            timestamp: DateTime.now().millisecondsSinceEpoch,
+            timestamp: now,
             actorId: 'user');
         opsToSend.add(op);
       }

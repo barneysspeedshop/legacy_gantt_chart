@@ -5,6 +5,7 @@ import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 class MockGanttSyncClient extends GanttSyncClient {
   final _controller = StreamController<Operation>.broadcast();
@@ -17,6 +18,11 @@ class MockGanttSyncClient extends GanttSyncClient {
   Future<void> sendOperation(Operation operation) async {
     sentOperations.add(operation);
   }
+
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 
   @override
   Future<List<Operation>> getInitialState() async => [];
@@ -110,7 +116,7 @@ void main() {
           'time': DateTime(2023, 1, 1, 3).millisecondsSinceEpoch,
           'rowId': 'r1',
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: Hlc.fromDate(DateTime.now(), 'mock'),
         actorId: 'remote_user_1',
       );
 

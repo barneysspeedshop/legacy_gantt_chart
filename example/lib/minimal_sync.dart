@@ -174,7 +174,7 @@ class _MinimalSyncViewState extends State<MinimalSyncView> {
         'end': DateTime.now().add(const Duration(hours: 4)).toIso8601String(),
         'rowId': 'r1',
       },
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: Hlc.fromDate(DateTime.now(), 'minimal-client'),
       actorId: 'minimal-client',
     );
     try {
@@ -205,7 +205,7 @@ class _MinimalSyncViewState extends State<MinimalSyncView> {
           'start': start.toIso8601String(),
           'end': end.toIso8601String(),
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: Hlc.fromDate(DateTime.now(), 'minimal-client'),
         actorId: 'minimal-client',
       );
       _client!.sendOperation(op);

@@ -97,7 +97,12 @@ void main() {
         'gantt_type': 'milestone',
       };
 
-      final envelope = {'type': 'UPDATE_TASK', 'data': serverData, 'timestamp': 1000, 'actorId': 'user-1'};
+      final envelope = {
+        'type': 'UPDATE_TASK',
+        'data': serverData,
+        'timestamp': Hlc.fromIntTimestamp(1000).toString(),
+        'actorId': 'user-1'
+      };
 
       // Emit incoming message
       incomingController.add(jsonEncode(envelope));
@@ -123,7 +128,12 @@ void main() {
         'rowId': 'r1',
       };
 
-      final envelope = {'type': 'UPDATE_TASK', 'data': opData, 'timestamp': 1000, 'actorId': 'user-1'};
+      final envelope = {
+        'type': 'UPDATE_TASK',
+        'data': opData,
+        'timestamp': Hlc.fromIntTimestamp(1000).toString(),
+        'actorId': 'user-1'
+      };
 
       // Emit incoming message
       incomingController.add(jsonEncode(envelope));
@@ -163,7 +173,7 @@ void main() {
       final op = Operation(
         type: 'UPDATE',
         data: {'foo': 'bar'},
-        timestamp: 12345,
+        timestamp: Hlc.fromIntTimestamp(12345),
         actorId: 'me',
       );
 
@@ -187,7 +197,7 @@ void main() {
       final messagesFuture = outgoingController.stream.take(2).toList();
       client.connect('tenant-123');
 
-      final op = Operation(type: 'INSERT', data: {}, timestamp: 1, actorId: 'me');
+      final op = Operation(type: 'INSERT', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'me');
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
@@ -204,12 +214,34 @@ void main() {
       final messagesFuture = outgoingController.stream.take(2).toList();
       client.connect('tenant-123');
 
-      final op = Operation(type: 'DELETE', data: {}, timestamp: 1, actorId: 'me');
+      final op = Operation(type: 'DELETE', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'me');
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
       final envelope = jsonDecode(messages[1] as String);
       expect(envelope['type'], 'DELETE_TASK');
+    });
+
+    test('currentHlc produces monotonic timestamps', () async {
+      client = WebSocketGanttSyncClient(
+        uri: Uri.parse('ws://localhost'),
+        authToken: 'test-token',
+        channelFactory: mockChannelFactory,
+      );
+      // Wait for initial sync/connect logic if any (none required for currentHlc access)
+
+      final hlc1 = client.currentHlc;
+      final hlc2 = client.currentHlc;
+      final hlc3 = client.currentHlc;
+
+      // Check strict ordering
+      expect(hlc1 < hlc2, isTrue, reason: 'HLC1 should be less than HLC2');
+      expect(hlc2 < hlc3, isTrue, reason: 'HLC2 should be less than HLC3');
+
+      // Check logic: if time didn't advance, counter should increment
+      if (hlc1.millis == hlc2.millis) {
+        expect(hlc2.counter, equals(hlc1.counter + 1));
+      }
     });
   });
 }

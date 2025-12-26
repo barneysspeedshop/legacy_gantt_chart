@@ -263,6 +263,13 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Hlc get _currentHlc {
+    if (_syncClient != null) {
+      return _syncClient!.currentHlc;
+    }
+    return Hlc.fromDate(DateTime.now(), 'local');
+  }
+
   Future<void> _processLocalData() async {
     if (_allGanttTasks.isEmpty) {
       _isLoading = false;
@@ -427,7 +434,7 @@ class GanttViewModel extends ChangeNotifier {
           'propagates_move_to_children': newTask.propagatesMoveToChildren,
           'resize_policy': newTask.resizePolicy.index,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -465,7 +472,7 @@ class GanttViewModel extends ChangeNotifier {
           'propagates_move_to_children': task.propagatesMoveToChildren,
           'resize_policy': task.resizePolicy.index,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user', // Should ideally represent the current user
       ));
     }
@@ -655,7 +662,7 @@ class GanttViewModel extends ChangeNotifier {
       opsToSend.add(Operation(
         type: 'RESET_DATA',
         data: {},
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
       for (final task in tasks) {
@@ -688,7 +695,7 @@ class GanttViewModel extends ChangeNotifier {
               'parentId': task.parentId,
             }
           },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
@@ -700,7 +707,7 @@ class GanttViewModel extends ChangeNotifier {
             'successorTaskId': dep.successorTaskId,
             'dependency_type': dep.type.name,
           },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
@@ -749,7 +756,7 @@ class GanttViewModel extends ChangeNotifier {
               'isExpanded': isExpanded,
             }
           },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
 
@@ -765,7 +772,7 @@ class GanttViewModel extends ChangeNotifier {
                 'isExpanded': true,
               }
             },
-            timestamp: DateTime.now().millisecondsSinceEpoch,
+            timestamp: _currentHlc,
             actorId: 'local-user',
           ));
         }
@@ -1701,7 +1708,7 @@ class GanttViewModel extends ChangeNotifier {
               'userName': _currentUsername ?? 'User ${_syncClient?.hashCode ?? "Me"}',
               'userColor': '#FF0000',
             },
-            timestamp: DateTime.now().millisecondsSinceEpoch,
+            timestamp: _currentHlc,
             actorId: 'me',
           ));
         } catch (e) {
@@ -1835,15 +1842,15 @@ class GanttViewModel extends ChangeNotifier {
       _broadcastPresence();
       notifyListeners();
 
-      if (wsClientToConnect != null) {
-        int? lastSynced;
-        if (_useLocalDatabase) {
-          lastSynced = await _localRepository.getLastServerSyncTimestamp();
-        }
-        wsClientToConnect.connect(tenantId, lastSyncedTimestamp: lastSynced);
-      }
+      final lastSyncedHlc = await _localRepository.getLastServerSyncTimestamp();
+      print('Connecting with lastSyncedHlc: $lastSyncedHlc');
+      wsClientToConnect?.connect(tenantId, lastSyncedTimestamp: lastSyncedHlc);
+
+      notifyListeners();
     } catch (e) {
-      print('Sync connection error: $e');
+      print('Connection failed: $e');
+      _isSyncConnected = false;
+      notifyListeners();
       rethrow;
     }
   }
@@ -1887,7 +1894,8 @@ class GanttViewModel extends ChangeNotifier {
           final opMap = opEnv as Map<String, dynamic>;
           final opType = opMap['type'] as String;
           var opData = opMap['data'] as Map<String, dynamic>;
-          final opTs = opMap['timestamp'] as int;
+          final opTsRaw = opMap['timestamp'];
+          final opTs = opTsRaw is int ? Hlc.fromIntTimestamp(opTsRaw) : Hlc.parse(opTsRaw as String);
           final opActor = opMap['actorId'] as String;
 
           if (opData.containsKey('data') && opData['data'] is Map) {
@@ -1976,7 +1984,7 @@ class GanttViewModel extends ChangeNotifier {
       if (sourceIndex != -1) {
         final existingTask = _allGanttTasks[sourceIndex];
 
-        if (existingTask.lastUpdated != null && op.timestamp <= existingTask.lastUpdated!) {
+        if (op.timestamp <= existingTask.lastUpdated) {
           return;
         }
 
@@ -2094,7 +2102,7 @@ class GanttViewModel extends ChangeNotifier {
       final existingIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
       if (existingIndex != -1) {
         final existing = _allGanttTasks[existingIndex];
-        if (existing.lastUpdated != null && op.timestamp <= existing.lastUpdated!) {
+        if (op.timestamp <= existing.lastUpdated) {
           return;
         }
       }
@@ -2145,7 +2153,7 @@ class GanttViewModel extends ChangeNotifier {
           await _localRepository.insertTasks(batchTasks);
           batchTasks.clear();
         }
-        await _localRepository.deleteTask(taskId);
+        await _localRepository.deleteTask(taskId, _currentHlc);
       }
 
       _ganttTasks.removeWhere((t) => t.id == taskId);
@@ -2209,7 +2217,7 @@ class GanttViewModel extends ChangeNotifier {
           await _localRepository.insertDependencies(batchDependencies);
           batchDependencies.clear();
         }
-        await _localRepository.deleteDependency(pred, succ);
+        await _localRepository.deleteDependency(data['predecessorTaskId'], data['successorTaskId'], _currentHlc);
         if (notify) await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
@@ -2224,7 +2232,7 @@ class GanttViewModel extends ChangeNotifier {
           await _localRepository.insertDependencies(batchDependencies);
           batchDependencies.clear();
         }
-        await _localRepository.deleteDependenciesForTask(taskId);
+        await _localRepository.deleteDependenciesForTask(taskId, _currentHlc);
         if (notify) await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
@@ -2267,7 +2275,7 @@ class GanttViewModel extends ChangeNotifier {
             await _localRepository.insertResources(batchResources);
             batchResources.clear();
           }
-          await _localRepository.deleteResource(id);
+          await _localRepository.deleteResource(id, _currentHlc);
         }
         _localResources.removeWhere((r) => r.id == id);
         if (notify) await _processLocalData();
@@ -2312,8 +2320,7 @@ class GanttViewModel extends ChangeNotifier {
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   Future<void> handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) async {
     if (_useLocalDatabase) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
+      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: _currentHlc);
       await _localRepository.insertOrUpdateTask(updatedTask);
 
       final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
@@ -2368,7 +2375,7 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleBatchTaskUpdate(List<(LegacyGanttTask, DateTime, DateTime)> updates) async {
     debugPrint(
         '${DateTime.now().toIso8601String()} GanttViewModel: handleBatchTaskUpdate received ${updates.length} updates');
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _currentHlc;
     bool needsCalculations = false;
     final List<LegacyGanttTask> dbUpdates = [];
 
@@ -2503,7 +2510,7 @@ class GanttViewModel extends ChangeNotifier {
           'is_summary': newTask.isSummary,
           'uses_work_calendar': newTask.usesWorkCalendar,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -2714,7 +2721,7 @@ class GanttViewModel extends ChangeNotifier {
         _ganttScrollController.jumpTo(predictedNewMaxScroll);
         item.isExpanded = !item.isExpanded;
         if (_useLocalDatabase) {
-          _localRepository.updateResourceExpansion(item.id, item.isExpanded);
+          _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
         }
         if (_syncClient != null) {
           final resource = _localResources.firstWhereOrNull((r) => r.id == item.id);
@@ -2730,7 +2737,7 @@ class GanttViewModel extends ChangeNotifier {
           _syncClient!.sendOperation(Operation(
             type: 'INSERT_RESOURCE',
             data: data,
-            timestamp: DateTime.now().millisecondsSinceEpoch,
+            timestamp: _currentHlc,
             actorId: 'local-user',
           ));
         }
@@ -2742,7 +2749,7 @@ class GanttViewModel extends ChangeNotifier {
     item.isExpanded = !item.isExpanded;
 
     if (_useLocalDatabase) {
-      _localRepository.updateResourceExpansion(item.id, item.isExpanded);
+      _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
     }
     if (_syncClient != null) {
       final resource = _localResources.firstWhereOrNull((r) => r.id == item.id);
@@ -2758,7 +2765,7 @@ class GanttViewModel extends ChangeNotifier {
       _syncClient!.sendOperation(Operation(
         type: 'INSERT_RESOURCE',
         data: data,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -2848,7 +2855,7 @@ class GanttViewModel extends ChangeNotifier {
           'rowId': newTask.rowId,
           'is_summary': newTask.isSummary,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -2859,7 +2866,7 @@ class GanttViewModel extends ChangeNotifier {
     if (_apiResponse == null) return;
 
     if (_useLocalDatabase) {
-      _localRepository.deleteTask(task.id);
+      _localRepository.deleteTask(task.id, _currentHlc);
     } else {
       final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
       final newDependencies =
@@ -2877,7 +2884,7 @@ class GanttViewModel extends ChangeNotifier {
         data: {
           'id': task.id,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -2885,23 +2892,23 @@ class GanttViewModel extends ChangeNotifier {
     final remainingTasksInRow = _allGanttTasks.where((t) => t.rowId == task.rowId && t.id != task.id).length;
     if (remainingTasksInRow == 0 && !_showEmptyParentRows) {
       if (_useLocalDatabase) {
-        _localRepository.deleteResource(task.rowId);
+        _localRepository.deleteResource(task.rowId, _currentHlc);
       }
       if (_syncClient != null) {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_RESOURCE',
           data: {'id': task.rowId},
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
       if (_useLocalDatabase) {
-        _localRepository.deleteResource(task.rowId);
+        _localRepository.deleteResource(task.rowId, _currentHlc);
       }
     }
 
     if (_useLocalDatabase) {
-      _localRepository.deleteTask(task.id);
+      _localRepository.deleteTask(task.id, _currentHlc);
     } else {
       final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
       final newDependencies =
@@ -2919,7 +2926,7 @@ class GanttViewModel extends ChangeNotifier {
         data: {
           'id': task.id,
         },
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
@@ -3012,7 +3019,7 @@ class GanttViewModel extends ChangeNotifier {
         start: updatedTaskData.start,
         end: updatedTaskData.end,
         completion: updatedTaskData.completion,
-        lastUpdated: DateTime.now().millisecondsSinceEpoch,
+        lastUpdated: _currentHlc,
       );
       await _updateMultipleTasks([updatedTask]);
     }
@@ -3027,13 +3034,13 @@ class GanttViewModel extends ChangeNotifier {
       final index = newTasks.indexWhere((t) => t.id == updatedTask.id);
       if (index != -1) {
         final originalTask = newTasks[index];
-        final now = DateTime.now().millisecondsSinceEpoch;
+
         newTasks[index] = originalTask.copyWith(
           name: updatedTask.name,
           start: updatedTask.start,
           end: updatedTask.end,
           completion: updatedTask.completion,
-          lastUpdated: updatedTask.lastUpdated ?? now,
+          lastUpdated: updatedTask.lastUpdated,
         );
         final parentResource =
             _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == originalTask.rowId));
@@ -3074,9 +3081,11 @@ class GanttViewModel extends ChangeNotifier {
     final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
     if (_useLocalDatabase) {
       for (final task in tasksToDelete) {
-        _localRepository.deleteTask(task.id);
+        _localRepository.deleteTask(task.id, _currentHlc);
       }
-      resourcesToDelete.forEach(_localRepository.deleteResource);
+      for (final id in resourcesToDelete) {
+        _localRepository.deleteResource(id, _currentHlc);
+      }
     }
 
     if (_syncClient != null) {
@@ -3084,7 +3093,7 @@ class GanttViewModel extends ChangeNotifier {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE',
           data: {'id': task.id},
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
@@ -3092,7 +3101,7 @@ class GanttViewModel extends ChangeNotifier {
         _syncClient!.sendOperation(Operation(
           type: 'DELETE_RESOURCE',
           data: {'id': resId},
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
@@ -3216,7 +3225,7 @@ class GanttViewModel extends ChangeNotifier {
             'successorTaskId': newDependency.successorTaskId,
             'type': newDependency.type.name,
           },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
@@ -3257,14 +3266,14 @@ class GanttViewModel extends ChangeNotifier {
             'predecessorTaskId': dependency.predecessorTaskId,
             'successorTaskId': dependency.successorTaskId,
           },
-          timestamp: DateTime.now().millisecondsSinceEpoch,
+          timestamp: _currentHlc,
           actorId: 'local-user',
         ));
       }
 
       if (_useLocalDatabase) {
         _localRepository
-            .deleteDependency(dependency.predecessorTaskId, dependency.successorTaskId)
+            .deleteDependency(dependency.predecessorTaskId, dependency.successorTaskId, _currentHlc)
             .then((_) => notifyListeners());
       } else {
         _dependencies = newList;
@@ -3279,13 +3288,13 @@ class GanttViewModel extends ChangeNotifier {
       _syncClient!.sendOperation(Operation(
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': task.id},
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }
 
     if (_useLocalDatabase) {
-      _localRepository.deleteDependenciesForTask(task.id).then((_) => notifyListeners());
+      _localRepository.deleteDependenciesForTask(task.id, _currentHlc).then((_) => notifyListeners());
     } else {
       final initialCount = _dependencies.length;
       final newList =
@@ -3322,7 +3331,7 @@ class GanttViewModel extends ChangeNotifier {
       await _syncClient!.sendOperation(Operation(
         type: 'OPTIMIZE_SCHEDULE',
         data: {}, // No payload needed, server fetches tasks
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: _currentHlc,
         actorId: 'local-user',
       ));
     }

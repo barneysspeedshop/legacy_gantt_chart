@@ -21,6 +21,11 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Future<List<Operation>> getInitialState() async => [];
 
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
+
   @override
   Stream<int> get outboundPendingCount => Stream.value(0);
 
@@ -60,7 +65,7 @@ void main() {
     final op = Operation(
       type: 'GHOST_UPDATE',
       data: payload,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: Hlc.fromDate(DateTime.now(), 'user1'),
       actorId: 'user1',
     );
 
@@ -106,7 +111,7 @@ void main() {
     final op = Operation(
       type: 'GHOST_UPDATE',
       data: payload,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: Hlc.fromDate(DateTime.now(), 'user2'),
       actorId: 'user2',
     );
 

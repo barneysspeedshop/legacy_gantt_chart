@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/sync/crdt_engine.dart';
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 class MockGanttSyncClient implements GanttSyncClient {
   final _controller = StreamController<Operation>.broadcast();
@@ -23,6 +24,11 @@ class MockGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<List<Operation>> getInitialState() async => [];
+
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 
   @override
   Stream<int> get outboundPendingCount => Stream.value(0);
@@ -63,7 +69,7 @@ void main() {
           'end': DateTime(2023, 1, 6).toIso8601String(),
           'name': 'Task 1 Updated',
         },
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'user1',
       );
 
@@ -73,7 +79,7 @@ void main() {
       expect(result.first.start, DateTime(2023, 1, 2));
       expect(result.first.end, DateTime(2023, 1, 6));
       expect(result.first.name, 'Task 1 Updated');
-      expect(result.first.lastUpdated, 100);
+      expect(result.first.lastUpdated, Hlc.fromIntTimestamp(100));
       expect(result.first.lastUpdatedBy, 'user1');
     });
 
@@ -84,7 +90,7 @@ void main() {
         start: DateTime(2023, 1, 2),
         end: DateTime(2023, 1, 6),
         name: 'Task 1 Updated',
-        lastUpdated: 200,
+        lastUpdated: Hlc.fromIntTimestamp(200),
         lastUpdatedBy: 'user1',
       );
 
@@ -97,7 +103,7 @@ void main() {
           'end': DateTime(2023, 1, 5).toIso8601String(),
           'name': 'Task 1 Old',
         },
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'user2',
       );
 
@@ -118,7 +124,7 @@ void main() {
           'end': DateTime(2023, 1, 5).toIso8601String(),
           'name': 'Task 2',
         },
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'user1',
       );
 

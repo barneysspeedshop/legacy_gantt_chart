@@ -20,8 +20,9 @@ void main() {
 
     test('optimizeSchedule sends OPTIMIZE_SCHEDULE operation', () async {
       // Arrange
-      registerFallbackValue(Operation(type: 'dummy', data: {}, timestamp: 0, actorId: 'dummy'));
+      registerFallbackValue(Operation(type: 'dummy', data: {}, timestamp: Hlc.fromIntTimestamp(0), actorId: 'dummy'));
       when(() => mockSyncClient.sendOperation(any())).thenAnswer((_) async {});
+      when(() => mockSyncClient.currentHlc).thenReturn(Hlc.zero);
 
       // Act
       await viewModel.optimizeSchedule();

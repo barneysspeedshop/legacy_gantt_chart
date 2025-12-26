@@ -41,7 +41,7 @@ void main() {
 
     // 4. Simulate Remote Update (Update DB directly)
     // Expand p1
-    await repo.updateResourceExpansion('p1', true);
+    await repo.updateResourceExpansion('p1', true, Hlc.fromDate(DateTime.now(), 'test'));
 
     // Wait for listener to fire
     await Future.delayed(const Duration(milliseconds: 500));

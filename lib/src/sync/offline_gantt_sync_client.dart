@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:synchronized/synchronized.dart';
-import 'package:sqlite_crdt/sqlite_crdt.dart';
+import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'gantt_sync_client.dart';
 import 'websocket_gantt_sync_client.dart';
+import 'hlc.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
   WebSocketGanttSyncClient? _innerClient;
@@ -78,7 +79,8 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type TEXT,
             data TEXT,
-            timestamp INTEGER,
+            data TEXT,
+            timestamp TEXT,
             actor_id TEXT
           )
         ''');
@@ -93,6 +95,14 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   @override
   Stream<SyncProgress> get inboundProgress =>
       _innerClient?.inboundProgress ?? Stream.value(const SyncProgress(processed: 0, total: 0));
+
+  @override
+  Hlc get currentHlc {
+    if (_innerClient != null) {
+      return _innerClient!.currentHlc;
+    }
+    return Hlc.fromDate(DateTime.now(), 'offline-client');
+  }
 
   final _outboundPendingCountController = StreamController<int>.broadcast();
 
@@ -192,7 +202,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           final op = Operation(
             type: row['type'] as String,
             data: dataMap,
-            timestamp: row['timestamp'] as int,
+            timestamp: Hlc.parse(row['timestamp'] as String),
             actorId: row['actor_id'] as String,
           );
           opsToSend.add(op);
@@ -313,7 +323,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
         [
           operation.type,
           jsonEncode(operation.data),
-          operation.timestamp,
+          operation.timestamp.toString(),
           operation.actorId,
         ],
       );
@@ -332,7 +342,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           [
             operation.type,
             jsonEncode(operation.data),
-            operation.timestamp,
+            operation.timestamp.toString(),
             operation.actorId,
           ],
         );

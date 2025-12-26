@@ -32,8 +32,12 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Stream<SyncProgress> get inboundProgress => Stream.value(const SyncProgress(processed: 0, total: 0));
 
-  /// Simulates an incoming operation from another user.
   void simulateIncomingOperation(Operation op) {
     _operationController.add(op);
   }
+
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock-client');
 }

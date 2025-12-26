@@ -17,6 +17,11 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Stream<SyncProgress> get inboundProgress => const Stream.empty();
 
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
+
   @override
   Stream<int> get outboundPendingCount => const Stream.empty();
 
@@ -52,7 +57,7 @@ void main() {
         (i) => Operation(
               type: 'INSERT_TASK',
               data: {'id': 'task_$i', 'name': 'Task $i', 'rowId': 'row_1', 'start_date': 0, 'end_date': 1000},
-              timestamp: i,
+              timestamp: Hlc.fromIntTimestamp(i),
               actorId: 'test',
             ));
 

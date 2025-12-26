@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'sync_stats.dart';
 export 'sync_stats.dart';
 
+import 'hlc.dart';
+
 /// Represents a single operation in the CRDT system.
 class Operation {
   final String type;
   final Map<String, dynamic> data;
-  final int timestamp;
+  final Hlc timestamp;
   final String actorId;
 
   Operation({
@@ -21,16 +23,28 @@ class Operation {
   Map<String, dynamic> toJson() => {
         'type': type,
         'data': data,
-        'timestamp': timestamp,
+        'timestamp': timestamp.toString(),
         'actorId': actorId,
       };
 
-  factory Operation.fromJson(Map<String, dynamic> json) => Operation(
-        type: json['type'] as String,
-        data: json['data'] as Map<String, dynamic>,
-        timestamp: json['timestamp'] as int,
-        actorId: json['actorId'] as String,
-      );
+  factory Operation.fromJson(Map<String, dynamic> json) {
+    Hlc parsedTimestamp;
+    final rawTimestamp = json['timestamp'];
+    if (rawTimestamp is String) {
+      parsedTimestamp = Hlc.parse(rawTimestamp);
+    } else if (rawTimestamp is int) {
+      parsedTimestamp = Hlc(millis: rawTimestamp, counter: 0, nodeId: 'legacy');
+    } else {
+      parsedTimestamp = Hlc.zero;
+    }
+
+    return Operation(
+      type: json['type'] as String,
+      data: json['data'] as Map<String, dynamic>,
+      timestamp: parsedTimestamp,
+      actorId: json['actorId'] as String,
+    );
+  }
 
   @override
   bool operator ==(Object other) {
@@ -74,5 +88,10 @@ abstract class GanttSyncClient {
   Stream<int> get outboundPendingCount;
 
   /// Stream of inbound sync progress.
+  /// Stream of inbound sync progress.
   Stream<SyncProgress> get inboundProgress;
+
+  /// Returns the current Hybrid Logical Clock timestamp.
+  /// Implementations should return the latest known HLC, creating one if necessary.
+  Hlc get currentHlc;
 }

@@ -20,10 +20,13 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
   Stream<bool> get connectionStateStream => _connectionStateController.stream;
 
   @override
-  void connect(String tenantId, {int? lastSyncedTimestamp}) {
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {
     isConnected = true;
     _connectionStateController.add(true);
   }
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'fake');
 
   @override
   Future<void> sendOperation(Operation op) async {

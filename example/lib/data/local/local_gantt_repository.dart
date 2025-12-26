@@ -8,6 +8,14 @@ import 'gantt_db.dart';
 class LocalGanttRepository {
   final _lock = Lock();
 
+  /// Parse helper for mixed int/String column
+  Hlc? _parseHlc(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return Hlc.fromIntTimestamp(value);
+    if (value is String) return Hlc.parse(value);
+    return null;
+  }
+
   Future<void> init() async {
     await GanttDb.db;
   }
@@ -76,7 +84,7 @@ class LocalGanttRepository {
             task.isSummary ? 1 : 0,
             task.isMilestone ? 1 : 0,
             task.resourceId ?? task.originalId,
-            task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            task.lastUpdated.toString(),
             task.completion,
             task.baselineStart?.toIso8601String(),
             task.baselineEnd?.toIso8601String(),
@@ -106,7 +114,7 @@ class LocalGanttRepository {
             task.isSummary ? 1 : 0,
             task.isMilestone ? 1 : 0,
             task.resourceId ?? task.originalId,
-            task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            task.lastUpdated.toString(),
             task.completion,
             task.baselineStart?.toIso8601String(),
             task.baselineEnd?.toIso8601String(),
@@ -165,7 +173,7 @@ class LocalGanttRepository {
           task.isSummary ? 1 : 0,
           task.isMilestone ? 1 : 0,
           task.resourceId ?? task.originalId,
-          task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          task.lastUpdated.toString(),
           task.completion,
           task.baselineStart?.toIso8601String(),
           task.baselineEnd?.toIso8601String(),
@@ -195,7 +203,7 @@ class LocalGanttRepository {
           task.isSummary ? 1 : 0,
           task.isMilestone ? 1 : 0,
           task.resourceId ?? task.originalId,
-          task.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          task.lastUpdated.toString(),
           task.completion,
           task.baselineStart?.toIso8601String(),
           task.baselineEnd?.toIso8601String(),
@@ -210,12 +218,12 @@ class LocalGanttRepository {
     });
   }
 
-  Future<void> deleteTask(String taskId) async {
+  Future<void> deleteTask(String taskId, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
         'UPDATE tasks SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
-        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, taskId],
+        [timestamp.toString(), timestamp.toString(), taskId],
       );
     });
   }
@@ -240,7 +248,7 @@ class LocalGanttRepository {
             dependency.successorTaskId,
             dependency.type.index,
             dependency.lag?.inMilliseconds,
-            dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            dependency.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
           ],
         );
 
@@ -254,7 +262,7 @@ class LocalGanttRepository {
             dependency.successorTaskId,
             dependency.type.index,
             dependency.lag?.inMilliseconds,
-            dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            dependency.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
           ],
         );
       }
@@ -280,7 +288,7 @@ class LocalGanttRepository {
           dependency.successorTaskId,
           dependency.type.index,
           dependency.lag?.inMilliseconds,
-          dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          dependency.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
 
@@ -294,28 +302,28 @@ class LocalGanttRepository {
           dependency.successorTaskId,
           dependency.type.index,
           dependency.lag?.inMilliseconds,
-          dependency.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          dependency.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
     });
   }
 
-  Future<void> deleteDependency(String fromId, String toId) async {
+  Future<void> deleteDependency(String fromId, String toId, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
         'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? AND to_id = ?',
-        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, fromId, toId],
+        [timestamp.toString(), timestamp.toString(), fromId, toId],
       );
     });
   }
 
-  Future<void> deleteDependenciesForTask(String taskId) async {
+  Future<void> deleteDependenciesForTask(String taskId, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
         'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? OR to_id = ?',
-        [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, taskId, taskId],
+        [timestamp.toString(), timestamp.toString(), taskId, taskId],
       );
     });
   }
@@ -357,7 +365,7 @@ class LocalGanttRepository {
         isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
         propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
         resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
-        lastUpdated: row['last_updated'] as int?,
+        lastUpdated: _parseHlc(row['last_updated']),
       );
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(
@@ -406,7 +414,7 @@ class LocalGanttRepository {
             resource.name,
             resource.parentId,
             resource.isExpanded ? 1 : 0,
-            resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
           ],
         );
 
@@ -420,7 +428,7 @@ class LocalGanttRepository {
             resource.name,
             resource.parentId,
             resource.isExpanded ? 1 : 0,
-            resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+            resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
           ],
         );
       }
@@ -447,7 +455,7 @@ class LocalGanttRepository {
           resource.name,
           resource.parentId,
           resource.isExpanded ? 1 : 0,
-          resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
 
@@ -461,18 +469,18 @@ class LocalGanttRepository {
           resource.name,
           resource.parentId,
           resource.isExpanded ? 1 : 0,
-          resource.lastUpdated ?? DateTime.now().millisecondsSinceEpoch,
+          resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
         ],
       );
     });
   }
 
-  Future<void> updateResourceExpansion(String id, bool isExpanded) async {
+  Future<void> updateResourceExpansion(String id, bool isExpanded, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
         'UPDATE resources SET is_expanded = ?, last_updated = ? WHERE id = ?',
-        [isExpanded ? 1 : 0, DateTime.now().millisecondsSinceEpoch, id],
+        [isExpanded ? 1 : 0, timestamp.toString(), id],
       );
     });
   }
@@ -484,11 +492,11 @@ class LocalGanttRepository {
     });
   }
 
-  Future<void> deleteResource(String id) async {
+  Future<void> deleteResource(String id, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute('UPDATE resources SET deleted_at = ?, last_updated = ? WHERE id = ?',
-          [DateTime.now().millisecondsSinceEpoch, DateTime.now().millisecondsSinceEpoch, id]);
+          [timestamp.toString(), timestamp.toString(), id]);
     });
   }
 
@@ -497,48 +505,48 @@ class LocalGanttRepository {
         name: row['name'] as String?,
         parentId: row['parent_id'] as String?,
         isExpanded: (row['is_expanded'] as int?) == 1,
-        lastUpdated: row['last_updated'] as int?,
+        lastUpdated: _parseHlc(row['last_updated']),
       );
 
-  Future<int> getMaxLastUpdated() async {
+  Future<Hlc> getMaxLastUpdated() async {
     final db = await GanttDb.db;
 
-    int maxTs = 0;
+    Hlc maxTs = Hlc.zero;
 
     final tRes =
         await db.query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM tasks');
     if (tRes.isNotEmpty && tRes.first['max_ts'] != null) {
-      final val = tRes.first['max_ts'] as int;
-      if (val > maxTs) maxTs = val;
+      final val = _parseHlc(tRes.first['max_ts']);
+      if (val != null && val > maxTs) maxTs = val;
     }
 
     final dRes = await db
         .query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM dependencies');
     if (dRes.isNotEmpty && dRes.first['max_ts'] != null) {
-      final val = dRes.first['max_ts'] as int;
-      if (val > maxTs) maxTs = val;
+      final val = _parseHlc(dRes.first['max_ts']);
+      if (val != null && val > maxTs) maxTs = val;
     }
 
     final rRes =
         await db.query('SELECT MAX(MAX(COALESCE(last_updated, 0), COALESCE(deleted_at, 0))) as max_ts FROM resources');
     if (rRes.isNotEmpty && rRes.first['max_ts'] != null) {
-      final val = rRes.first['max_ts'] as int;
-      if (val > maxTs) maxTs = val;
+      final val = _parseHlc(rRes.first['max_ts']);
+      if (val != null && val > maxTs) maxTs = val;
     }
 
     return maxTs;
   }
 
-  Future<int?> getLastServerSyncTimestamp() async {
+  Future<Hlc?> getLastServerSyncTimestamp() async {
     final db = await GanttDb.db;
     final res = await db.query('SELECT meta_value FROM sync_metadata WHERE meta_key = ?', ['last_server_sync']);
     if (res.isNotEmpty && res.first['meta_value'] != null) {
-      return int.tryParse(res.first['meta_value'] as String);
+      return Hlc.parse(res.first['meta_value'] as String);
     }
     return null;
   }
 
-  Future<void> setLastServerSyncTimestamp(int timestamp) async {
+  Future<void> setLastServerSyncTimestamp(Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
       await db.execute(
@@ -554,7 +562,7 @@ class LocalResource {
   final String? name;
   final String? parentId;
   final bool isExpanded;
-  final int? lastUpdated;
+  final Hlc? lastUpdated;
 
   LocalResource({required this.id, this.name, this.parentId, this.isExpanded = true, this.lastUpdated});
 }

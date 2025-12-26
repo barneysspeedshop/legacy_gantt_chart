@@ -6,6 +6,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart'; // Added import
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 class MockGanttSyncClient extends GanttSyncClient {
   final _controller = StreamController<Operation>.broadcast();
@@ -29,6 +30,11 @@ class MockGanttSyncClient extends GanttSyncClient {
 
   @override
   Future<List<Operation>> getInitialState() async => [];
+
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 
   @override
   Stream<int> get outboundPendingCount => Stream.value(0);
@@ -68,7 +74,7 @@ void main() {
           'successorTaskId': 't2',
           'type': 'finishToStart',
         },
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'remote',
       );
 
@@ -95,7 +101,7 @@ void main() {
           'predecessorTaskId': 't1',
           'successorTaskId': 't2',
         },
-        timestamp: 101,
+        timestamp: Hlc.fromIntTimestamp(101),
         actorId: 'remote',
       );
 
@@ -171,7 +177,7 @@ void main() {
           'successorTaskId': 't2',
           'type': 'finishToStart',
         },
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'remote',
       );
       mockSyncClient.addOperation(op);
@@ -214,7 +220,7 @@ void main() {
       final resetOp = Operation(
         type: 'RESET_DATA',
         data: {},
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: Hlc.fromDate(DateTime.now(), 'remote-user'),
         actorId: 'remote-user',
       );
 
@@ -233,7 +239,7 @@ void main() {
       final op = Operation(
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': 't1'},
-        timestamp: 100,
+        timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'remote',
       );
 

@@ -23,15 +23,16 @@ class MockSyncClient extends WebSocketGanttSyncClient {
   Stream<Operation> get operationStream => _controller.stream;
 
   @override
-  void connect(String tenantId, {int? lastSyncedTimestamp}) {
-    // No-op for real connection, but we pretend we connected
-  }
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 
   void simulateOperation(String type, Map<String, dynamic> data) {
     _controller.add(Operation(
       type: type,
       data: data,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: Hlc.fromDate(DateTime.now(), 'test-actor'),
       actorId: 'test-actor',
     ));
   }
@@ -126,7 +127,7 @@ void main() {
       await viewModel.handleIncomingOperationForTesting(Operation(
         type: 'RESET_DATA',
         data: {},
-        timestamp: DateTime.now().millisecondsSinceEpoch,
+        timestamp: Hlc.fromDate(DateTime.now(), 'test'),
         actorId: 'test',
       ));
 

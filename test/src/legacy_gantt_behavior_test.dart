@@ -6,6 +6,7 @@ import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -457,4 +458,9 @@ class MockGanttSyncClient extends GanttSyncClient {
 
   @override
   Future<List<Operation>> getInitialState() async => [];
+
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 }

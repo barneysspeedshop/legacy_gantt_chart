@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 /// A mock implementation of GanttSyncClient for testing purposes.
 class MockGanttSyncClient implements GanttSyncClient {
@@ -26,6 +27,11 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Future<List<Operation>> getInitialState() async => [];
 
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
+
   @override
   Stream<int> get outboundPendingCount => Stream.value(0);
 
@@ -44,13 +50,13 @@ void main() {
       final operation = Operation(
         type: 'update',
         data: {'key': 'value'},
-        timestamp: 1234567890,
+        timestamp: Hlc.fromIntTimestamp(1234567890),
         actorId: 'user1',
       );
 
       expect(operation.type, 'update');
       expect(operation.data, {'key': 'value'});
-      expect(operation.timestamp, 1234567890);
+      expect(operation.timestamp, Hlc.fromIntTimestamp(1234567890));
       expect(operation.actorId, 'user1');
     });
 
@@ -58,7 +64,7 @@ void main() {
       final operation = Operation(
         type: 'insert',
         data: {'id': 1, 'name': 'task'},
-        timestamp: 1000,
+        timestamp: Hlc.fromIntTimestamp(1000),
         actorId: 'abc',
       );
 
@@ -67,7 +73,7 @@ void main() {
       expect(json, {
         'type': 'insert',
         'data': {'id': 1, 'name': 'task'},
-        'timestamp': 1000,
+        'timestamp': Hlc.fromIntTimestamp(1000).toString(),
         'actorId': 'abc',
       });
     });
@@ -76,7 +82,7 @@ void main() {
       final json = {
         'type': 'delete',
         'data': {'id': 2},
-        'timestamp': 2000,
+        'timestamp': Hlc.fromIntTimestamp(2000).toString(),
         'actorId': 'xyz',
       };
 
@@ -84,7 +90,7 @@ void main() {
 
       expect(operation.type, 'delete');
       expect(operation.data, {'id': 2});
-      expect(operation.timestamp, 2000);
+      expect(operation.timestamp, Hlc.fromIntTimestamp(2000));
       expect(operation.actorId, 'xyz');
     });
 
@@ -92,7 +98,7 @@ void main() {
       final originalOp = Operation(
         type: 'move',
         data: {'taskId': 't1', 'newStart': '2025-12-01'},
-        timestamp: 1672531200,
+        timestamp: Hlc.fromIntTimestamp(1672531200),
         actorId: 'user-2',
       );
 

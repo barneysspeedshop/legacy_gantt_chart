@@ -705,7 +705,8 @@ class _GanttViewState extends State<GanttView> {
         'end': newEnd.toIso8601String(),
         'name': '${task.name} (Remote Update)',
       },
-      timestamp: DateTime.now().millisecondsSinceEpoch + 1000, // Future timestamp to win LWW
+      timestamp:
+          Hlc.fromDate(DateTime.now().add(const Duration(seconds: 1)), 'remote_user'), // Future timestamp to win LWW
       actorId: 'remote_user',
     );
 

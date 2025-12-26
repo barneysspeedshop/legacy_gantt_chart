@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqlite_crdt/sqlite_crdt.dart';
+import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/offline_sync.dart';
 // ignore: implementation_imports
@@ -37,7 +37,10 @@ class MockInnerClient implements WebSocketGanttSyncClient {
   }
 
   @override
-  void connect(String tenantId, {int? lastSyncedTimestamp}) {}
+  void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {}
+
+  @override
+  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'mock');
 
   @override
   Future<void> dispose() async {
@@ -93,7 +96,7 @@ void main() {
       mockInner.connectionController.add(true);
       await Future.delayed(Duration.zero); // Let listener process
 
-      final op = Operation(type: 'ONLINE', data: {}, timestamp: 1, actorId: 'A');
+      final op = Operation(type: 'ONLINE', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A');
       await client.sendOperation(op);
 
       // Wait for async flush
@@ -106,7 +109,7 @@ void main() {
     test('Queues operations when send fails (offline)', () async {
       mockInner.shouldFailSend = true;
 
-      final op = Operation(type: 'OFFLINE', data: {}, timestamp: 2, actorId: 'A');
+      final op = Operation(type: 'OFFLINE', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A');
       await client.sendOperation(op);
 
       expect(mockInner.sentOperations, isEmpty);
@@ -125,9 +128,9 @@ void main() {
     test('Preserves order of queued operations', () async {
       mockInner.shouldFailSend = true;
 
-      await client.sendOperation(Operation(type: 'msg1', data: {}, timestamp: 1, actorId: 'A'));
-      await client.sendOperation(Operation(type: 'msg2', data: {}, timestamp: 2, actorId: 'A'));
-      await client.sendOperation(Operation(type: 'msg3', data: {}, timestamp: 3, actorId: 'A'));
+      await client.sendOperation(Operation(type: 'msg1', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await client.sendOperation(Operation(type: 'msg2', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'));
+      await client.sendOperation(Operation(type: 'msg3', data: {}, timestamp: Hlc.fromIntTimestamp(3), actorId: 'A'));
 
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
@@ -142,7 +145,8 @@ void main() {
 
     test('Flushes queue before sending new online operation', () async {
       mockInner.shouldFailSend = true;
-      await client.sendOperation(Operation(type: 'OFFLINE_OP', data: {}, timestamp: 1, actorId: 'A'));
+      await client
+          .sendOperation(Operation(type: 'OFFLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
 
       mockInner.shouldFailSend = false;
       // Signal online. This triggers auto-flush.
@@ -152,7 +156,8 @@ void main() {
       // Even if we call send immediately, it should await the flush lock or append after.
       // Actually with the new logic, sendOperation calls _flushQueue first.
 
-      await client.sendOperation(Operation(type: 'ONLINE_OP', data: {}, timestamp: 2, actorId: 'A'));
+      await client
+          .sendOperation(Operation(type: 'ONLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'));
 
       // Wait for async flush
       await Future.delayed(const Duration(milliseconds: 100));
@@ -166,7 +171,8 @@ void main() {
       // 1. Queue many items
       mockInner.shouldFailSend = true;
       for (int i = 0; i < 50; i++) {
-        await client.sendOperation(Operation(type: 'MSG_$i', data: {}, timestamp: i, actorId: 'A'));
+        await client
+            .sendOperation(Operation(type: 'MSG_$i', data: {}, timestamp: Hlc.fromIntTimestamp(i), actorId: 'A'));
       }
 
       // 2. Go online. Flush starts.
@@ -178,8 +184,10 @@ void main() {
       mockInner.connectionController.add(true);
 
       // 3. Immediately queue more items concurrently
-      final future1 = client.sendOperation(Operation(type: 'CONCURRENT_1', data: {}, timestamp: 100, actorId: 'A'));
-      final future2 = client.sendOperation(Operation(type: 'CONCURRENT_2', data: {}, timestamp: 101, actorId: 'A'));
+      final future1 = client
+          .sendOperation(Operation(type: 'CONCURRENT_1', data: {}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'A'));
+      final future2 = client
+          .sendOperation(Operation(type: 'CONCURRENT_2', data: {}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'A'));
 
       await Future.wait<void>([future1, future2]);
 
@@ -193,11 +201,14 @@ void main() {
       mockInner.shouldFailSend = true;
 
       // Send ephemeral operations
-      await client.sendOperation(Operation(type: 'CURSOR_MOVE', data: {}, timestamp: 1, actorId: 'A'));
-      await client.sendOperation(Operation(type: 'GHOST_UPDATE', data: {}, timestamp: 2, actorId: 'A'));
+      await client
+          .sendOperation(Operation(type: 'CURSOR_MOVE', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await client
+          .sendOperation(Operation(type: 'GHOST_UPDATE', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'));
 
       // Send a normal operation
-      await client.sendOperation(Operation(type: 'NORMAL_OP', data: {}, timestamp: 3, actorId: 'A'));
+      await client
+          .sendOperation(Operation(type: 'NORMAL_OP', data: {}, timestamp: Hlc.fromIntTimestamp(3), actorId: 'A'));
 
       // Reconnect
       mockInner.shouldFailSend = false;

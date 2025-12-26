@@ -17,12 +17,7 @@ class CRDTEngine {
         for (final subOpMaps in subOpsList) {
           try {
             final opMap = subOpMaps as Map<String, dynamic>;
-            final subOp = Operation(
-              type: opMap['type'],
-              data: opMap['data'],
-              timestamp: opMap['timestamp'],
-              actorId: opMap['actorId'] ?? op.actorId,
-            );
+            final subOp = Operation.fromJson(opMap);
             _applyOp(taskMap, subOp);
           } catch (e) {
             print('CRDTEngine Error processing batch op: $e');
@@ -52,7 +47,8 @@ class CRDTEngine {
     if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
       final existingTask = taskMap[taskId];
 
-      if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
+      // HLC Comparison: op.timestamp > existingTask.lastUpdated
+      if (existingTask == null || existingTask.lastUpdated < op.timestamp) {
         if (effectiveData.containsKey('start') ||
             effectiveData.containsKey('end') ||
             effectiveData.containsKey('name') ||
@@ -78,7 +74,7 @@ class CRDTEngine {
       }
     } else if (op.type == 'DELETE_TASK') {
       final existingTask = taskMap[taskId];
-      if (existingTask == null || (existingTask.lastUpdated ?? 0) < op.timestamp) {
+      if (existingTask == null || existingTask.lastUpdated < op.timestamp) {
         taskMap.remove(taskId);
       }
     }
