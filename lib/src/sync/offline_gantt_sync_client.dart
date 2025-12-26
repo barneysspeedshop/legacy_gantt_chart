@@ -79,7 +79,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             type TEXT,
             data TEXT,
-            data TEXT,
+
             timestamp TEXT,
             actor_id TEXT
           )
