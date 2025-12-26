@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
-// ignore: implementation_imports
-// ignore: avoid_relative_lib_imports
-import '../../lib/view_models/gantt_view_model.dart';
+import 'package:example/view_models/gantt_view_model.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:example/data/local/gantt_db.dart';
 
 class FakeSyncClient implements WebSocketGanttSyncClient {
   final _operationController = StreamController<Operation>.broadcast();
@@ -57,7 +57,11 @@ void main() {
     late GanttViewModel viewModel;
     late FakeSyncClient fakeClient;
 
-    setUp(() {
+    setUp(() async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      GanttDb.overridePath = inMemoryDatabasePath;
+
       viewModel = GanttViewModel(useLocalDatabase: false); // Use memory mode
       fakeClient = FakeSyncClient();
 
