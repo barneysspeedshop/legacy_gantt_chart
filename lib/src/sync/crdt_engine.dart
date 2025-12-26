@@ -47,7 +47,6 @@ class CRDTEngine {
     if (op.type == 'UPDATE_TASK' || op.type == 'INSERT_TASK') {
       final existingTask = taskMap[taskId];
 
-      // HLC Comparison: op.timestamp > existingTask.lastUpdated
       if (existingTask == null || existingTask.lastUpdated < op.timestamp) {
         if (effectiveData.containsKey('start') ||
             effectiveData.containsKey('end') ||

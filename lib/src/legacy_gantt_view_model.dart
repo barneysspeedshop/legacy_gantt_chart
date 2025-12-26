@@ -232,19 +232,15 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _sendGhostUpdate(String taskId, DateTime start, DateTime end) {
-    // Note: Arguments are kept for API compatibility but we primarily use internal state for bulk updates.
     if (syncClient == null) return;
     if (_ghostUpdateThrottle?.isActive ?? false) return;
 
-    // Prepare data
     final Map<String, dynamic> payload = {};
 
-    // Always send the primary dragged task (or the one passed in) for backward compatibility
     payload['taskId'] = taskId;
     payload['start'] = start.millisecondsSinceEpoch;
     payload['end'] = end.millisecondsSinceEpoch;
 
-    // Send bulk ghosts if any
     if (_bulkGhostTasks.isNotEmpty) {
       payload['ghosts'] = _bulkGhostTasks.entries
           .map((e) => {
@@ -284,12 +280,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void _handleRemoteGhostUpdate(Map<String, dynamic> data, String actorId) {
     final actualData = data.containsKey('data') && data['data'] is Map ? data['data'] : data;
 
-    // Parse primary ghost (legacy/fallback)
     final taskId = actualData['taskId'] as String?;
     final startMs = actualData['start'] as int?;
     final endMs = actualData['end'] as int?;
 
-    // Parse bulk ghosts
     final Map<String, ({DateTime start, DateTime end})> tasks = {};
     if (actualData.containsKey('ghosts') && actualData['ghosts'] is List) {
       for (final item in actualData['ghosts']) {
@@ -304,7 +298,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
     }
 
-    // If primary usage exists and not in tasks map, add it
     if (taskId != null && startMs != null && endMs != null) {
       if (!tasks.containsKey(taskId)) {
         tasks[taskId] =
@@ -328,16 +321,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
         tasks: tasks,
       );
     } else {
-      // Clear ghost behavior or keep only viewport info?
-      // Usually ghost updates imply active dragging.
-      // If empty, maybe we shouldn't do anything or clear the dragging state but keep presence?
-      // Logic above: `if (taskId != null)`
-      // If we receive empty, it might mean "stop dragging".
-      // But implementation of `_handleRemoteGhostUpdate` before checked `if (taskId != null)`.
-      // If we have tasks, we update.
-
-      // If we have existing presence but no tasks, we might want to preserve presence
-      // but clear ghost tasks.
       if (_remoteGhosts.containsKey(actorId)) {
         final existing = _remoteGhosts[actorId]!;
         _remoteGhosts[actorId] = RemoteGhost(
@@ -1211,8 +1194,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _dragStartGlobalX = details.globalPosition.dx;
 
       if (hit.task.isAutoScheduled == true && hit.task.isSummary && hit.part == TaskPart.body) {
-        // Type 1: Locked Parent
-        // Prevent moving moving an auto-scheduled summary task.
         return;
       }
 
@@ -1365,10 +1346,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final currentTask = queue.removeAt(0);
       final (currentStart, currentEnd) = getNewPosition(currentTask);
 
-      // 1. Child Propagation (Standard Bucket behavior)
-      // Only apply if we are Moving the task. If Resizing with Elastic/Constrain,
-      // the children are already handled by _ghostTasks logic in PanUpdate.
-      // Or if it IS a move, we want shift behavior.
       if (currentTask.propagatesMoveToChildren && _dragMode == DragMode.move) {
         final children = _tasks.where((t) => t.parentId == currentTask.id);
         final parentDelta = currentStart.difference(currentTask.start);
@@ -1386,7 +1363,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
         }
       }
 
-      // 2. Forward Propagation (Predecessor -> Successors)
       final forwardDeps = dependencies.where((d) => d.predecessorTaskId == currentTask.id).toList();
       for (final dep in forwardDeps) {
         final successor = _tasks.firstWhere((t) => t.id == dep.successorTaskId, orElse: () => LegacyGanttTask.empty());
@@ -1420,7 +1396,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
         }
       }
 
-      // 3. Backward Propagation (Successor -> Predecessors)
       final backwardDeps = dependencies.where((d) => d.successorTaskId == currentTask.id).toList();
       for (final dep in backwardDeps) {
         final predecessor =
@@ -2217,12 +2192,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _bulkGhostTasks[taskId] = (taskNewStart, taskNewEnd);
       }
     } else if (_dragMode == DragMode.move && _draggedTask != null) {
-      // Single task move with potential propagation
       if ((_draggedTask!.propagatesMoveToChildren || enableAutoScheduling) && _selectedTaskIds.isEmpty) {
         _bulkGhostTasks.clear();
-        // Important: _propagateAutoSchedule adds the origin task to bulkGhostTasks if needed?
-        // Actually it keeps origin separate usually, but let's check.
-        // It uses _bulkGhostTasks for others.
         _propagateAutoSchedule(_draggedTask!, durationDelta);
       } else {
         _bulkGhostTasks.clear();
@@ -2242,9 +2213,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         DateTime childNewEnd = child.end;
 
         if (policy == ResizePolicy.elastic && originalDuration > 0) {
-          // Type 5: Elastic
           if (_workCalendar != null && child.usesWorkCalendar) {
-            // Working Duration Scaling
             final originalParentWorkDays = _workCalendar!.getWorkingDuration(_originalTaskStart!, _originalTaskEnd!);
             final newParentWorkDays = _workCalendar!.getWorkingDuration(newStart, newEnd);
 
@@ -2261,7 +2230,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
               childNewStart = _workCalendar!.addWorkingDays(newStart, newChildStartOffset);
               childNewEnd = _workCalendar!.addWorkingDays(newStart, newChildEndOffset);
             } else {
-              // Fallback to absolute if original work duration was 0
               final startRatio =
                   (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
                       .clamp(0.0, 1.0);
@@ -2272,7 +2240,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
               childNewEnd = newStart.add(Duration(milliseconds: (newDuration * endRatio).round()));
             }
           } else {
-            // Naive Absolute Scaling
             final startRatio =
                 (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
                     .clamp(0.0, 1.0);
@@ -2283,13 +2250,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
             childNewEnd = newStart.add(Duration(milliseconds: (newDuration * endRatio).round()));
           }
 
-          // Strict Clamping (Global for Elastic)
           if (childNewStart.isBefore(newStart)) childNewStart = newStart;
           if (childNewEnd.isAfter(newEnd)) childNewEnd = newEnd;
           if (childNewEnd.isBefore(childNewStart)) childNewEnd = childNewStart;
         } else if (policy == ResizePolicy.constrain) {
-          // Type 4: Constrain
-          // Push/Clamp children to stay inside.
           if (childNewStart.isBefore(newStart)) {
             final duration = childNewEnd.difference(childNewStart);
             childNewStart = newStart;
@@ -2300,8 +2264,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
             childNewEnd = newEnd;
             childNewStart = childNewEnd.subtract(duration);
           }
-          // If the child is now larger than the parent, shrink it?
-          // For now, let's just clamp the start if it went before start again.
           if (childNewStart.isBefore(newStart)) {
             childNewStart = newStart;
           }

@@ -28,18 +28,15 @@ class Hlc implements Comparable<Hlc> {
   /// Parses an HLC string in the format:
   /// `2023-10-27T10:00:00.123Z-0000-nodeId`
   factory Hlc.parse(String hlc) {
-    // Check for legcy integer timestamp (digits only)
     if (RegExp(r'^\d+$').hasMatch(hlc)) {
       return Hlc.fromIntTimestamp(int.parse(hlc));
     }
 
     final parts = hlc.split('-');
     if (parts.length < 3) {
-      // relaxed check
       throw FormatException('Invalid HLC format: $hlc');
     }
 
-    // Robust parsing: Find the last two dashes
     final lastDashIndex = hlc.lastIndexOf('-');
     if (lastDashIndex == -1) throw FormatException('Invalid HLC format: $hlc');
 
@@ -50,21 +47,8 @@ class Hlc implements Comparable<Hlc> {
     final counterString = hlc.substring(secondLastDashIndex + 1, lastDashIndex);
     final nodeId = hlc.substring(lastDashIndex + 1);
 
-    // Parse ISO timestamp
     final dateTime = DateTime.parse(isoTimestamp);
     final millis = dateTime.millisecondsSinceEpoch;
-
-    // Parse counter (hex or decimal? Requirement example "0000" looks generic).
-    // Usually HLC counters are hex to keep them short, but user requirements just said "0000".
-    // "0000" implies hex is common, but let's assume radix 16 or 10?
-    // Let's standardizes on Radix 16 for standard HLCs, or just int.parse if requirement doesn't specify.
-    // Given "0000" and standard libraries (crdt_tree uses hex), I'll try radix 16.
-    // BUT user said "0000", could be decimal. Let's use `int.parse` which handles 0x if present, but standard int parsing for "0000" is 0.
-    // To be safe and compliant with typical HLC, checking if it's hex or not.
-    // Actually, let's treat it as hex if it matches hex pattern, or just radix 16 for compactness?
-    // User Requirement doesn't specify radix. I will use Radix 16 for the specific "format" part often found in these libs.
-    // Wait, let's stick to simple int.parse for now unless it fails or I see hex chars.
-    // Actually, "0000" is usually hex for 4 digits. Let's use `int.parse(counterString, radix: 16)`.
 
     final counter = int.parse(counterString, radix: 16);
 
@@ -73,10 +57,8 @@ class Hlc implements Comparable<Hlc> {
 
   /// Generates the next HLC for a local event with the given wall time.
   Hlc send(int wallTimeMillis) {
-    // newMillis = max(oldMillis, wallTime)
     final newMillis = max(millis, wallTimeMillis);
 
-    // If newMillis == oldMillis, increment counter. Else reset.
     final newCounter = (newMillis == millis) ? counter + 1 : 0;
 
     return Hlc(millis: newMillis, counter: newCounter, nodeId: nodeId);
@@ -84,10 +66,8 @@ class Hlc implements Comparable<Hlc> {
 
   /// Merges a remote HLC to update the local clock.
   Hlc receive(Hlc remote, int wallTimeMillis) {
-    // newMillis = max(oldMillis, remoteMillis, wallTime)
     final newMillis = max(max(millis, remote.millis), wallTimeMillis);
 
-    // Calculate new counter
     int newCounter;
     if (newMillis == millis && newMillis == remote.millis) {
       newCounter = max(counter, remote.counter) + 1;
@@ -116,10 +96,8 @@ class Hlc implements Comparable<Hlc> {
   @override
   String toString() {
     final dateTime = DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
-    // Format: 2023-10-27T10:00:00.123Z
     final iso = dateTime.toIso8601String();
 
-    // Counter as 4-digit hex
     final counterHex = counter.toRadixString(16).padLeft(4, '0').toUpperCase();
 
     return '$iso-$counterHex-$nodeId';
@@ -137,7 +115,6 @@ class Hlc implements Comparable<Hlc> {
   @override
   int get hashCode => millis.hashCode ^ counter.hashCode ^ nodeId.hashCode;
 
-  // Helper operators for easier comparison in logic
   bool operator <(Hlc other) => compareTo(other) < 0;
   bool operator >(Hlc other) => compareTo(other) > 0;
   bool operator <=(Hlc other) => compareTo(other) <= 0;

@@ -31,7 +31,6 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
     while (current.isBefore(taskEndDay) || current.isAtSameMomentAs(taskEndDay)) {
       bool shouldAddLoad = true;
 
-      // Check Work Calendar if applicable
       if (task.usesWorkCalendar && workCalendar != null) {
         if (!workCalendar.isWorkingDay(current)) {
           shouldAddLoad = false;

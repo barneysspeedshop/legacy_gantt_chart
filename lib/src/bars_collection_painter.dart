@@ -237,14 +237,12 @@ class BarsCollectionPainter extends CustomPainter {
     final visibleContentTop = -translateY;
     final visibleContentBottom = -translateY + size.height;
 
-    // Optimization: Pre-compute dragged task and child row logic outside the loop
     LegacyGanttTask? draggedSummaryTask;
     Set<String> summaryChildRowIds = {};
     if (draggedTaskId != null && ghostTaskStart != null && ghostTaskEnd != null) {
       final task = data.firstWhere((t) => t.id == draggedTaskId, orElse: () => LegacyGanttTask.empty());
       if (task.id.isNotEmpty && task.isSummary) {
         draggedSummaryTask = task;
-        // Identify all rows that contain direct children
         summaryChildRowIds = data.where((t) => t.parentId == task.id).map((t) => t.rowId).toSet();
       }
     }
@@ -267,7 +265,6 @@ class BarsCollectionPainter extends CustomPainter {
 
       final tasksInThisRow = tasksByRow[rowData.id] ?? [];
 
-      // Summary Ghost Background (Child Rows)
       if (draggedSummaryTask != null && summaryChildRowIds.contains(rowData.id)) {
         final double gStart = scale(ghostTaskStart!);
         final double gEnd = scale(ghostTaskEnd!);
@@ -586,8 +583,6 @@ class BarsCollectionPainter extends CustomPainter {
     for (final ghost in remoteGhosts.values) {
       if (ghost.tasks.isEmpty && ghost.taskId.isEmpty) continue;
 
-      // Unify tasks: If 'tasks' is populated, use it.
-      // If only legacy fields are present, wrap them in a list for iteration.
       final Iterable<({String taskId, DateTime start, DateTime end})> ghostItems;
       if (ghost.tasks.isNotEmpty) {
         ghostItems = ghost.tasks.entries.map((e) => (taskId: e.key, start: e.value.start, end: e.value.end));
@@ -601,7 +596,6 @@ class BarsCollectionPainter extends CustomPainter {
             orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
 
         if (originalTask.id.isNotEmpty) {
-          // Draw summary background for remote ghosts
           if (originalTask.isSummary) {
             final summaryChildRowIds = data.where((t) => t.parentId == originalTask.id).map((t) => t.rowId).toSet();
 
@@ -659,10 +653,6 @@ class BarsCollectionPainter extends CustomPainter {
             if (originalTask.isMilestone) {
               final double milestoneX = scale(item.start);
               final double milestoneY = barTop + barVerticalCenterOffset;
-              // Pass userColor to drawMilestone? Currently it uses task color.
-              // We should probably override color for remote ghosts.
-              // _drawMilestone uses task.color.
-              // We'll manually draw diamond here to match userColor.
               final paint = Paint()..color = userColor.withValues(alpha: 0.5);
               final double diamondSize = barHeight;
               final path = Path();

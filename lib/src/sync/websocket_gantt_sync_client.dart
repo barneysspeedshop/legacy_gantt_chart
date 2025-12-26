@@ -21,7 +21,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   int _clockSkew = 0;
   bool _isClockSynced = false;
 
-  // Temporary: Node ID for HLC. Ideally passed in constructor or config.
   String get _nodeId => 'client-${uri.hashCode}';
 
   WebSocketGanttSyncClient({
@@ -37,29 +36,14 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   /// overwrites valid data.
   int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch + _clockSkew;
 
-  // State for monotonic HLC generation
-  // Initialize with a dummy value, will be updated on first use or sync
   late Hlc _lastHlc = Hlc(millis: 0, counter: 0, nodeId: _nodeId);
 
   /// Helper to generate a current Hlc based on corrected time.
   /// Uses 'send' logic to ensure monotonicity and prevent collisions (counter increments).
   @override
   Hlc get currentHlc {
-    // 1. Get the wall clock (corrected for server skew)
     final wallTime = correctedTimestamp;
 
-    // 2. Use the 'send' logic to ensure monotonicity
-    // If wallTime == _lastHlc.millis, this increments the counter.
-    // If wallTime > _lastHlc.millis, this resets counter to 0.
-    // We construct a temporary Hlc representing "now" and merge it.
-    // Or we simply implement the logic here directly or use a helper method if Hlc has it.
-    // Assuming Hlc has a method `send(int wallTime)` that returns the next Hlc.
-    // If not, we implement the standard hybrid logical clock logic:
-    // l.j = max(l.j, wallTime)
-    // if (l.j == old_l.j) l.c++ else l.c = 0
-
-    // Checking Hlc class definition from imports or assuming functionality.
-    // Based on user snippet: _lastHlc = _lastHlc.send(wallTime);
     _lastHlc = _lastHlc.send(wallTime);
 
     return _lastHlc;
@@ -129,7 +113,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
             if (!_isClockSynced && envelope.containsKey('timestamp')) {
               final val = envelope['timestamp'];
-              // Server might send int or HLC string. Handle both for clock skew calc.
               int serverTime;
               if (val is int) {
                 serverTime = val;
