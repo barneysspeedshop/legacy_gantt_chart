@@ -114786,7 +114786,7 @@ return A.l(o.Q,$async$yj)
 case 6:m=b
 o.d=m
 s=7
-return A.l(m.dl("          CREATE TABLE IF NOT EXISTS offline_queue (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            type TEXT,\n            data TEXT,\n            data TEXT,\n            timestamp TEXT,\n            actor_id TEXT\n          )\n        "),$async$yj)
+return A.l(m.dl("          CREATE TABLE IF NOT EXISTS offline_queue (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            type TEXT,\n            data TEXT,\n\n            timestamp TEXT,\n            actor_id TEXT\n          )\n        "),$async$yj)
 case 7:A.bZ("OfflineClient: GanttDb initialized")
 o.e=!0
 q=1
