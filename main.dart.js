@@ -50489,7 +50489,7 @@ h.xv(!0)
 e.d!==$&&A.bz()
 e.d=h
 e.Q!==$&&A.bz()
-e.Q=new A.f1(new A.cg("https://gantt.legacy-automation.online",B.bn,B.aI),f)
+e.Q=new A.f1(new A.cg("https://api.gantt-sync.com",B.bn,B.aI),f)
 e.as!==$&&A.bz()
 e.as=new A.f1(new A.cg("legacy",B.bn,B.aI),f)
 e.at!==$&&A.bz()
@@ -51062,39 +51062,43 @@ $1(a){var s=this.a,r=s.aG
 s.ac6(B.d.dK(r+a.d.a,150,400))},
 $S:11}
 A.aMH.prototype={
-$2(a,b){var s,r,q,p,o,n,m,l,k,j,i,h,g,f=null,e=this.b
-if(e.bR==null)$.a9.p3$.push(new A.aMz(e,b))
-s=e.a5
-s===$&&A.a()
-r=this.c
-q=e.bR
-if(q==null)q=b.b*0.41
-p=this.a
-o=t.p
-q=A.cd(A.cG(A.b([A.ck(A.lJ(new A.aMA(p,e)),1),B.ahK],o),B.z,B.p,B.w,0,B.P),f,q)
-n=A.eV(f,A.fv(A.a0B(A.L(a).ch,8,8),B.j5,f,f,f,f),B.I,!1,f,f,f,f,f,f,f,new A.aMB(e,b),f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f)
-p=A.b([A.ck(A.lJ(new A.aMC(p,e,r)),1)],o)
-if(e.ry!=null&&e.to!=null&&e.x1!=null&&e.x2!=null){m=A.L(a)
-l=e.ry
+$2(a,b){var s,r,q,p,o,n,m,l,k,j,i,h,g=null,f=this.b,e=f.bR
+if(e==null||e<50)$.a9.p3$.push(new A.aMz(b,f))
+e=f.a5
+e===$&&A.a()
+s=this.c
+r=f.bR
+if(r==null)r=b.b*0.41
+q=this.a
+p=t.p
+r=A.cd(A.cG(A.b([A.ck(A.lJ(new A.aMA(q,f)),1),B.ahK],p),B.z,B.p,B.w,0,B.P),g,r)
+o=A.eV(g,A.fv(A.a0B(A.L(a).ch,8,8),B.j5,g,g,g,g),B.I,!1,g,g,g,g,g,g,g,new A.aMB(f,b),g,g,g,g,g,g,g,g,g,g,g,g,g,g,g,g,g)
+q=A.b([A.ck(A.lJ(new A.aMC(q,f,s)),1)],p)
+if(f.ry!=null&&f.to!=null&&f.x1!=null&&f.x2!=null){n=A.L(a)
+m=f.ry
+m.toString
+l=f.to
 l.toString
-k=e.to
+k=f.x1
 k.toString
-j=e.x1
+j=f.x2
 j.toString
-i=e.x2
-i.toString
-h=e.gBC()
-g=A.S(h).i("V<1,i>")
-A.R(new A.V(h,new A.aMD(),g),g.i("ah.E"))
-h=A.R(e.f,t.g)
-B.b.X(h,e.cy?e.w:A.b([],t.B))
-g=A.S(h).i("V<1,pJ>")
-h=A.R(new A.V(h,new A.aME(),g),g.i("ah.E"))
-p.push(A.dk(f,new A.Fu(l,k,j,i,e.gaKI(),h,B.ki,B.ki,f),B.v,m.at,f,f,f,40,f,B.ij,f,f,f))}return A.cG(A.b([new A.Vg(s,r,f),A.ck(A.bM(A.b([q,n,A.ck(A.cG(p,B.z,B.p,B.w,0,B.P),1)],o),B.z,f,B.p,B.w,0,f),1)],o),B.bs,B.p,B.w,0,B.P)},
+i=f.gBC()
+h=A.S(i).i("V<1,i>")
+A.R(new A.V(i,new A.aMD(),h),h.i("ah.E"))
+i=A.R(f.f,t.g)
+B.b.X(i,f.cy?f.w:A.b([],t.B))
+h=A.S(i).i("V<1,pJ>")
+i=A.R(new A.V(i,new A.aME(),h),h.i("ah.E"))
+q.push(A.dk(g,new A.Fu(m,l,k,j,f.gaKI(),i,B.ki,B.ki,g),B.v,n.at,g,g,g,40,g,B.ij,g,g,g))}return A.cG(A.b([new A.Vg(e,s,g),A.ck(A.bM(A.b([r,o,A.ck(A.cG(q,B.z,B.p,B.w,0,B.P),1)],p),B.z,g,B.p,B.w,0,g),1)],p),B.bs,B.p,B.w,0,B.P)},
 $S:388}
 A.aMz.prototype={
-$1(a){var s=this.a
-s.bR=this.b.b*0.4
+$1(a){var s,r=this.a.b,q=r*0.4
+if(q<200)q=200
+r=q>r?r:q
+if(r<=0)r=300
+s=this.b
+s.bR=r
 s.L()},
 $S:6}
 A.aMA.prototype={
