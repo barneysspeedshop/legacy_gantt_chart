@@ -10,6 +10,10 @@ If you find a bug or have a feature request, please open an issue on our [GitHub
 
 If you want to contribute code, please feel free to fork the repository and submit a Pull Request.
 
+## License Assignment
+
+By submitting a Pull Request to this repository, you agree to assign the copyright of your contribution to the project maintainer (Patrick Legacy / Barney's Speed Shop). This ensures that the maintainer retains 100% title of the codebase and can continue to manage and license the project effectively.
+
 ### Code Style
 
 To maintain code quality and consistency, please adhere to the following style guidelines. These are enforced to prevent common linter warnings.
