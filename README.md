@@ -29,7 +29,7 @@ A flexible and performant Gantt chart widget for Flutter. Supports interactive d
   - [Custom Task Appearance](#custom-task-appearance)
   - [Custom Timeline Labels](#custom-timeline-labels)
   - [Theming](#theming)
-- [Experimental: Real-time Sync & Offline Support](#experimental-real-time-sync--offline-support)
+- [Real-time Sync & Offline Support](#real-time-sync--offline-support)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -574,15 +574,23 @@ Customize colors, text styles, and more by providing a `LegacyGanttTheme`. You c
 
 ---
 
-## Experimental: Real-time Sync & Offline Support
+## Real-time Sync & Offline Support
 
-> **Note:** This feature is currently in **alpha**. APIs are subject to change.
+The package provides enterprise-grade support for real-time synchronization and offline capabilities using Conflict-Free Replicated Data Types (CRDTs). This allows multiple users to edit the chart simultaneously, with changes merging automatically and conflict-free.
 
-The package now includes experimental support for real-time synchronization and offline capabilities using Conflict-Free Replicated Data Types (CRDTs). This allows multiple users to edit the chart simultaneously, with changes merging automatically and conflict-free.
+### Gantt Sync Server
+
+To utilize these features, you need a compatible backend. We offer **Gantt Sync**, a high-performance, standalone server binary designed specifically for this package.
+
+*   **Sovereign Sync:** Own your data. Run the binary on your own infrastructure (Docker, Kubernetes, or Air-gapped).
+*   **Offline-First:** Clients can work offline indefinitely. Changes sync automatically when connection is restored.
+*   **Conflict-Free:** Uses Hybrid Logical Clocks (HLC) and Merkle Trees to ensure strong consistency without manual conflict resolution.
+
+[**Get the Server at gantt-sync.com →**](https://gantt-sync.com)
 
 ### Key Components
 
-*   **`WebSocketGanttSyncClient`**: Connects to a compatible backend to push and receive updates in real-time. A reference server implementation is provided in `bin/server.dart`.
+*   **`WebSocketGanttSyncClient`**: Connects to the backend to push and receive updates in real-time.
 *   **`OfflineGanttSyncClient`**: Queues operations when offline and syncs them when the connection is restored.
 *   **`CrdtEngine`**: The core logic that handles the merging of concurrent edits.
 
@@ -591,17 +599,28 @@ The package now includes experimental support for real-time synchronization and 
 To use the sync client, you typically initialize it and pass it to your `LegacyGanttController` or view model.
 
 ```dart
-// 1. Authenticate (Optional - depends on server)
-final token = 'your-jwt-token'; 
+// 1. Authenticate via REST
+final response = await http.post(
+  Uri.parse('https://api.gantt-sync.com/auth/login'),
+  body: jsonEncode({
+    'username': 'my-user',
+    'password': 'my-password',
+    'tenantId': 'my-tenant',
+  }),
+  headers: {'Content-Type': 'application/json'},
+);
 
-// 2. Initialize
+if (response.statusCode != 200) throw Exception('Auth Failed');
+final token = jsonDecode(response.body)['token'];
+
+// 2. Initialize WebSocket Client
 final syncClient = WebSocketGanttSyncClient(
-  uri: Uri.parse('ws://your-server.com/ws'),
+  uri: Uri.parse('wss://api.gantt-sync.com/ws'),
   authToken: token,
 );
 
 // 3. Connect
-syncClient.connect('your-tenant-id');
+syncClient.connect('my-tenant');
 
 // 4. Send Operation
 syncClient.sendOperation(Operation(

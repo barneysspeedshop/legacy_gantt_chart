@@ -85,7 +85,7 @@ class _GanttViewState extends State<GanttView> {
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
-    _uriController = TextEditingController(text: 'https://gantt.legacy-automation.online');
+    _uriController = TextEditingController(text: 'https://api.gantt-sync.com');
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
     _passwordController = TextEditingController(text: 'password');
@@ -1038,9 +1038,17 @@ class _GanttViewState extends State<GanttView> {
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        if (vm.gridWidth == null) {
+                        if (vm.gridWidth == null || vm.gridWidth! < 50.0) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            vm.setGridWidth(constraints.maxWidth * 0.4);
+                            double initialWidth = constraints.maxWidth * 0.4;
+                            if (initialWidth < 200) initialWidth = 200;
+                            // Ensure we don't exceed the max width, but keep it substantial
+                            if (initialWidth > constraints.maxWidth) initialWidth = constraints.maxWidth;
+
+                            // Last resort fallback
+                            if (initialWidth <= 0) initialWidth = 300;
+
+                            vm.setGridWidth(initialWidth);
                           });
                         }
 

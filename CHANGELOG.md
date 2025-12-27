@@ -1,3 +1,7 @@
+## 5.0.3
+
+* **FEATURE**: Update API URL for backend's commercial release
+
 ## 5.0.2
 
 * **EXAMPLE FIX**: Fix for an issue that caused the browser context menu to be displayed on secondary click instead of the application context menu
