@@ -21,8 +21,9 @@ import 'platform/platform_init.dart'
     if (dart.library.io) 'platform/platform_init_io.dart'
     if (dart.library.html) 'platform/platform_init_web.dart';
 
-void main() {
-  initializePlatform();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializePlatform();
   runApp(const MyApp());
 }
 
@@ -1451,82 +1452,76 @@ class _GanttViewState extends State<GanttView> {
                                                           ? Colors.white
                                                           : Colors.black;
                                                   final textStyle = ganttTheme.taskTextStyle.copyWith(color: textColor);
-                                                  return GestureDetector(
-                                                    onSecondaryTapUp: (details) {
-                                                      _showTaskContextMenu(context, task, details.globalPosition);
-                                                    },
-                                                    child: LayoutBuilder(builder: (context, constraints) {
-                                                      // Define minimum widths for content visibility.
-                                                      final bool canShowButton = constraints.maxWidth >= 32;
-                                                      final bool canShowText = constraints.maxWidth > 66;
+                                                  return LayoutBuilder(builder: (context, constraints) {
+                                                    // Define minimum widths for content visibility.
+                                                    final bool canShowButton = constraints.maxWidth >= 32;
+                                                    final bool canShowText = constraints.maxWidth > 66;
 
-                                                      return Stack(
-                                                        children: [
-                                                          // Task content (icon and name)
-                                                          if (canShowText)
-                                                            Padding(
-                                                              // Pad to the right to avoid overlapping the options button.
-                                                              padding: const EdgeInsets.only(left: 4.0, right: 32.0),
-                                                              child: Row(
-                                                                children: [
-                                                                  Icon(
-                                                                    task.isSummary
-                                                                        ? Icons.summarize_outlined
-                                                                        : Icons.task_alt,
-                                                                    color: textColor,
-                                                                    size: 16,
+                                                    return Stack(
+                                                      children: [
+                                                        // Task content (icon and name)
+                                                        if (canShowText)
+                                                          Padding(
+                                                            // Pad to the right to avoid overlapping the options button.
+                                                            padding: const EdgeInsets.only(left: 4.0, right: 32.0),
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                  task.isSummary
+                                                                      ? Icons.summarize_outlined
+                                                                      : Icons.task_alt,
+                                                                  color: textColor,
+                                                                  size: 16,
+                                                                ),
+                                                                const SizedBox(width: 4),
+                                                                Expanded(
+                                                                  child: Text(
+                                                                    task.name ?? '',
+                                                                    style: textStyle,
+                                                                    overflow: TextOverflow.ellipsis,
+                                                                    softWrap: false,
                                                                   ),
-                                                                  const SizedBox(width: 4),
-                                                                  Expanded(
-                                                                    child: Text(
-                                                                      task.name ?? '',
-                                                                      style: textStyle,
-                                                                      overflow: TextOverflow.ellipsis,
-                                                                      softWrap: false,
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
+                                                                ),
+                                                              ],
                                                             ),
+                                                          ),
 
-                                                          // Options menu button
-                                                          if (canShowButton)
-                                                            Positioned(
-                                                              right:
-                                                                  8, // Inset from the right edge to leave space for resize handle
-                                                              top: 0,
-                                                              bottom: 0,
-                                                              child: Builder(
-                                                                builder: (context) => MouseRegion(
-                                                                  cursor: SystemMouseCursors.click,
-                                                                  child: GestureDetector(
-                                                                    behavior: HitTestBehavior.opaque,
-                                                                    onPanStart: (_) {}, // Consumes the drag gesture
-                                                                    onPanUpdate: (_) {},
-                                                                    child: IconButton(
-                                                                      padding: EdgeInsets.zero,
-                                                                      icon: Icon(Icons.more_vert,
-                                                                          color: textColor, size: 18),
-                                                                      tooltip: 'Task Options',
-                                                                      onPressed: () {
-                                                                        final RenderBox button =
-                                                                            context.findRenderObject() as RenderBox;
-                                                                        final Offset offset =
-                                                                            button.localToGlobal(Offset.zero);
-                                                                        final tapPosition =
-                                                                            offset.translate(button.size.width, 0);
-                                                                        _showTaskContextMenu(
-                                                                            context, task, tapPosition);
-                                                                      },
-                                                                    ),
+                                                        // Options menu button
+                                                        if (canShowButton)
+                                                          Positioned(
+                                                            right:
+                                                                8, // Inset from the right edge to leave space for resize handle
+                                                            top: 0,
+                                                            bottom: 0,
+                                                            child: Builder(
+                                                              builder: (context) => MouseRegion(
+                                                                cursor: SystemMouseCursors.click,
+                                                                child: GestureDetector(
+                                                                  behavior: HitTestBehavior.opaque,
+                                                                  onPanStart: (_) {}, // Consumes the drag gesture
+                                                                  onPanUpdate: (_) {},
+                                                                  child: IconButton(
+                                                                    padding: EdgeInsets.zero,
+                                                                    icon: Icon(Icons.more_vert,
+                                                                        color: textColor, size: 18),
+                                                                    tooltip: 'Task Options',
+                                                                    onPressed: () {
+                                                                      final RenderBox button =
+                                                                          context.findRenderObject() as RenderBox;
+                                                                      final Offset offset =
+                                                                          button.localToGlobal(Offset.zero);
+                                                                      final tapPosition =
+                                                                          offset.translate(button.size.width, 0);
+                                                                      _showTaskContextMenu(context, task, tapPosition);
+                                                                    },
                                                                   ),
                                                                 ),
                                                               ),
                                                             ),
-                                                        ],
-                                                      );
-                                                    }),
-                                                  );
+                                                          ),
+                                                      ],
+                                                    );
+                                                  });
                                                 },
                                                 // This is the new builder for the floating resize handles.
                                                 focusedTaskResizeHandleBuilder: (task, part, internalVm, handleWidth) {
