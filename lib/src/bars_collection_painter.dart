@@ -95,6 +95,8 @@ class BarsCollectionPainter extends CustomPainter {
   final Set<LegacyGanttTaskDependency> criticalDependencies;
   final WorkCalendar? workCalendar;
   final bool rollUpMilestones;
+  final bool showNowLine;
+  final DateTime? nowLineDate;
 
   BarsCollectionPainter({
     required this.conflictIndicators,
@@ -127,6 +129,8 @@ class BarsCollectionPainter extends CustomPainter {
     this.criticalDependencies = const {},
     this.workCalendar,
     this.rollUpMilestones = false,
+    this.showNowLine = false,
+    this.nowLineDate,
   });
 
   @override
@@ -674,7 +678,34 @@ class BarsCollectionPainter extends CustomPainter {
         }
       }
     }
+    _drawNowLine(canvas, size);
     canvas.restore();
+  }
+
+  void _drawNowLine(Canvas canvas, Size size) {
+    if (!showNowLine) return;
+
+    final now = nowLineDate ?? DateTime.now();
+    final double x = scale(now);
+
+    if (x < 0 || x > size.width) return;
+
+    final paint = Paint()
+      ..color = theme.nowLineColor
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+
+    // Optional: Draw a small triangle or circle at the top to make it more visible
+    final path = Path();
+    const double markerSize = 6.0;
+    path.moveTo(x - markerSize, 0);
+    path.lineTo(x + markerSize, 0);
+    path.lineTo(x, markerSize);
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = theme.nowLineColor);
   }
 
   void _drawAngledPattern(Canvas canvas, RRect rrect, Color color, double strokeWidth) {

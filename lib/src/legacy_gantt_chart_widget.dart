@@ -349,6 +349,12 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Whether to roll up milestones to summary tasks.
   final bool rollUpMilestones;
 
+  /// Whether to show a vertical line indicating the current time ("now").
+  final bool showNowLine;
+
+  /// The specific date/time for the "now" line. If null, defaults to [DateTime.now()].
+  final DateTime? nowLineDate;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -410,6 +416,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.showResourceHistogram = false,
     this.workCalendar,
     this.rollUpMilestones = false,
+    this.showNowLine = false,
+    this.nowLineDate,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -806,6 +814,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                     criticalTaskIds: vm.criticalTaskIds,
                                                     criticalDependencies: vm.criticalDependencies,
                                                     workCalendar: vm.workCalendar,
+                                                    showNowLine: widget.showNowLine,
+                                                    nowLineDate: widget.nowLineDate,
                                                   ),
                                                 ),
                                               ),

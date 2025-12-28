@@ -72,6 +72,7 @@ class _GanttViewState extends State<GanttView> {
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
   String _selectedLocale = 'en_US';
   bool _showCursors = true;
+  bool _showNowLine = false;
   Timer? _bulkUpdateTimer;
   int _bulkUpdateCount = 0;
   OverlayEntry? _tooltipOverlay;
@@ -123,6 +124,7 @@ class _GanttViewState extends State<GanttView> {
           emptySpaceHighlightColor: Colors.green.withValues(alpha: 0.1),
           emptySpaceAddIconColor: Colors.green.shade600,
           taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white),
+          nowLineColor: Colors.yellowAccent,
         );
       case ThemePreset.midnight:
         return baseTheme.copyWith(
@@ -136,6 +138,7 @@ class _GanttViewState extends State<GanttView> {
           emptySpaceAddIconColor: Colors.indigo.shade200,
           textColor: isDarkMode ? Colors.white70 : Colors.black87,
           taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white),
+          nowLineColor: Colors.yellowAccent,
         );
       case ThemePreset.standard:
         return baseTheme.copyWith(
@@ -146,6 +149,7 @@ class _GanttViewState extends State<GanttView> {
           timeRangeHighlightColor: isDarkMode ? Colors.grey[850] : Colors.grey[200],
           emptySpaceHighlightColor: Colors.blue.withValues(alpha: 0.1),
           emptySpaceAddIconColor: Colors.blue.shade700,
+          nowLineColor: Colors.yellowAccent,
           taskTextStyle: baseTheme.taskTextStyle.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.white, // Ensure good contrast on blue bars
@@ -783,6 +787,16 @@ class _GanttViewState extends State<GanttView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('Show Now Line'),
+                Switch(
+                  value: _showNowLine,
+                  onChanged: (val) => setState(() => _showNowLine = val),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 const Text('Show Empty Parents'),
                 Switch(
                   value: vm.showEmptyParentRows,
@@ -1408,6 +1422,7 @@ class _GanttViewState extends State<GanttView> {
                                                 enableDragAndDrop: vm.dragAndDropEnabled,
                                                 showEmptyRows: vm.showEmptyParentRows,
                                                 rollUpMilestones: vm.rollUpMilestones,
+                                                showNowLine: _showNowLine,
                                                 enableResize: vm.resizeEnabled,
                                                 onTaskUpdate: (task, start, end) {
                                                   vm.handleTaskUpdate(task, start, end);

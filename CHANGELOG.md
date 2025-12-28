@@ -1,3 +1,10 @@
+## 5.1.0
+
+* **FEATURE**: Added a new **Time Marker** feature (a vertical "Now" line) to the Gantt chart, enabling users to visualize the current time or a custom reference date.
+    * Added `showNowLine` and `nowLineDate` properties to `LegacyGanttChartWidget` to control the visibility and position of the marker.
+    * The default behavior intelligently selects a high-contrast color based on the current theme brightness (Red Accent for dark mode, Error Color for light mode) to ensure visibility.
+    * Added `nowLineColor` to `LegacyGanttTheme` to allow for styling the marker color.
+
 ## 5.0.3
 
 * **FEATURE**: Update API URL for backend's commercial release

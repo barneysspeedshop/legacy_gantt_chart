@@ -42,6 +42,9 @@ class LegacyGanttTheme {
   /// The color used to highlight tasks and dependencies on the critical path.
   final Color criticalPathColor;
 
+  /// The color of the "now" line indicator.
+  final Color nowLineColor;
+
   LegacyGanttTheme({
     required this.barColorPrimary,
     required this.barColorSecondary,
@@ -64,6 +67,7 @@ class LegacyGanttTheme {
     this.barHeightRatio = 0.7,
     this.barCornerRadius = const Radius.circular(4.0),
     this.criticalPathColor = const Color.fromRGBO(244, 67, 54, 1.0), // Colors.red
+    this.nowLineColor = const Color.fromRGBO(244, 67, 54, 0.8), // Colors.red.withAlpha(0.8)
   }) : axisTextStyle = axisTextStyle ?? TextStyle(fontSize: 12, color: textColor);
 
   LegacyGanttTheme copyWith({
@@ -88,6 +92,7 @@ class LegacyGanttTheme {
     Color? rowBorderColor,
     Color? weekendColor,
     Color? criticalPathColor,
+    Color? nowLineColor,
   }) =>
       LegacyGanttTheme(
         barColorPrimary: barColorPrimary ?? this.barColorPrimary,
@@ -112,6 +117,7 @@ class LegacyGanttTheme {
         rowBorderColor: rowBorderColor ?? this.rowBorderColor,
         weekendColor: weekendColor ?? this.weekendColor,
         criticalPathColor: criticalPathColor ?? this.criticalPathColor,
+        nowLineColor: nowLineColor ?? this.nowLineColor,
       );
 
   /// Creates a default theme based on the application's [ThemeData].
@@ -135,5 +141,6 @@ class LegacyGanttTheme {
         taskTextStyle: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onPrimary) ??
             const TextStyle(fontSize: 12, color: Colors.white),
         criticalPathColor: Colors.red, // Default critical path color
+        nowLineColor: theme.brightness == Brightness.dark ? Colors.redAccent : theme.colorScheme.error,
       );
 }
