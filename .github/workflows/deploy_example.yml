@@ -39,13 +39,19 @@ jobs:
           mkdir -p deployment_staging
           
           # Build Standard (HTML/JS)
+          rm -rf build
           flutter build web --release --base-href /legacy_gantt_chart/
           cp -r build/web/* deployment_staging/
           
           # Build Wasm
+          rm -rf build
           flutter build web --wasm --release --base-href /legacy_gantt_chart/wasm/
           mkdir -p deployment_staging/wasm
           cp -r build/web/* deployment_staging/wasm/
+          
+          # Debug: List contents of staging area
+          echo "Listing deployment staging area:"
+          ls -R deployment_staging
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
