@@ -8,15 +8,7 @@ Future<void> initializePlatform() async {
 
   databaseFactory = createDatabaseFactoryFfiWeb(
     options: SqfliteFfiWebOptions(
-      // FIX 1: Explicitly point to the WASM file.
-      // Without this, the worker might look for it at the root domain instead of your base href.
       sharedWorkerUri: Uri.parse('sqflite_sw.js'),
-      sqlite3WasmUri: Uri.parse('sqlite3.wasm'),
-
-      // FIX 2 (Optional): Uncomment the line below if "Error: 3" persists.
-      // "Error: 3" is often a Permission Denied error because GitHub Pages lacks
-      // the COOP/COEP headers required for SharedWorkers using SharedArrayBuffer.
-      // forceAsBasicWorker: true,
     ),
   );
 }
