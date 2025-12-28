@@ -40,12 +40,12 @@ jobs:
           
           # Build Standard (HTML/JS)
           rm -rf build
-          flutter build web --release --base-href /legacy_gantt_chart/
+          flutter build web --release --base-href /legacy_gantt_chart/ --pwa-strategy=none
           cp -r build/web/* deployment_staging/
           
           # Build Wasm
           rm -rf build
-          flutter build web --wasm --release --base-href /legacy_gantt_chart/wasm/
+          flutter build web --wasm --release --base-href /legacy_gantt_chart/wasm/ --pwa-strategy=none
           mkdir -p deployment_staging/wasm
           cp -r build/web/* deployment_staging/wasm/
           
