@@ -34,10 +34,21 @@ jobs:
         run: |
           cd example
           flutter pub get
+          
+          # Create staging directory
+          mkdir -p deployment_staging
+          
+          # Build Standard (HTML/JS)
           flutter build web --release --base-href /legacy_gantt_chart/
+          cp -r build/web/* deployment_staging/
+          
+          # Build Wasm
+          flutter build web --wasm --release --base-href /legacy_gantt_chart/wasm/
+          mkdir -p deployment_staging/wasm
+          cp -r build/web/* deployment_staging/wasm/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./example/build/web
+          publish_dir: ./example/deployment_staging
