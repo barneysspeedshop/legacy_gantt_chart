@@ -1,3 +1,7 @@
+## 5.1.1
+
+* **EXAMPLE FIX**: Fix for an issue in the example application where the loading indicator preference was not respected
+
 ## 5.1.0
 
 * **FEATURE**: Added a new **Time Marker** feature (a vertical "Now" line) to the Gantt chart, enabling users to visualize the current time or a custom reference date.

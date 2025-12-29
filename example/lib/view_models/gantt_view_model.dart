@@ -195,6 +195,12 @@ class GanttViewModel extends ChangeNotifier {
   /// A flag to indicate when data is being fetched.
   bool _isLoading = true;
 
+  void _setLoading(bool vars) {
+    _isLoading = vars;
+    // ignore: invalid_use_of_protected_member
+    controller.setIsLoading(vars);
+  }
+
   /// The ID of the task that currently has keyboard focus.
   String? _focusedTaskId;
   int _seedVersion = 0;
@@ -223,7 +229,7 @@ class GanttViewModel extends ChangeNotifier {
   bool _shouldAutoSeed = false;
 
   Future<void> _initLocalMode() async {
-    _isLoading = true;
+    _setLoading(true);
     _shouldAutoSeed = true;
     notifyListeners();
     await _localRepository.init();
@@ -272,7 +278,7 @@ class GanttViewModel extends ChangeNotifier {
 
   Future<void> _processLocalData() async {
     if (_allGanttTasks.isEmpty) {
-      _isLoading = false;
+      _setLoading(false);
       _conflictIndicators = [];
       _gridData = [];
       _rowMaxStackDepth = {};
@@ -367,7 +373,7 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    _isLoading = false;
+    _setLoading(false);
     _syncToController();
     notifyListeners();
   }
@@ -556,7 +562,7 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> _seedLocalDatabaseInternal() async {
-    _isLoading = true;
+    _setLoading(true);
     notifyListeners();
 
     await _localRepository.deleteAllDependencies();
@@ -985,6 +991,7 @@ class GanttViewModel extends ChangeNotifier {
       initialVisibleStartDate: _startDate,
       initialVisibleEndDate: _startDate.add(Duration(days: _range)),
     );
+    controller.setIsLoading(_isLoading);
 
     if (initialLocale != null) {
       _selectedLocale = initialLocale;
@@ -1224,7 +1231,7 @@ class GanttViewModel extends ChangeNotifier {
   /// This method is called on initial load and whenever data generation parameters change.
   Future<void> fetchScheduleData() async {
     _ganttTasks = [];
-    _isLoading = true;
+    _setLoading(true);
     _conflictIndicators = [];
     _dependencies = [];
     _gridData = [];
@@ -1322,7 +1329,7 @@ class GanttViewModel extends ChangeNotifier {
         _totalEndDate = _startDate.add(Duration(days: _range));
       }
 
-      _isLoading = false;
+      _setLoading(false);
       _visibleStartDate = _visibleStartDate ?? effectiveTotalStartDate;
       _visibleEndDate = _visibleEndDate ?? effectiveTotalEndDate;
       if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
@@ -1333,7 +1340,7 @@ class GanttViewModel extends ChangeNotifier {
       _syncToController();
     } catch (e) {
       debugPrint('Error fetching schedule data: $e');
-      _isLoading = false;
+      _setLoading(false);
       notifyListeners();
     }
   }

@@ -68,6 +68,17 @@ class LegacyGanttController extends ChangeNotifier {
   /// Whether the controller is currently fetching tasks or holidays.
   bool get isOverallLoading => _isLoading || _isHolidayLoading;
 
+  /// Manually sets the loading state of the controller.
+  ///
+  /// This is useful when data fetching is managed externally (e.g., by a View Model)
+  /// but you still want the controller to drive the loading indicator.
+  void setIsLoading(bool loading) {
+    if (_isLoading != loading) {
+      _isLoading = loading;
+      notifyListeners();
+    }
+  }
+
   /// Creates a controller for a [LegacyGanttChartWidget].
   ///
   /// - [initialVisibleStartDate] and [initialVisibleEndDate] are required to

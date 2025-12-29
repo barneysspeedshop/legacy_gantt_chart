@@ -1257,11 +1257,6 @@ class _GanttViewState extends State<GanttView> {
                                     Expanded(
                                       child: LayoutBuilder(
                                         builder: (context, chartConstraints) {
-                                          // If data is still loading, show a progress indicator
-                                          if (vm.isLoading) {
-                                            return const Center(child: CircularProgressIndicator());
-                                          }
-
                                           final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
 
                                           // Notify VM of the width so it can adjust scroll offset if needed (maintain visible date)
