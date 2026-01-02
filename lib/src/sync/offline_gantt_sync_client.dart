@@ -5,6 +5,7 @@ import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'gantt_sync_client.dart';
 import 'websocket_gantt_sync_client.dart';
 import 'hlc.dart';
+import '../utils/json_isolate.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
   WebSocketGanttSyncClient? _innerClient;
@@ -176,7 +177,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
         final id = row['id'] as int;
         try {
-          final dataDynamic = jsonDecode(row['data'] as String);
+          final dataDynamic = await decodeJsonInBackground(row['data'] as String);
           if (dataDynamic == null) {
             print('Skipping queued op with null data: $id');
             idsToDelete.add(id);
@@ -250,6 +251,21 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       return _innerClient!.getInitialState();
     }
     return [];
+  }
+
+  @override
+  Future<String> getMerkleRoot() async {
+    if (_innerClient != null) {
+      return _innerClient!.getMerkleRoot();
+    }
+    return '';
+  }
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {
+    if (_innerClient != null) {
+      await _innerClient!.syncWithMerkle(remoteRoot: remoteRoot, depth: depth);
+    }
   }
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -63,4 +65,30 @@ class LegacyGanttTaskDependency {
   @override
   int get hashCode =>
       predecessorTaskId.hashCode ^ successorTaskId.hashCode ^ type.hashCode ^ lag.hashCode ^ lastUpdated.hashCode;
+
+  String get contentHash {
+    final data = {
+      'predecessorTaskId': predecessorTaskId,
+      'successorTaskId': successorTaskId,
+      'type': type.name,
+      'lag': lag?.inMilliseconds,
+      // 'lastUpdated': lastUpdated, // Exclude mutable metadata from content hash usually?
+      // Wait, strict Merkle includes everything. But existing Task contentHash excluded local state?
+      // Task contentHash included 'lastUpdated'? No, it didn't in the snippet I saw earlier!
+      // Let's check LegacyGanttTask.contentHash again.
+      // It has 'completion', 'name' etc. It did NOT include 'lastUpdated'.
+      // So we should verify if 'lastUpdated' is strictly part of content.
+      // Usually Merkle state is about VALUE. 'lastUpdated' is METADATA.
+      // But for Sovereign Sync, if I update metadata, I want to sync.
+      // However, HLC usually handles the "version".
+      // If I change 'lag', contentHash changes.
+      // If I just 'touch' the file without changing content, contentHash stays same, but lastUpdated changes.
+      // If we exclude lastUpdated, we might miss pure timestamp updates, but usually we care about data.
+      // Let's stick to DATA fields for now.
+    };
+    final jsonString = jsonEncode(data);
+    final bytes = utf8.encode(jsonString);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
 }

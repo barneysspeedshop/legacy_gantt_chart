@@ -345,6 +345,7 @@ class GanttViewModel extends ChangeNotifier {
       resourcesData: resourcesData,
       eventsData: [],
       assignmentsData: [],
+      dependenciesData: [],
       resourceTimeRangesData: [],
     );
     _apiResponse = dummyResponse;
@@ -529,7 +530,22 @@ class GanttViewModel extends ChangeNotifier {
       success: true,
       eventsData: exportedEvents,
       resourcesData: exportedResources,
-      assignmentsData: [], // Re-generate if needed, but resourceId in event is usually sufficient
+      assignmentsData: _ganttTasks
+          .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
+          .map((t) => GanttAssignmentData(
+                id: 'assignment-${t.id}',
+                event: t.id,
+                resource: t.rowId,
+              ))
+          .toList(),
+      dependenciesData: _dependencies
+          .map((d) => GanttDependencyData(
+                id: 'dep-${d.predecessorTaskId}-${d.successorTaskId}',
+                predecessorId: d.predecessorTaskId,
+                successorId: d.successorTaskId,
+                type: d.type.toString().split('.').last,
+              ))
+          .toList(),
       resourceTimeRangesData: _apiResponse?.resourceTimeRangesData ?? [],
     );
 
@@ -625,40 +641,20 @@ class GanttViewModel extends ChangeNotifier {
       );
       tasks.add(milestone);
     }
+    final dependencies = processedData.dependencies.toList(); // Start with API dependencies
 
-    final dependencies = <LegacyGanttTaskDependency>[];
-    final successorForContainedDemo = tasks.firstWhere(
-      (t) => !t.isSummary && !t.isTimeRangeHighlight,
-      orElse: () => tasks.first,
-    );
-
+    // Contained dependencies (Parent -> Child) to support Gantt Chart logic/visuals
+    // Now that IDs are aligned in MockApiService, this works correctly without breaking things.
     for (final task in tasks) {
-      if (task.isSummary) {
+      if (task.parentId != null) {
         dependencies.add(
           LegacyGanttTaskDependency(
-            predecessorTaskId: task.id,
-            successorTaskId: successorForContainedDemo.id,
+            predecessorTaskId: task.parentId!,
+            successorTaskId: task.id,
             type: DependencyType.contained,
           ),
         );
       }
-    }
-
-    final validTasksForDependency =
-        tasks.where((task) => !task.isSummary && !task.isTimeRangeHighlight && !task.isOverlapIndicator).toList();
-
-    if (validTasksForDependency.length > 1) {
-      validTasksForDependency.sort((a, b) {
-        final startCompare = a.start.compareTo(b.start);
-        if (startCompare != 0) return startCompare;
-        return a.id.compareTo(b.id);
-      });
-      dependencies.add(
-        LegacyGanttTaskDependency(
-          predecessorTaskId: validTasksForDependency[0].id,
-          successorTaskId: validTasksForDependency[1].id,
-        ),
-      );
     }
 
     await _localRepository.insertTasks(tasks);
@@ -2809,6 +2805,7 @@ class GanttViewModel extends ChangeNotifier {
           resourcesData: [],
           eventsData: [],
           assignmentsData: [],
+          dependenciesData: [],
           resourceTimeRangesData: [],
         );
 

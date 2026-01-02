@@ -91,6 +91,12 @@ abstract class GanttSyncClient {
   /// Stream of inbound sync progress.
   Stream<SyncProgress> get inboundProgress;
 
+  /// returns the current local Merkle Root hash.
+  Future<String> getMerkleRoot();
+
+  /// Initiates a Merkle-tree based synchronization with a remote peer/server.
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth});
+
   /// Returns the current Hybrid Logical Clock timestamp.
   /// Implementations should return the latest known HLC, creating one if necessary.
   Hlc get currentHlc;

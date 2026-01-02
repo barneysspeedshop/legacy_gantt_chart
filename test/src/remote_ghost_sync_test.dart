@@ -31,6 +31,12 @@ class MockGanttSyncClient implements GanttSyncClient {
 
   @override
   Stream<SyncProgress> get inboundProgress => Stream.value(const SyncProgress(total: 0, processed: 0));
+
+  @override
+  Future<String> getMerkleRoot() async => '';
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
 }
 
 void main() {

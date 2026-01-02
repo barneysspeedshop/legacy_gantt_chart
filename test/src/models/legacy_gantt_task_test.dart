@@ -33,7 +33,7 @@ void main() {
       expect(task.id, '');
       expect(task.rowId, '');
       expect(task.start, DateTime.utc(0));
-      expect(task.end, DateTime.utc(0));
+      expect(task.end, DateTime.utc(0).add(const Duration(days: 1)));
       expect(task.name, '');
     });
 

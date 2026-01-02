@@ -6,6 +6,7 @@ class GanttResponse {
   final List<GanttResourceData> resourcesData;
   final List<GanttEventData> eventsData;
   final List<GanttAssignmentData> assignmentsData;
+  final List<GanttDependencyData> dependenciesData; // Added
   final List<GanttResourceTimeRangeData> resourceTimeRangesData;
 
   GanttResponse({
@@ -14,6 +15,7 @@ class GanttResponse {
     required this.resourcesData,
     required this.eventsData,
     required this.assignmentsData,
+    required this.dependenciesData, // Added
     required this.resourceTimeRangesData,
   });
 
@@ -32,6 +34,10 @@ class GanttResponse {
                 ?.map((e) => GanttAssignmentData.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [],
+        dependenciesData: (json['dependenciesData'] as List<dynamic>?)
+                ?.map((e) => GanttDependencyData.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [],
         resourceTimeRangesData: (json['resourceTimeRangesData'] as List<dynamic>?)
                 ?.map((e) => GanttResourceTimeRangeData.fromJson(e as Map<String, dynamic>))
                 .toList() ??
@@ -44,6 +50,7 @@ class GanttResponse {
         'resourcesData': resourcesData.map((e) => e.toJson()).toList(),
         'eventsData': eventsData.map((e) => e.toJson()).toList(),
         'assignmentsData': assignmentsData.map((e) => e.toJson()).toList(),
+        'dependenciesData': dependenciesData.map((e) => e.toJson()).toList(),
         'resourceTimeRangesData': resourceTimeRangesData.map((e) => e.toJson()).toList(),
       };
 }
@@ -139,6 +146,7 @@ class GanttEventData {
   final String? utcEndDate;
   final GanttReferenceData? referenceData;
   final String? resourceId; // Used to link a child event to its parent summary event
+  final String? parentId; // Added: Explicit parent ID for hierarchy
 
   GanttEventData({
     required this.id,
@@ -147,6 +155,7 @@ class GanttEventData {
     this.utcEndDate,
     this.referenceData,
     this.resourceId,
+    this.parentId,
   });
 
   static GanttEventData fromJson(Map<String, dynamic> json) => GanttEventData(
@@ -158,6 +167,7 @@ class GanttEventData {
             ? GanttReferenceData.fromJson(json['referenceData'] as Map<String, dynamic>)
             : null,
         resourceId: json['resourceId'] as String?,
+        parentId: json['parentId'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -167,6 +177,7 @@ class GanttEventData {
         'utcEndDate': utcEndDate,
         'referenceData': referenceData?.toJson(),
         'resourceId': resourceId,
+        'parentId': parentId,
       };
 }
 
@@ -247,5 +258,33 @@ class GanttResourceTimeRangeData {
         'resourceId': resourceId,
         'utcStartDate': utcStartDate,
         'utcEndDate': utcEndDate,
+      };
+}
+
+class GanttDependencyData {
+  final String id;
+  final String predecessorId;
+  final String successorId;
+  final String type;
+
+  GanttDependencyData({
+    required this.id,
+    required this.predecessorId,
+    required this.successorId,
+    required this.type,
+  });
+
+  static GanttDependencyData fromJson(Map<String, dynamic> json) => GanttDependencyData(
+        id: json['id'] as String,
+        predecessorId: json['predecessorId'] as String,
+        successorId: json['successorId'] as String,
+        type: json['type'] as String,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'predecessorId': predecessorId,
+        'successorId': successorId,
+        'type': type,
       };
 }

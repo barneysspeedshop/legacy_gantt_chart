@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../utils/json_isolate.dart';
 import 'gantt_sync_client.dart';
 import 'hlc.dart';
 
@@ -96,9 +97,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       }));
 
       _channel!.stream.listen(
-        (message) {
+        (message) async {
           try {
-            final envelope = jsonDecode(message as String) as Map<String, dynamic>;
+            final envelope = (await decodeJsonInBackground(message as String)) as Map<String, dynamic>;
             if (envelope.containsKey('error')) {
               print('Server error received: ${envelope['error']}');
               return;
@@ -170,6 +171,16 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               }
 
               _operationController.add(op);
+              return;
+            }
+
+            if (type == 'MERKLE_ROOT') {
+              if (dataMap != null && dataMap['root'] is String) {
+                final root = dataMap['root'] as String;
+                if (_merkleRootCompleter != null && !_merkleRootCompleter!.isCompleted) {
+                  _merkleRootCompleter!.complete(root);
+                }
+              }
               return;
             }
 
@@ -252,6 +263,29 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
   @override
   Stream<SyncProgress> get inboundProgress => _inboundProgressController.stream;
+
+  Completer<String>? _merkleRootCompleter;
+
+  @override
+  Future<String> getMerkleRoot() async {
+    if (_channel == null) {
+      throw Exception('Not connected');
+    }
+    _merkleRootCompleter = Completer<String>();
+    _channel!.sink.add(jsonEncode({
+      'type': 'GET_MERKLE_ROOT',
+    }));
+    // Timeout after 10s
+    return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
+  }
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {
+    // For now, if we detect drift, we could just log it or trigger a refresh?
+    // Since buckets receive isn't implemented server-side, we can't do partial sync.
+    // Ideally we would send 'REQUEST_SYNC' here.
+    print('Syncing with Merkle: remoteRoot=$remoteRoot (Not fully implemented yet)');
+  }
 
   @override
 

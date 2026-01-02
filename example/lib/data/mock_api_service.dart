@@ -5,13 +5,11 @@ class MockApiService {
   Future<Map<String, dynamic>> get(String path, {Map<String, dynamic>? params}) async {
     // Determine the date range for mock data generation
     DateTime startDate = DateTime.now();
-    int rangeDays = 14;
     if (params?['startDateIso'] != null) {
       startDate = DateTime.parse(params!['startDateIso'] as String);
     }
     if (params?['endDateIso'] != null) {
-      final endDate = DateTime.parse(params!['endDateIso'] as String);
-      rangeDays = endDate.difference(startDate).inDays;
+      DateTime.parse(params!['endDateIso'] as String);
     }
 
     final int personCount = params?['personCount'] as int? ?? 10;
@@ -20,6 +18,7 @@ class MockApiService {
     final List<GanttResourceData> mockResources = [];
     final List<Map<String, dynamic>> mockEvents = [];
     final List<Map<String, dynamic>> mockAssignments = [];
+    final List<Map<String, dynamic>> mockDependencies = [];
     final List<Map<String, dynamic>> mockResourceTimeRanges = [];
 
     for (int i = 0; i < personCount; i++) {
@@ -29,8 +28,19 @@ class MockApiService {
         final jobId = 'job-$i-$j';
         jobs.add(GanttJobData(
             id: jobId, name: 'Job $j', taskName: 'Task $j', status: 'Active', taskColor: '4CAF50', completion: 0.5));
-        final eventStart = startDate.add(Duration(days: (i * jobCount + j) % rangeDays, hours: 9));
-        final eventEnd = eventStart.add(const Duration(hours: 8));
+        // Even tasks (Critical Path candidates) take 8 hours. Odd tasks (Offshoots) take 2 hours.
+        final durationHours = (j % 2 == 0) ? 8 : 2;
+
+        // Base start time based on the "Step" (j/2)
+        DateTime eventStart = startDate.add(Duration(days: i * jobCount + (j ~/ 2), hours: 9));
+
+        // If Odd (Offshoot), shift it to start AFTER the Even task (which takes 8 hours)
+        // Even: 09:00 - 17:00. Odd: 17:00 - 19:00.
+        if (j % 2 != 0) {
+          eventStart = eventStart.add(const Duration(hours: 8));
+        }
+
+        final eventEnd = eventStart.add(Duration(hours: durationHours));
         final eventId = 'event-$jobId';
 
         mockEvents.add({
@@ -38,7 +48,8 @@ class MockApiService {
           'name': 'Task $i-$j',
           'utcStartDate': eventStart.toIso8601String(),
           'utcEndDate': eventEnd.toIso8601String(),
-          'resourceId': 'event-$personId-summary',
+          'resourceId': 'summary-task-$personId',
+          'parentId': 'summary-task-$personId',
           'referenceData': {'taskName': 'Active', 'taskColor': '8BC34A'},
         });
         mockAssignments.add({
@@ -46,6 +57,19 @@ class MockApiService {
           'event': eventId,
           'resource': jobId,
         });
+
+        // Simple Linear Waterfall Dependency (Previous -> Current)
+        if (j > 0) {
+          final prevJob = 'job-$i-${j - 1}';
+          final prevEvent = 'event-$prevJob';
+
+          mockDependencies.add({
+            'id': 'dep-$prevEvent-$eventId',
+            'predecessorId': prevEvent,
+            'successorId': eventId,
+            'type': 'FinishToStart',
+          });
+        }
       }
 
       mockResources.add(GanttResourceData(
@@ -75,7 +99,8 @@ class MockApiService {
       'name': 'Extra Task',
       'utcStartDate': eventStart.toIso8601String(),
       'utcEndDate': eventEnd.toIso8601String(),
-      'resourceId': 'event-person-0-summary',
+      'resourceId': 'summary-task-person-0',
+      'parentId': 'summary-task-person-0',
       'referenceData': {'taskName': 'Active', 'taskColor': '8BC34A'},
     });
     mockAssignments.add({
@@ -89,6 +114,7 @@ class MockApiService {
       'resourcesData': mockResources.map((r) => r.toJson()).toList(),
       'eventsData': mockEvents,
       'assignmentsData': mockAssignments,
+      'dependenciesData': mockDependencies,
       'resourceTimeRangesData': mockResourceTimeRanges,
     };
   }

@@ -791,8 +791,13 @@ class BarsCollectionPainter extends CustomPainter {
 
   void _drawDependencyBackgrounds(Canvas canvas, Size size) {
     if (dependencies.isEmpty) return;
+    final processedContainedPredecessors = <String>{};
     for (final dependency in dependencies) {
       if (dependency.type == DependencyType.contained) {
+        if (processedContainedPredecessors.contains(dependency.predecessorTaskId)) {
+          continue;
+        }
+        processedContainedPredecessors.add(dependency.predecessorTaskId);
         _drawContainedDependency(canvas, dependency);
       }
     }

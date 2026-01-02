@@ -4,6 +4,7 @@ library;
 export 'src/legacy_gantt_chart_widget.dart';
 export 'src/models/legacy_gantt_task.dart';
 export 'src/models/legacy_gantt_theme.dart';
+export 'src/models/legacy_gantt_resource.dart';
 export 'src/models/legacy_gantt_row.dart';
 export 'src/models/legacy_gantt_chart_colors.dart';
 export 'src/models/remote_cursor.dart';

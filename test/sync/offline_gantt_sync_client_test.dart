@@ -62,6 +62,12 @@ class MockInnerClient implements WebSocketGanttSyncClient {
 
   @override
   Stream<SyncProgress> get inboundProgress => Stream.value(const SyncProgress(processed: 0, total: 0));
+
+  @override
+  Future<String> getMerkleRoot() async => '';
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
 }
 
 void main() {

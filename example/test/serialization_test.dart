@@ -33,6 +33,12 @@ class MockGanttSyncClient implements GanttSyncClient {
   @override
   Future<void> sendOperations(List<Operation> operations) async {}
   Future<void> dispose() async => _controller.close();
+
+  @override
+  Future<String> getMerkleRoot() async => '';
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
 }
 
 void main() {

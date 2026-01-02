@@ -25,6 +25,12 @@ class FakeGanttSyncClient implements GanttSyncClient {
 
   @override
   Hlc get currentHlc => Hlc.zero;
+
+  @override
+  Future<String> getMerkleRoot() async => '';
+
+  @override
+  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
 }
 
 void main() {

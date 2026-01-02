@@ -8,6 +8,7 @@ class ProcessedScheduleData {
   final List<LegacyGanttTask> ganttTasks;
   final List<LegacyGanttTask> conflictIndicators;
   final List<GanttGridData> gridData;
+  final List<LegacyGanttTaskDependency> dependencies; // Added
   final Map<String, int> rowMaxStackDepth;
   final Map<String, GanttEventData> eventMap;
   final GanttResponse apiResponse;
@@ -16,6 +17,7 @@ class ProcessedScheduleData {
     required this.ganttTasks,
     required this.conflictIndicators,
     required this.gridData,
+    required this.dependencies, // Added
     required this.rowMaxStackDepth,
     required this.eventMap,
     required this.apiResponse,
@@ -93,6 +95,7 @@ class GanttScheduleService {
           originalId: event.id,
           isSummary: false,
           completion: job?.completion ?? 0.0,
+          parentId: event.parentId,
         ));
       }
     }
@@ -203,12 +206,38 @@ class GanttScheduleService {
     final allRows = processedGridData.expand((e) => [e, ...e.children]).map((e) => LegacyGanttRow(id: e.id)).toList();
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
 
+    // Map Event ID -> Assignment ID (Task ID)
+    final Map<String, String> eventToAssignmentId = {};
+    for (var a in apiResponse.assignmentsData) {
+      eventToAssignmentId[a.event] = a.id;
+    }
+
+    // Process Dependencies
+    final dependencies = apiResponse.dependenciesData.map((d) {
+      DependencyType type = DependencyType.finishToStart;
+      if (d.type == 'StartToStart') type = DependencyType.startToStart;
+      if (d.type == 'FinishToFinish') type = DependencyType.finishToFinish;
+      if (d.type == 'StartToFinish') type = DependencyType.startToFinish;
+      if (d.type == 'Contained') type = DependencyType.contained;
+
+      // Translate IDs
+      final predId = eventToAssignmentId[d.predecessorId] ?? d.predecessorId;
+      final succId = eventToAssignmentId[d.successorId] ?? d.successorId;
+
+      return LegacyGanttTaskDependency(
+        predecessorTaskId: predId,
+        successorTaskId: succId,
+        type: type,
+      );
+    }).toList();
+
     final (stackedTasks, maxDepthPerRow, conflictIndicators) =
         _calculateTaskStacking(fetchedTasks, apiResponse, showConflicts: showConflicts);
 
     return ProcessedScheduleData(
       ganttTasks: stackedTasks,
       gridData: processedGridData,
+      dependencies: dependencies,
       rowMaxStackDepth: maxDepthPerRow,
       eventMap: eventMap,
       apiResponse: apiResponse,
