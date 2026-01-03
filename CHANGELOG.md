@@ -1,3 +1,12 @@
+## 6.0.0
+
+* **FEATURE**: **Merkle Tree Synchronization**: Implemented efficient state synchronization using Merkle Trees to minimize data transfer and ensure eventual consistency.
+* **FEATURE**: **JSON Isolate**: Offloaded JSON decoding to background isolates to prevent UI jank during large data updates.
+* **PERFORMANCE**: **Optimized Web/Wasm Client**: Implemented "Direct Send" and "Optimistic Wait" strategies for `RESET_DATA` operations, significantly reducing client-side processing time and DB I/O on web platforms.
+* **PERFORMANCE**: **Chunked Offline Writes**: Implemented non-blocking chunked writes for the offline queue on Web to prevent UI blocking during large updates.
+* **IMPROVEMENT**: **Timestamp-Based Conflict Resolution**: Fixed dependency loss issues by implementing "Last Write Wins" logic for dependency deletions based on HLC timestamps.
+* **IMPROVEMENT**: **Fast-Forward Sync**: Optimized sync loop to skip processing of operations that have already been applied or ignored locally.
+
 ## 5.1.1
 
 * **EXAMPLE FIX**: Fix for an issue in the example application where the loading indicator preference was not respected
