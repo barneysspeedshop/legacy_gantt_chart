@@ -311,19 +311,45 @@ class LocalGanttRepository {
   Future<void> deleteDependency(String fromId, String toId, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      await db.execute(
-        'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? AND to_id = ?',
-        [timestamp.toString(), timestamp.toString(), fromId, toId],
+      // Check existing timestamp
+      final existing = await db.query(
+        'SELECT last_updated FROM dependencies WHERE from_id = ? AND to_id = ?',
+        [fromId, toId],
       );
+
+      bool shouldUpdate = true;
+      if (existing.isNotEmpty && existing.first['last_updated'] != null) {
+        final existingHlc = _parseHlc(existing.first['last_updated']);
+        if (existingHlc != null && existingHlc >= timestamp) {
+          shouldUpdate = false;
+        }
+      }
+
+      if (shouldUpdate) {
+        await db.execute(
+          'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? AND to_id = ?',
+          [timestamp.toString(), timestamp.toString(), fromId, toId],
+        );
+      }
     });
   }
 
   Future<void> deleteDependenciesForTask(String taskId, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
+      // This is a bulk update, so we can't easily check individual row timestamps in Dart without iterating.
+      // However, we can use a SQL WHERE clause to only update rows where the timestamp is older.
+      // SQLite string comparison works for ISO-like strings, but HLCs have counters/nodeIds.
+      // HLCs are lexicographically comparable! (ISO-Counter-NodeId)
+
       await db.execute(
-        'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? OR to_id = ?',
-        [timestamp.toString(), timestamp.toString(), taskId, taskId],
+        '''
+        UPDATE dependencies 
+        SET is_deleted = 1, deleted_at = ?, last_updated = ? 
+        WHERE (from_id = ? OR to_id = ?) 
+          AND (last_updated IS NULL OR last_updated < ?)
+        ''',
+        [timestamp.toString(), timestamp.toString(), taskId, taskId, timestamp.toString()],
       );
     });
   }
