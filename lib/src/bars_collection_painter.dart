@@ -8,6 +8,8 @@ import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_theme.dart';
 import 'models/remote_ghost.dart';
 import 'models/work_calendar.dart';
+import 'models/dependency_drag_status.dart';
+import 'utils/critical_path_calculator.dart';
 
 /// A [CustomPainter] responsible for drawing all the task bars, dependency lines,
 /// and other visual elements onto the main Gantt chart grid area.
@@ -96,13 +98,20 @@ class BarsCollectionPainter extends CustomPainter {
   final WorkCalendar? workCalendar;
   final bool rollUpMilestones;
   final bool showNowLine;
+
   final DateTime? nowLineDate;
+  final bool showSlack;
+  final Map<String, CpmTaskStats> cpmStats;
+  final DependencyDragStatus dependencyDragStatus;
+  final int? dependencyDragDelayAmount;
+  final bool isSecondaryHovered;
+  final Offset? secondaryHoverPosition;
 
   BarsCollectionPainter({
-    required this.conflictIndicators,
     required this.data,
-    required this.domain,
+    required this.conflictIndicators,
     required this.visibleRows,
+    required this.domain,
     required this.rowMaxStackDepth,
     required this.scale,
     required this.rowHeight,
@@ -112,9 +121,9 @@ class BarsCollectionPainter extends CustomPainter {
     this.drawingTask,
     this.remoteGhosts = const {},
     required this.theme,
+    this.dependencies = const [],
     this.hoveredRowId,
     this.hoveredDate,
-    this.dependencies = const [],
     this.hasCustomTaskBuilder = false,
     this.hasCustomTaskContentBuilder = false,
     this.enableDependencyCreation = false,
@@ -131,6 +140,12 @@ class BarsCollectionPainter extends CustomPainter {
     this.rollUpMilestones = false,
     this.showNowLine = false,
     this.nowLineDate,
+    this.showSlack = false,
+    this.cpmStats = const {},
+    this.dependencyDragStatus = DependencyDragStatus.none,
+    this.dependencyDragDelayAmount,
+    this.isSecondaryHovered = false,
+    this.secondaryHoverPosition,
   });
 
   @override
@@ -299,6 +314,40 @@ class BarsCollectionPainter extends CustomPainter {
       }
 
       if (!hasCustomTaskBuilder) {
+        if (showSlack) {
+          for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
+            if (task.cellBuilder != null || task.isMilestone) {
+              continue;
+            }
+
+            final stats = cpmStats[task.id];
+            if (stats != null && stats.float > 0) {
+              final double taskEndX = scale(task.end);
+              final double slackStartX = taskEndX;
+              final double slackEndX = scale(task.end.add(Duration(minutes: stats.float)));
+
+              if (slackEndX > slackStartX && slackEndX > 0 && slackStartX < size.width) {
+                final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+                final double barHeight = rowHeight * theme.barHeightRatio;
+                final double slackHeight = barHeight * 0.6;
+                final double slackVerticalCenterOffset = (rowHeight - slackHeight) / 2;
+
+                final RRect slackRRect = RRect.fromRectAndRadius(
+                  Rect.fromLTWH(slackStartX, barTop + slackVerticalCenterOffset, slackEndX - slackStartX, slackHeight),
+                  const Radius.circular(2.0),
+                );
+
+                final Paint slackPaint = Paint()
+                  ..color = theme.slackBarColor
+                  ..style = PaintingStyle.fill;
+
+                canvas.drawRRect(slackRRect, slackPaint);
+                _drawAngledPattern(canvas, slackRRect, theme.slackBarColor.withValues(alpha: 0.5), 1.0);
+              }
+            }
+          }
+        }
+
         for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
           if (task.cellBuilder != null) {
             continue;
@@ -817,19 +866,63 @@ class BarsCollectionPainter extends CustomPainter {
     final endX = dependencyDragCurrentPosition!.dx;
     final endY = dependencyDragCurrentPosition!.dy;
 
+    Color lineColor;
+    String? statusText;
+
+    switch (dependencyDragStatus) {
+      case DependencyDragStatus.cycle:
+        lineColor = Colors.red;
+        statusText = 'Cycle Detected';
+        break;
+      case DependencyDragStatus.inadmissible:
+        lineColor = Colors.orange;
+        if (dependencyDragDelayAmount != null) {
+          final days = (dependencyDragDelayAmount! / (24 * 60)).toStringAsFixed(1);
+          statusText = 'Delay: +$days days';
+        } else {
+          statusText = 'Delay Warning';
+        }
+        break;
+      case DependencyDragStatus.admissible:
+        lineColor = Colors.green;
+        statusText = 'Safe';
+        break;
+      case DependencyDragStatus.none:
+        lineColor = theme.dependencyLineColor;
+        break;
+    }
+
     final paint = Paint()
-      ..color = theme.dependencyLineColor
-      ..strokeWidth = 1.5
+      ..color = lineColor
+      ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 
     canvas.drawLine(Offset(startX, startY), Offset(endX, endY), paint);
 
     final arrowPath = Path();
-    const arrowSize = 5.0;
+    const arrowSize = 6.0;
     arrowPath.moveTo(endX - arrowSize, endY - arrowSize / 2);
     arrowPath.lineTo(endX, endY);
     arrowPath.lineTo(endX - arrowSize, endY + arrowSize / 2);
     canvas.drawPath(arrowPath, paint);
+
+    if (statusText != null) {
+      final textSpan = TextSpan(
+        text: statusText,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          backgroundColor: lineColor.withValues(alpha: 0.8),
+        ),
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(endX + 10, endY - 10));
+    }
   }
 
   void _drawDependencyLines(Canvas canvas, Size size) {

@@ -1,3 +1,16 @@
+## 6.1.0
+
+* **FEATURE**: **Slack Visualization**: Added support for visualizing task slack (float), showing how long a task can be delayed without affecting the project deadline.
+    - Controlled by `showSlack` and `slackBarColor` in `LegacyGanttTheme`.
+    - **Decoupled CPM Engine**: Slack and project delay calculations now run independently of the visual critical path highlight toggle.
+* **IMPROVEMENT**: **Slack Rendering Z-Index**: Slack bars are now rendered in a preliminary pass, ensuring they always sit behind main task bars to prevent visual overlaps.
+* **FEATURE**: **Real-time Dependency Admissibility Feedback**: Added live visual feedback when drawing new dependencies.
+    - **Green (Admissible)**: The link is safe and does not delay the project.
+    - **Orange (Inadmissible)**: The link is valid but will extend the project's critical path (includes delay duration tooltip).
+    - **Red (Cycle)**: The link is invalid as it would create a circular dependency.
+* **EXAMPLE IMPROVEMENT**: **Enhanced Control Panel & Seed Data**:
+    - Updated mock data generator to produce diamond-shaped structures, creating natural slack.
+
 ## 6.0.0
 
 * **FEATURE**: **Merkle Tree Synchronization**: Implemented efficient state synchronization using Merkle Trees to minimize data transfer and ensure eventual consistency.

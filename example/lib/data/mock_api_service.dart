@@ -58,17 +58,89 @@ class MockApiService {
           'resource': jobId,
         });
 
-        // Simple Linear Waterfall Dependency (Previous -> Current)
-        if (j > 0) {
-          final prevJob = 'job-$i-${j - 1}';
-          final prevEvent = 'event-$prevJob';
+        // Create branching execution:
+        // Main path: Task 0 -> Task 2 -> Task 4 (Sequential 8h tasks)
+        // Side path: Task 1 (starts after Task 0, must finish before Task 2 starts? No, that would make it blocking)
+        // Better:
+        // A (Task 0, 8h) -> Depends on nothing
+        // B (Task 1, 2h) -> Depends on A
+        // C (Task 2, 8h) -> Depends on B AND A? No.
 
+        // Let's do:
+        // Task 0 (8h) -> Task 2 (8h) -> Task 4 (8h) ...
+        // Task 1 (2h) -> Starts after Task 0, must finish before Task 2.
+        //   Dep: 0 -> 1. Dep 1 -> 2.
+        //   Path 0->2 is 8+8=16 (if 0 finishes, 2 starts).
+        //   Path 0->1->2 is 8+2+?
+        //   If 0->2 is FinishToStart, then 2 starts when 0 finishes.
+        //   If 1 depends on 0 (FinishToStart), 1 starts when 0 finishes.
+        //   If 2 depends on 1 (FinishToStart), 2 cannot start until 1 finishes.
+        //   This makes 0->1->2 the critical path if (0->2) is not explicitly constrained or is looser.
+
+        // Correct Slack Structure:
+        // A (Task 0) splits into B (Task 1, short) and C (Task 2, long).
+        // Both merge into D (Task 3).
+
+        // Revised Loop Logic:
+        // Groups of 3:
+        // J=0 (Start node, 8h)
+        // J=1 (Short branch, 2h) depends on J=0
+        // J=2 (Long branch, 8h) depends on J=0
+        // J=3 (Merge node, 8h) depends on J=1 AND J=2.
+
+        // Critical path is 0->2->3. Slack is on 1.
+
+        // Simple Linear Waterfall Dependency (Previous -> Current) by default
+        if (j > 0) {
+          // Default chain
+          final prevEvent = 'event-job-$i-${j - 1}';
           mockDependencies.add({
             'id': 'dep-$prevEvent-$eventId',
             'predecessorId': prevEvent,
             'successorId': eventId,
             'type': 'FinishToStart',
           });
+
+          // Inject artificial slack for every 4th task
+          // Make Task j (where j%4 == 2) a "long parallel" to Task j-1?
+
+          // Let's try the Diamond Pattern explicitly for the first few tasks of each person
+          if (j == 2 && jobCount >= 4) {
+            // Task 2 is "Long Branch" (8h). Task 1 is "Short Branch" (2h).
+            // Both usually depend on Task 0.
+            // Currently loop says 1 depends on 0. 2 depends on 1.
+            // We want 1 depends on 0. 2 depends on 0. 3 depends on 1 AND 2.
+
+            // Remove 1->2 dependency (it was added in prev iteration? No, current iteration adds prev->curr)
+            // In j=2 iteration, default adds 1->2. We want 0->2 instead.
+
+            mockDependencies.removeLast(); // Remove 1->2
+
+            final prevEvent0 = 'event-job-$i-0'; // Task 0
+            mockDependencies.add({
+              'id': 'dep-$prevEvent0-$eventId',
+              'predecessorId': prevEvent0,
+              'successorId': eventId,
+              'type': 'FinishToStart',
+            });
+          }
+
+          if (j == 3 && jobCount >= 4) {
+            // Task 3 is Merge Node.
+            // Default adds 2->3.
+            // We also want 1->3.
+            // Task 1 was the short one (2h). Task 2 was long (8h).
+            // Both start after 0.
+            // So 3 waits for both.
+
+            final prevEvent1 = 'event-job-$i-1'; // Task 1
+            mockDependencies.add({
+              'id': 'dep-$prevEvent1-$eventId',
+              'predecessorId': prevEvent1,
+              'successorId': eventId,
+              'type': 'FinishToStart',
+            });
+          }
         }
       }
 

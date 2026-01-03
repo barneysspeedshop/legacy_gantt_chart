@@ -355,6 +355,9 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// The specific date/time for the "now" line. If null, defaults to [DateTime.now()].
   final DateTime? nowLineDate;
 
+  /// Whether to show the "safe zone" (slack/float) for each task.
+  final bool showSlack;
+
   const LegacyGanttChartWidget({
     super.key, // Use super.key
     this.data,
@@ -418,6 +421,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.rollUpMilestones = false,
     this.showNowLine = false,
     this.nowLineDate,
+    this.showSlack = false,
   })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
         assert(controller == null || dependencies == null),
         assert(taskBarBuilder == null || taskContentBuilder == null),
@@ -485,6 +489,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
       if (oldWidget.rollUpMilestones != widget.rollUpMilestones) {
         _internalViewModel!.rollUpMilestones = widget.rollUpMilestones;
+      }
+
+      if (oldWidget.showSlack != widget.showSlack) {
+        _internalViewModel!.showSlack = widget.showSlack;
       }
 
       _internalViewModel!.onBulkTaskUpdate = widget.onBulkTaskUpdate;
@@ -659,6 +667,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
             workCalendar: widget.workCalendar,
             rollUpMilestones: widget.rollUpMilestones,
+            showSlack: widget.showSlack,
             onBulkTaskUpdate: widget.onBulkTaskUpdate,
             onSelectionChanged: (ids) {
               if (widget.controller != null) {
@@ -798,6 +807,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                     theme: effectiveTheme,
                                                     hoveredRowId: vm.hoveredRowId,
                                                     hoveredDate: vm.hoveredDate,
+                                                    cpmStats: vm.cpmStats,
+                                                    showSlack: vm.showSlack,
                                                     hasCustomTaskBuilder: widget.taskBarBuilder != null,
                                                     hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
                                                     translateY: vm.translateY,
@@ -816,6 +827,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                     workCalendar: vm.workCalendar,
                                                     showNowLine: widget.showNowLine,
                                                     nowLineDate: widget.nowLineDate,
+                                                    dependencyDragStatus: vm.dependencyDragStatus,
+                                                    dependencyDragDelayAmount: vm.dependencyDragDelayAmount,
                                                   ),
                                                 ),
                                               ),

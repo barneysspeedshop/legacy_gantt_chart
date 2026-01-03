@@ -73,6 +73,7 @@ class _GanttViewState extends State<GanttView> {
   String _selectedLocale = 'en_US';
   bool _showCursors = true;
   bool _showNowLine = false;
+  bool _showSlack = false;
   Timer? _bulkUpdateTimer;
   int _bulkUpdateCount = 0;
   OverlayEntry? _tooltipOverlay;
@@ -777,6 +778,16 @@ class _GanttViewState extends State<GanttView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const Text('Show Slack'),
+                Switch(
+                  value: vm.showCriticalPath && _showSlack,
+                  onChanged: vm.showCriticalPath ? (val) => setState(() => _showSlack = val) : null,
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 const Text('Show Cursors'),
                 Switch(
                   value: _showCursors,
@@ -1418,6 +1429,8 @@ class _GanttViewState extends State<GanttView> {
                                                 showEmptyRows: vm.showEmptyParentRows,
                                                 rollUpMilestones: vm.rollUpMilestones,
                                                 showNowLine: _showNowLine,
+                                                showSlack: _showSlack && vm.showCriticalPath,
+                                                nowLineDate: DateTime.now(),
                                                 enableResize: vm.resizeEnabled,
                                                 onTaskUpdate: (task, start, end) {
                                                   vm.handleTaskUpdate(task, start, end);

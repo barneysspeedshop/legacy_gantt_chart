@@ -45,6 +45,9 @@ class LegacyGanttTheme {
   /// The color of the "now" line indicator.
   final Color nowLineColor;
 
+  /// The color of the slack (float) bar.
+  final Color slackBarColor;
+
   LegacyGanttTheme({
     required this.barColorPrimary,
     required this.barColorSecondary,
@@ -68,6 +71,7 @@ class LegacyGanttTheme {
     this.barCornerRadius = const Radius.circular(4.0),
     this.criticalPathColor = const Color.fromRGBO(244, 67, 54, 1.0), // Colors.red
     this.nowLineColor = const Color.fromRGBO(244, 67, 54, 0.8), // Colors.red.withAlpha(0.8)
+    this.slackBarColor = const Color.fromRGBO(0, 0, 0, 0.4), // Colors.black.withAlpha(0.4)
   }) : axisTextStyle = axisTextStyle ?? TextStyle(fontSize: 12, color: textColor);
 
   LegacyGanttTheme copyWith({
@@ -93,6 +97,7 @@ class LegacyGanttTheme {
     Color? weekendColor,
     Color? criticalPathColor,
     Color? nowLineColor,
+    Color? slackBarColor,
   }) =>
       LegacyGanttTheme(
         barColorPrimary: barColorPrimary ?? this.barColorPrimary,
@@ -118,6 +123,7 @@ class LegacyGanttTheme {
         weekendColor: weekendColor ?? this.weekendColor,
         criticalPathColor: criticalPathColor ?? this.criticalPathColor,
         nowLineColor: nowLineColor ?? this.nowLineColor,
+        slackBarColor: slackBarColor ?? this.slackBarColor,
       );
 
   /// Creates a default theme based on the application's [ThemeData].
@@ -142,5 +148,6 @@ class LegacyGanttTheme {
             const TextStyle(fontSize: 12, color: Colors.white),
         criticalPathColor: Colors.red, // Default critical path color
         nowLineColor: theme.brightness == Brightness.dark ? Colors.redAccent : theme.colorScheme.error,
+        slackBarColor: theme.colorScheme.onSurface.withValues(alpha: 0.4),
       );
 }

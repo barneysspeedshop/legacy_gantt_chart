@@ -10,6 +10,7 @@ import 'models/remote_cursor.dart';
 import 'models/remote_ghost.dart';
 import 'sync/gantt_sync_client.dart';
 import 'sync/websocket_gantt_sync_client.dart';
+import 'models/dependency_drag_status.dart';
 
 import 'sync/crdt_engine.dart';
 import 'sync/hlc.dart';
@@ -196,6 +197,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
   set rollUpMilestones(bool value) {
     if (_rollUpMilestones != value) {
       _rollUpMilestones = value;
+      notifyListeners();
+    }
+  }
+
+  /// Whether to show the slack (float) for each task.
+  bool _showSlack;
+  bool get showSlack => _showSlack;
+  set showSlack(bool value) {
+    if (_showSlack != value) {
+      _showSlack = value;
+      _recalculateCriticalPath();
       notifyListeners();
     }
   }
@@ -442,10 +454,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onBulkTaskUpdate,
     WorkCalendar? workCalendar,
     bool rollUpMilestones = false,
+    bool showSlack = false,
     this.projectTimezoneAbbreviation,
     this.projectTimezoneOffset,
   })  : _tasks = List.from(data),
         _rollUpMilestones = rollUpMilestones,
+        _showSlack = showSlack,
         _workCalendar = workCalendar,
         _gridMin = gridMin,
         _gridMax = gridMax,
@@ -803,6 +817,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
   String? _dependencyHoveredTaskId;
 
   String? get dependencyStartTaskId => _dependencyStartTaskId;
+  DependencyDragStatus _dependencyDragStatus = DependencyDragStatus.none;
+  DependencyDragStatus get dependencyDragStatus => _dependencyDragStatus;
+
+  int? _dependencyDragDelayAmount;
+  int? get dependencyDragDelayAmount => _dependencyDragDelayAmount;
   TaskPart? get dependencyStartSide => _dependencyStartSide;
   Offset? get currentDragPosition => _currentDragPosition;
   String? get dependencyHoveredTaskId => _dependencyHoveredTaskId;
@@ -835,7 +854,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _recalculateCriticalPath() {
-    if (!_showCriticalPath) return;
+    if (!_showCriticalPath && !_showSlack && _dependencyDragStatus == DependencyDragStatus.none) {
+      _criticalTaskIds = const {};
+      _criticalDependencies = const {};
+      _cpmStats = const {};
+      return;
+    }
 
     final calculator = CriticalPathCalculator();
     final result = calculator.calculate(tasks: _tasks, dependencies: dependencies);
@@ -1547,6 +1571,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _dependencyStartTaskId = hit.task.id;
         _dependencyStartSide = hit.part;
         _currentDragPosition = details.localPosition;
+        _dependencyDragStatus = DependencyDragStatus.none;
+        _dependencyDragDelayAmount = null;
+        _recalculateCriticalPath();
         notifyListeners();
       }
       return;
@@ -1600,10 +1627,32 @@ class LegacyGanttViewModel extends ChangeNotifier {
     } else if (_panType == PanType.dependency) {
       _currentDragPosition = details.localPosition;
       final hit = _getTaskPartAtPosition(details.localPosition);
+      _dependencyDragStatus = DependencyDragStatus.none;
+      _dependencyDragDelayAmount = null;
+
       if (hit != null &&
           hit.task.id != _dependencyStartTaskId &&
           (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
         _dependencyHoveredTaskId = hit.task.id;
+
+        // Admissibility Logic
+        if (_wouldCreateCycle(_dependencyStartTaskId!, hit.task.id)) {
+          _dependencyDragStatus = DependencyDragStatus.cycle;
+        } else {
+          final sourceStats = _cpmStats[_dependencyStartTaskId!];
+          final targetStats = _cpmStats[hit.task.id];
+
+          if (sourceStats != null && targetStats != null) {
+            // Formula: efinish(A) <= lstart(B)
+            // Note: Our stats use minutes relative to project start.
+            if (sourceStats.earlyFinish <= targetStats.lateStart) {
+              _dependencyDragStatus = DependencyDragStatus.admissible;
+            } else {
+              _dependencyDragStatus = DependencyDragStatus.inadmissible;
+              _dependencyDragDelayAmount = sourceStats.earlyFinish - targetStats.lateStart;
+            }
+          }
+        }
       } else {
         _dependencyHoveredTaskId = null;
       }
@@ -1689,6 +1738,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _dependencyStartTaskId = null;
       _dependencyStartSide = null;
       _currentDragPosition = null;
+      _dependencyDragStatus = DependencyDragStatus.none;
+      _dependencyDragDelayAmount = null;
+      _dependencyHoveredTaskId = null;
       notifyListeners();
     } else {
       onVerticalPanEnd(details);
