@@ -518,6 +518,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
             }
           }
         } else if (op.type == 'RESET_DATA') {
+          debugPrint('WARNING: RESET_DATA received. This operation is deprecated for normal syncing.');
+          debugPrint('Please use BATCH_UPDATE with the full state for seeding to ensure CRDT convergence.');
+          debugPrint('Proceeding with destructive wipe (Emergency Admin Action)...');
           dependencies = [];
           _tasks.clear();
           conflictIndicators = [];

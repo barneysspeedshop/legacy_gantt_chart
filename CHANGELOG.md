@@ -1,3 +1,7 @@
+## 6.1.1
+
+* **DEPRECATION**: Deprecated `RESET_DATA` operation for normal syncing and seeding. `BATCH_UPDATE` should be used instead to ensure CRDT convergence. `RESET_DATA` is now reserved for emergency admin wipes and will log a warning when received.
+
 ## 6.1.0
 
 * **FEATURE**: **Slack Visualization**: Added support for visualizing task slack (float), showing how long a task can be delayed without affecting the project deadline.
