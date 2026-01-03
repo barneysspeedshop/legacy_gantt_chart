@@ -1918,10 +1918,6 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> _handleIncomingOperation(Operation op) async {
     print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
 
-    if (_useLocalDatabase) {
-      await _localRepository.setLastServerSyncTimestamp(op.timestamp);
-    }
-
     if (op.type == 'BATCH_UPDATE') {
       final operations = op.data['operations'] as List? ?? [];
       final batchTasks = <LegacyGanttTask>[];
@@ -1934,6 +1930,11 @@ class GanttViewModel extends ChangeNotifier {
           final opType = opMap['type'] as String;
           var opData = opMap['data'] as Map<String, dynamic>;
           final opTsRaw = opMap['timestamp'];
+
+          if (_latestIgnoredResetTimestamp != null && opTsRaw.toString() == _latestIgnoredResetTimestamp.toString()) {
+            continue;
+          }
+
           final opTs = opTsRaw is int
               ? Hlc.fromIntTimestamp(opTsRaw)
               : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
