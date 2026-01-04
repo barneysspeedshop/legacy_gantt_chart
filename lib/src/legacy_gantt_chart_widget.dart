@@ -11,7 +11,8 @@ import 'axis_painter.dart';
 import 'legacy_gantt_controller.dart';
 import 'legacy_gantt_view_model.dart';
 import 'bars_collection_painter.dart';
-import 'sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
+
 import 'cursor_painter.dart';
 import 'widgets/resource_histogram.dart';
 import 'models/work_calendar.dart';

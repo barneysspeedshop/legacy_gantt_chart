@@ -8,18 +8,16 @@ import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/remote_cursor.dart';
 import 'models/remote_ghost.dart';
-import 'sync/gantt_sync_client.dart';
-import 'sync/websocket_gantt_sync_client.dart';
-import 'models/dependency_drag_status.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
-import 'sync/crdt_engine.dart';
-import 'sync/hlc.dart';
+import 'legacy_gantt_controller.dart';
+import 'models/work_calendar.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
 import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
-import 'legacy_gantt_controller.dart';
-import 'models/work_calendar.dart';
+import 'sync/websocket_gantt_sync_client.dart';
+import 'models/dependency_drag_status.dart';
 
 enum DragMode { none, move, resizeStart, resizeEnd }
 
@@ -533,7 +531,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
         } else if (op.type == 'PRESENCE_UPDATE') {
           _handlePresenceUpdate(op.data, op.actorId);
         } else {
-          _tasks = _crdtEngine.mergeTasks(_tasks, [op]);
+          _safeMergeTasks([op]);
+
           if (taskGrouper != null) {
             final conflicts = LegacyGanttConflictDetector().run(
               tasks: _tasks,
@@ -547,6 +546,22 @@ class LegacyGanttViewModel extends ChangeNotifier {
         }
       });
     }
+  }
+
+  /// Helper to merge tasks while preserving transient state (e.g. cellBuilder)
+  void _safeMergeTasks(List<Operation> ops) {
+    final taskMap = {for (var t in _tasks) t.id: t};
+    final currentProtocolTasks = _tasks.map((t) => t.toProtocolTask()).toList();
+    final mergedProtocolTasks = _crdtEngine.mergeTasks(currentProtocolTasks, ops);
+
+    _tasks = mergedProtocolTasks.map((pt) {
+      final original = taskMap[pt.id];
+      if (original != null) {
+        return original.copyWithProtocol(pt);
+      } else {
+        return LegacyGanttTask.fromProtocolTask(pt);
+      }
+    }).toList();
   }
 
   Map<String, List<ResourceBucket>> _baseResourceBuckets = {};
@@ -1342,7 +1357,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (opsToSend.isNotEmpty && syncClient != null) {
       syncClient!.sendOperations(opsToSend);
-      _tasks = _crdtEngine.mergeTasks(_tasks, opsToSend);
+      _safeMergeTasks(opsToSend);
     }
 
     if (localStateChanged && taskGrouper != null) {

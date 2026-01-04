@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
+import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
-import 'dart:convert';
-import 'package:legacy_gantt_chart/src/sync/hlc.dart';
 
 // Minimal implementation of WebSocketChannel for testing
 class TestWebSocketChannel with StreamChannelMixin implements WebSocketChannel {

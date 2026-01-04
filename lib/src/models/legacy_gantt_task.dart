@@ -1,12 +1,25 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:legacy_gantt_chart/src/sync/hlc.dart';
+import 'package:collection/collection.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 int? _colorToHex(Color? color) {
   if (color == null) return null;
   return color.toARGB32();
+}
+
+Color? _parseColor(dynamic value) {
+  if (value == null) return null;
+  if (value is String) {
+    // Try standard hex
+    try {
+      if (value.startsWith('#')) return Color(int.parse(value.substring(1), radix: 16));
+      return Color(int.parse(value, radix: 16));
+    } catch (_) {
+      return null;
+    }
+  }
+  if (value is int) return Color(value);
+  return null;
 }
 
 /// Represents a single segment within a [LegacyGanttTask].
@@ -28,6 +41,12 @@ class LegacyGanttTaskSegment {
         'color': _colorToHex(color)?.toRadixString(16),
       };
 
+  factory LegacyGanttTaskSegment.fromJson(Map<String, dynamic> json) => LegacyGanttTaskSegment(
+        start: DateTime.parse(json['start']),
+        end: DateTime.parse(json['end']),
+        color: _parseColor(json['color']),
+      );
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -43,22 +62,12 @@ class LegacyGanttTaskSegment {
 
 /// Defines how a parent task resizing affects its children.
 enum ResizePolicy {
-  /// Standard resizing (default). Children are not affected by parent resize,
-  /// unless standard dependency rules apply.
   none,
-
-  /// Constrain (Type 4): Children are pushed/clamped to stay inside the parent.
   constrain,
-
-  /// Elastic (Type 5): Children are scaled proportionally to the parent's new duration.
   elastic,
 }
 
 /// Represents a single task or event bar in the Gantt chart.
-///
-/// For optimal performance, it's recommended to override `==` and `hashCode`
-/// or use a package like `equatable` if your task objects might be frequently
-/// rebuilt, to prevent unnecessary repaints.
 @immutable
 class LegacyGanttTask {
   final String id;
@@ -78,7 +87,6 @@ class LegacyGanttTask {
   final bool isMilestone;
 
   /// A builder to create a custom widget for each day cell this task spans.
-  /// If provided, the default task bar will not be drawn for this task.
   final Widget Function(DateTime cellDate)? cellBuilder;
 
   final Hlc lastUpdated;
@@ -96,11 +104,9 @@ class LegacyGanttTask {
   final ResizePolicy resizePolicy;
 
   /// Map of field names to their last update timestamp (HLC).
-  /// Used for Field-Level LWW conflict resolution.
   final Map<String, Hlc> fieldTimestamps;
 
   /// Indicates if this task is logically deleted (Tombstone).
-  /// Used for Add-Wins OR-Set logic.
   final bool isDeleted;
 
   const LegacyGanttTask({
@@ -144,108 +150,121 @@ class LegacyGanttTask {
         name: '',
       );
 
-  factory LegacyGanttTask.fromJson(Map<String, dynamic> json) {
-    Hlc parsedHlc;
-    final dynamic rawLastUpdated = json['lastUpdated'];
-    if (rawLastUpdated is String) {
-      parsedHlc = Hlc.parse(rawLastUpdated);
-    } else if (rawLastUpdated is int) {
-      parsedHlc = Hlc(millis: rawLastUpdated, counter: 0, nodeId: 'legacy');
-    } else {
-      parsedHlc = Hlc.zero;
-    }
-
-    Map<String, Hlc> parsedFieldTimestamps = {};
-    if (json['fieldTimestamps'] != null) {
-      final map = json['fieldTimestamps'] as Map<String, dynamic>;
-      map.forEach((k, v) {
-        if (v is String) {
-          parsedFieldTimestamps[k] = Hlc.parse(v);
-        }
-      });
-    }
-
+  factory LegacyGanttTask.fromProtocolTask(ProtocolTask pt) {
+    final meta = pt.metadata;
     return LegacyGanttTask(
-      id: json['id'] as String,
-      rowId: json['rowId'] as String,
-      start: DateTime.parse(json['start'] as String),
-      end: DateTime.parse(json['end'] as String),
-      name: json['name'] as String?,
-      color: _parseColor(json['color']),
-      textColor: _parseColor(json['textColor']),
-      stackIndex: json['stackIndex'] as int? ?? 0,
-      originalId: json['originalId'] as String?,
-      isSummary: json['isSummary'] == true,
-      isTimeRangeHighlight: json['isTimeRangeHighlight'] == true,
-      isOverlapIndicator: json['isOverlapIndicator'] == true,
-      completion: (json['completion'] as num?)?.toDouble() ?? 0.0,
-      segments: (json['segments'] as List?)
-          ?.map((e) => LegacyGanttTaskSegment(
-                start: DateTime.parse(e['start']),
-                end: DateTime.parse(e['end']),
-                color: _parseColor(e['color']),
-              ))
-          .toList(),
-      isMilestone: json['isMilestone'] == true,
-      lastUpdated: parsedHlc,
-      lastUpdatedBy: json['lastUpdatedBy'] as String?,
-      resourceId: json['resourceId'] as String?,
-      parentId: json['parentId'] as String?,
-      baselineStart: json['baselineStart'] != null ? DateTime.parse(json['baselineStart']) : null,
-      baselineEnd: json['baselineEnd'] != null ? DateTime.parse(json['baselineEnd']) : null,
-      notes: json['notes'] as String?,
-      usesWorkCalendar: json['usesWorkCalendar'] == true,
-      load: (json['load'] as num?)?.toDouble() ?? 1.0,
-      isAutoScheduled: json['isAutoScheduled'] == true,
-      propagatesMoveToChildren: json['propagatesMoveToChildren'] ?? true,
-      resizePolicy: json['resizePolicy'] != null
-          ? ResizePolicy.values.firstWhere((e) => e.name == json['resizePolicy'], orElse: () => ResizePolicy.none)
+      id: pt.id,
+      rowId: pt.rowId,
+      start: pt.start,
+      end: pt.end,
+      name: pt.name,
+      completion: pt.completion,
+      isSummary: pt.isSummary,
+      isMilestone: pt.isMilestone,
+      resourceId: pt.resourceId,
+      parentId: pt.parentId,
+      notes: pt.notes,
+      isDeleted: pt.isDeleted,
+      lastUpdated: pt.lastUpdated,
+      lastUpdatedBy: pt.lastUpdatedBy,
+      fieldTimestamps: pt.fieldTimestamps,
+      color: _parseColor(meta['color']),
+      textColor: _parseColor(meta['textColor']),
+      stackIndex: meta['stackIndex'] ?? 0,
+      originalId: meta['originalId'],
+      isTimeRangeHighlight: meta['isTimeRangeHighlight'] == true,
+      isOverlapIndicator: meta['isOverlapIndicator'] == true,
+      segments: (meta['segments'] as List?)?.map((e) => LegacyGanttTaskSegment.fromJson(e)).toList(),
+      usesWorkCalendar: meta['usesWorkCalendar'] == true,
+      load: (meta['load'] as num?)?.toDouble() ?? 1.0,
+      isAutoScheduled: meta['isAutoScheduled'] == true,
+      propagatesMoveToChildren: meta['propagatesMoveToChildren'] ?? true,
+      resizePolicy: meta['resizePolicy'] != null
+          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resizePolicy'], orElse: () => ResizePolicy.none)
           : ResizePolicy.none,
-      fieldTimestamps: parsedFieldTimestamps,
-      isDeleted: json['isDeleted'] == true,
+      baselineStart: meta['baselineStart'] != null ? DateTime.parse(meta['baselineStart']) : null,
+      baselineEnd: meta['baselineEnd'] != null ? DateTime.parse(meta['baselineEnd']) : null,
     );
   }
 
-  static Color? _parseColor(dynamic value) {
-    if (value == null) return null;
-    if (value is String) {
-      return Color(int.parse(value, radix: 16));
-    }
-    return null;
+  ProtocolTask toProtocolTask() => ProtocolTask(
+        id: id,
+        rowId: rowId,
+        start: start,
+        end: end,
+        name: name,
+        completion: completion,
+        isSummary: isSummary,
+        isMilestone: isMilestone,
+        resourceId: resourceId,
+        parentId: parentId,
+        notes: notes,
+        isDeleted: isDeleted,
+        lastUpdated: lastUpdated,
+        lastUpdatedBy: lastUpdatedBy,
+        fieldTimestamps: fieldTimestamps,
+        metadata: {
+          'color': _colorToHex(color)?.toRadixString(16),
+          'textColor': _colorToHex(textColor)?.toRadixString(16),
+          'stackIndex': stackIndex,
+          'originalId': originalId,
+          'isTimeRangeHighlight': isTimeRangeHighlight,
+          'isOverlapIndicator': isOverlapIndicator,
+          'segments': segments?.map((s) => s.toJson()).toList(),
+          'usesWorkCalendar': usesWorkCalendar,
+          'load': load,
+          'isAutoScheduled': isAutoScheduled,
+          'propagatesMoveToChildren': propagatesMoveToChildren,
+          'resizePolicy': resizePolicy.name,
+          'baselineStart': baselineStart?.toUtc().toIso8601String(),
+          'baselineEnd': baselineEnd?.toUtc().toIso8601String(),
+          'hasCellBuilder': cellBuilder != null,
+        },
+      );
+
+  // Wrappers for existing JSON compatibility if needed, or delegation
+  factory LegacyGanttTask.fromJson(Map<String, dynamic> json) {
+    // We can parse JSON manually as before OR map it to ProtocolTask first.
+    // To minimize regression, let's keep the logic close to original but using the new types?
+    // Actually, reconstructing the ProtocolTask from the flat JSON is easier.
+
+    // Construct metadata
+    final meta = <String, dynamic>{
+      'color': json['color'],
+      'textColor': json['textColor'],
+      'stackIndex': json['stackIndex'],
+      'originalId': json['originalId'],
+      'isTimeRangeHighlight': json['isTimeRangeHighlight'],
+      'isOverlapIndicator': json['isOverlapIndicator'],
+      'segments': json['segments'],
+      'usesWorkCalendar': json['usesWorkCalendar'],
+      'load': json['load'],
+      'isAutoScheduled': json['isAutoScheduled'],
+      'propagatesMoveToChildren': json['propagatesMoveToChildren'],
+      'resizePolicy': json['resizePolicy'],
+      'baselineStart': json['baselineStart'],
+      'baselineEnd': json['baselineEnd'],
+    };
+
+    // Construct Protocol Task
+    final pt = ProtocolTask.fromJson({
+      ...json,
+      'metadata': meta, // ProtocolTask.fromJson looks for 'metadata'
+    });
+
+    return LegacyGanttTask.fromProtocolTask(pt);
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'rowId': rowId,
-        'start': start.toUtc().toIso8601String(),
-        'end': end.toUtc().toIso8601String(),
-        'name': name,
-        'color': _colorToHex(color)?.toRadixString(16),
-        'textColor': _colorToHex(textColor)?.toRadixString(16),
-        'stackIndex': stackIndex,
-        'originalId': originalId,
-        'isSummary': isSummary,
-        'isTimeRangeHighlight': isTimeRangeHighlight,
-        'isOverlapIndicator': isOverlapIndicator,
-        'completion': completion,
-        'segments': segments?.map((s) => s.toJson()).toList(),
-        'isMilestone': isMilestone,
-        'hasCellBuilder': cellBuilder != null,
-        'lastUpdated': lastUpdated.toString(),
-        'lastUpdatedBy': lastUpdatedBy,
-        'resourceId': resourceId,
-        'parentId': parentId,
-        'baselineStart': baselineStart?.toUtc().toIso8601String(),
-        'baselineEnd': baselineEnd?.toUtc().toIso8601String(),
-        'notes': notes,
-        'usesWorkCalendar': usesWorkCalendar,
-        'load': load,
-        'isAutoScheduled': isAutoScheduled,
-        'propagatesMoveToChildren': propagatesMoveToChildren,
-        'resizePolicy': resizePolicy.name,
-        'fieldTimestamps': fieldTimestamps.map((k, v) => MapEntry(k, v.toString())),
-        'isDeleted': isDeleted,
-      };
+  Map<String, dynamic> toJson() {
+    // Flatten ProtocolTask serialization
+    final pt = toProtocolTask();
+    final json = pt.toJson();
+    final meta = json['metadata'] as Map<String, dynamic>? ?? {};
+    json.remove('metadata');
+    return {...json, ...meta};
+  }
+
+  String get contentHash => toProtocolTask().contentHash;
 
   @override
   bool operator ==(Object other) =>
@@ -265,11 +284,7 @@ class LegacyGanttTask {
           isTimeRangeHighlight == other.isTimeRangeHighlight &&
           isOverlapIndicator == other.isOverlapIndicator &&
           completion == other.completion &&
-          listEquals(segments, other.segments) &&
           isMilestone == other.isMilestone &&
-          cellBuilder == other.cellBuilder &&
-          lastUpdated == other.lastUpdated &&
-          lastUpdatedBy == other.lastUpdatedBy &&
           resourceId == other.resourceId &&
           parentId == other.parentId &&
           baselineStart == other.baselineStart &&
@@ -280,8 +295,11 @@ class LegacyGanttTask {
           isAutoScheduled == other.isAutoScheduled &&
           propagatesMoveToChildren == other.propagatesMoveToChildren &&
           resizePolicy == other.resizePolicy &&
-          mapEquals(fieldTimestamps, other.fieldTimestamps) &&
-          isDeleted == other.isDeleted;
+          isDeleted == other.isDeleted &&
+          lastUpdated == other.lastUpdated &&
+          lastUpdatedBy == other.lastUpdatedBy &&
+          const ListEquality().equals(segments, other.segments) &&
+          const MapEquality().equals(fieldTimestamps, other.fieldTimestamps);
 
   @override
   int get hashCode =>
@@ -293,29 +311,52 @@ class LegacyGanttTask {
       color.hashCode ^
       textColor.hashCode ^
       stackIndex.hashCode ^
-      originalId.hashCode ^
       isSummary.hashCode ^
-      isTimeRangeHighlight.hashCode ^
-      isOverlapIndicator.hashCode ^
       completion.hashCode ^
-      Object.hashAll(segments ?? []) ^
       isMilestone.hashCode ^
-      cellBuilder.hashCode ^
-      lastUpdated.hashCode ^
-      lastUpdatedBy.hashCode ^
       resourceId.hashCode ^
       parentId.hashCode ^
-      baselineStart.hashCode ^
-      baselineEnd.hashCode ^
-      notes.hashCode ^
-      usesWorkCalendar.hashCode ^
-      load.hashCode ^
-      isAutoScheduled.hashCode ^
-      propagatesMoveToChildren.hashCode ^
-      resizePolicy.hashCode ^
-      Object.hashAll(fieldTimestamps.keys) ^
-      Object.hashAll(fieldTimestamps.values) ^
-      isDeleted.hashCode;
+      lastUpdated.hashCode;
+
+  LegacyGanttTask copyWithProtocol(ProtocolTask pt) {
+    final meta = pt.metadata;
+    return LegacyGanttTask(
+      id: pt.id,
+      rowId: pt.rowId,
+      start: pt.start,
+      end: pt.end,
+      name: pt.name,
+      completion: pt.completion,
+      isSummary: pt.isSummary,
+      isMilestone: pt.isMilestone,
+      resourceId: pt.resourceId,
+      parentId: pt.parentId,
+      notes: pt.notes,
+      isDeleted: pt.isDeleted,
+      lastUpdated: pt.lastUpdated,
+      lastUpdatedBy: pt.lastUpdatedBy,
+      fieldTimestamps: pt.fieldTimestamps,
+      color: _parseColor(meta['color']),
+      textColor: _parseColor(meta['textColor']),
+      stackIndex: meta['stackIndex'] ?? 0,
+      originalId: meta['originalId'],
+      isTimeRangeHighlight: meta['isTimeRangeHighlight'] == true,
+      isOverlapIndicator: meta['isOverlapIndicator'] == true,
+      segments: (meta['segments'] as List?)?.map((e) => LegacyGanttTaskSegment.fromJson(e)).toList(),
+      usesWorkCalendar: meta['usesWorkCalendar'] == true,
+      load: (meta['load'] as num?)?.toDouble() ?? 1.0,
+      isAutoScheduled: meta['isAutoScheduled'] == true,
+      propagatesMoveToChildren: meta['propagatesMoveToChildren'] ?? true,
+      resizePolicy: meta['resizePolicy'] != null
+          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resizePolicy'], orElse: () => ResizePolicy.none)
+          : ResizePolicy.none,
+      baselineStart: meta['baselineStart'] != null ? DateTime.parse(meta['baselineStart']) : null,
+      baselineEnd: meta['baselineEnd'] != null ? DateTime.parse(meta['baselineEnd']) : null,
+
+      // Preserve transient state
+      cellBuilder: cellBuilder,
+    );
+  }
 
   LegacyGanttTask copyWith({
     String? id,
@@ -381,36 +422,4 @@ class LegacyGanttTask {
         fieldTimestamps: fieldTimestamps ?? this.fieldTimestamps,
         isDeleted: isDeleted ?? this.isDeleted,
       );
-
-  String get contentHash {
-    final data = {
-      'id': id,
-      'rowId': rowId,
-      'start': start.toUtc().toIso8601String(),
-      'end': end.toUtc().toIso8601String(),
-      'name': name,
-      'color': _colorToHex(color)?.toRadixString(16),
-      'textColor': _colorToHex(textColor)?.toRadixString(16),
-      // Server MerkleService hardcodes these for now, so we must match to ensure consistent roots
-      'stackIndex': 0,
-      'originalId': id, // fallback matches server
-      'isSummary': isSummary,
-      'completion': completion,
-      'segments': null,
-      'isMilestone': isMilestone,
-      'resourceId': resourceId,
-      'parentId': parentId,
-      'baselineStart': baselineStart?.toUtc().toIso8601String(),
-      'baselineEnd': baselineEnd?.toUtc().toIso8601String(),
-      'notes': notes,
-      'usesWorkCalendar': usesWorkCalendar,
-      'load': 1.0, // Server hardcodes 1.0
-      'isAutoScheduled': false, // Server hardcodes false
-      'isDeleted': isDeleted,
-    };
-    final jsonString = jsonEncode(data);
-    final bytes = utf8.encode(jsonString);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
 }

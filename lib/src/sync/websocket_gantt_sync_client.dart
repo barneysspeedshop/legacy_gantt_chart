@@ -4,8 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../utils/json_isolate.dart';
-import 'gantt_sync_client.dart';
-import 'hlc.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 class WebSocketGanttSyncClient implements GanttSyncClient {
   final Uri uri;

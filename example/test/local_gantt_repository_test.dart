@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../lib/data/local/gantt_db.dart';
 import '../lib/data/local/local_gantt_repository.dart';
-import 'package:legacy_gantt_chart/src/sync/hlc.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 void main() {
   setUpAll(() {

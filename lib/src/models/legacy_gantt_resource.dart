@@ -1,5 +1,4 @@
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 /// Represents a resource (person or job) in the Gantt chart.
 class LegacyGanttResource {
@@ -38,20 +37,23 @@ class LegacyGanttResource {
         isDeleted: isDeleted ?? this.isDeleted,
       );
 
+  ProtocolResource toProtocolResource() =>
+      ProtocolResource(id: id, name: name, parentId: parentId, type: ganttType, isDeleted: isDeleted, metadata: {
+        'isExpanded': isExpanded,
+        'ganttType': ganttType, // Keep ganttType in metadata too if ProtocolResource uses 'type'
+      });
+
+  factory LegacyGanttResource.fromProtocolResource(ProtocolResource pr) => LegacyGanttResource(
+        id: pr.id,
+        name: pr.name,
+        parentId: pr.parentId,
+        ganttType: pr.metadata['ganttType'] ?? pr.type,
+        isDeleted: pr.isDeleted,
+        isExpanded: pr.metadata['isExpanded'] == true,
+      );
+
   /// Calculates a deterministic hash of the resource's content for Merkle Tree synchronization.
-  String get contentHash {
-    final data = {
-      'id': id,
-      'name': name,
-      'parentId': parentId,
-      'isExpanded': isExpanded,
-      'ganttType': ganttType,
-      'isDeleted': isDeleted,
-    };
-    final jsonString = jsonEncode(data);
-    final bytes = utf8.encode(jsonString);
-    return sha256.convert(bytes).toString();
-  }
+  String get contentHash => toProtocolResource().contentHash;
 
   factory LegacyGanttResource.fromJson(Map<String, dynamic> json) => LegacyGanttResource(
         id: json['id'],

@@ -1,7 +1,5 @@
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 
 /// Defines the type of dependency between two tasks.
 enum DependencyType {
@@ -25,22 +23,10 @@ enum DependencyType {
 /// Represents a dependency relationship between two tasks in the Gantt chart.
 @immutable
 class LegacyGanttTaskDependency {
-  /// The unique ID of the task that must come first.
   final String predecessorTaskId;
-
-  /// The unique ID of the task that depends on the predecessor.
   final String successorTaskId;
-
-  /// The type of dependency, which determines the visual representation and
-  /// validation logic.
   final DependencyType type;
-
-  /// An optional time delay between the predecessor and successor tasks.
-  /// For [DependencyType.finishToStart], this is the gap after the predecessor
-  /// ends and before the successor can begin.
   final Duration? lag;
-
-  /// Timestamp of the last update to this dependency.
   final int? lastUpdated;
 
   const LegacyGanttTaskDependency({
@@ -50,6 +36,52 @@ class LegacyGanttTaskDependency {
     this.lag,
     this.lastUpdated,
   });
+
+  ProtocolDependency toProtocolDependency() => ProtocolDependency(
+        predecessorTaskId: predecessorTaskId,
+        successorTaskId: successorTaskId,
+        type: _mapTypeToProtocol(type),
+        lag: lag,
+        lastUpdated: lastUpdated,
+      );
+
+  factory LegacyGanttTaskDependency.fromProtocolDependency(ProtocolDependency pd) => LegacyGanttTaskDependency(
+        predecessorTaskId: pd.predecessorTaskId,
+        successorTaskId: pd.successorTaskId,
+        type: _mapTypeFromProtocol(pd.type),
+        lag: pd.lag,
+        lastUpdated: pd.lastUpdated,
+      );
+
+  static ProtocolDependencyType _mapTypeToProtocol(DependencyType type) {
+    switch (type) {
+      case DependencyType.finishToStart:
+        return ProtocolDependencyType.finishToStart;
+      case DependencyType.startToStart:
+        return ProtocolDependencyType.startToStart;
+      case DependencyType.finishToFinish:
+        return ProtocolDependencyType.finishToFinish;
+      case DependencyType.startToFinish:
+        return ProtocolDependencyType.startToFinish;
+      case DependencyType.contained:
+        return ProtocolDependencyType.contained;
+    }
+  }
+
+  static DependencyType _mapTypeFromProtocol(ProtocolDependencyType type) {
+    switch (type) {
+      case ProtocolDependencyType.finishToStart:
+        return DependencyType.finishToStart;
+      case ProtocolDependencyType.startToStart:
+        return DependencyType.startToStart;
+      case ProtocolDependencyType.finishToFinish:
+        return DependencyType.finishToFinish;
+      case ProtocolDependencyType.startToFinish:
+        return DependencyType.startToFinish;
+      case ProtocolDependencyType.contained:
+        return DependencyType.contained;
+    }
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -66,29 +98,5 @@ class LegacyGanttTaskDependency {
   int get hashCode =>
       predecessorTaskId.hashCode ^ successorTaskId.hashCode ^ type.hashCode ^ lag.hashCode ^ lastUpdated.hashCode;
 
-  String get contentHash {
-    final data = {
-      'predecessorTaskId': predecessorTaskId,
-      'successorTaskId': successorTaskId,
-      'type': type.name,
-      'lag': lag?.inMilliseconds,
-      // 'lastUpdated': lastUpdated, // Exclude mutable metadata from content hash usually?
-      // Wait, strict Merkle includes everything. But existing Task contentHash excluded local state?
-      // Task contentHash included 'lastUpdated'? No, it didn't in the snippet I saw earlier!
-      // Let's check LegacyGanttTask.contentHash again.
-      // It has 'completion', 'name' etc. It did NOT include 'lastUpdated'.
-      // So we should verify if 'lastUpdated' is strictly part of content.
-      // Usually Merkle state is about VALUE. 'lastUpdated' is METADATA.
-      // But for Sovereign Sync, if I update metadata, I want to sync.
-      // However, HLC usually handles the "version".
-      // If I change 'lag', contentHash changes.
-      // If I just 'touch' the file without changing content, contentHash stays same, but lastUpdated changes.
-      // If we exclude lastUpdated, we might miss pure timestamp updates, but usually we care about data.
-      // Let's stick to DATA fields for now.
-    };
-    final jsonString = jsonEncode(data);
-    final bytes = utf8.encode(jsonString);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+  String get contentHash => toProtocolDependency().contentHash;
 }

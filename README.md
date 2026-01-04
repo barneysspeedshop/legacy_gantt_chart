@@ -140,7 +140,28 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 ## Migration Guide
 
-### Migrating to 5.0.0
+### Migrating to v7.0.0
+
+Version 7.0.0 introduces a major architectural change to formalize the Gantt-Sync Standard.
+
+*   **Protocol Extraction**: The core synchronization logic (`CRDTEngine`, `HLC`, `Operation`, etc.) has been moved to a separate package: `legacy_gantt_protocol`.
+*   **Stability Guarantee**: The protocol now enforces API stability via `schemaVersion`. This protects your application from future breaking changes in the synchronization layer.
+
+#### How to Migrate
+
+If you are only using the widget (`LegacyGanttChartWidget`), **no changes are required**. The package re-exports the protocol for you.
+
+However, if you were explicitly importing files from `src/sync/...`, you must update your imports:
+
+```dart
+// OLD (Broken)
+import 'package:legacy_gantt_chart/src/sync/hlc.dart';
+
+// NEW (Correct)
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
+```
+
+### Migrating to v5.0.0
 
 Version 5.0.0 introduces breaking changes to the sync API and the underlying data model to support more robust Hybrid Logical Clocks (HLC).
 

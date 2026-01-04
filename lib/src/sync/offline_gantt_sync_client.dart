@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:synchronized/synchronized.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
-import 'gantt_sync_client.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'websocket_gantt_sync_client.dart';
-import 'hlc.dart';
 import '../utils/json_isolate.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {

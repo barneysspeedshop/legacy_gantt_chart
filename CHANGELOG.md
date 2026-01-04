@@ -1,3 +1,19 @@
+## 7.0.0
+
+🏗️ Standardization & Protocol v1.0
+
+*   **BREAKING ARCHITECTURE CHANGE**: Extracted the synchronization core into a separate package: `legacy_gantt_protocol`.
+    *   **Migration**: All protocol related classes (`Operation`, `HLC`, `CRDTEngine`, etc.) have moved. While `legacy_gantt_chart.dart` re-exports the new package for convenience, direct file imports to `legacy_gantt_chart/src/sync/...` will break and must be updated to import `package:legacy_gantt_protocol/legacy_gantt_protocol.dart`.
+*   **PROTOCOL**: Implemented **Immutable Snapshots** ("Tagging").
+    *   Added `ProtocolTag` model and `CREATE_TAG`/`DELETE_TAG` operations.
+    *   Tags store a Merkle Root hash, creating a verifiable checkpoint of the project state at a specific point in time (See `SPEC.md`).
+    *   Tags are synced identically to Tasks and Dependencies via the CRDT engine.
+*   **PROTOCOL**: Added **API Stability** via `schemaVersion`.
+    *   All operations now include a `schemaVersion` field (defaulting to 1).
+    *   This allows the server and clients to handle future protocol evolution without breaking changes.
+*   **SERVER**: Published `legacy_gantt_protocol` includes a production-ready **Reference Server specification** and a minimal Go implementation (`reference_server_go/`) that validates HLCs and WebSockets.
+
+
 ## 6.1.1
 
 * **DEPRECATION**: Deprecated `RESET_DATA` operation for normal syncing and seeding. `BATCH_UPDATE` should be used instead to ensure CRDT convergence. `RESET_DATA` is now reserved for emergency admin wipes and will log a warning when received.
@@ -16,6 +32,8 @@
     - Updated mock data generator to produce diamond-shaped structures, creating natural slack.
 
 ## 6.0.0
+
+⚡ Performance & Integrity
 
 * **FEATURE**: **Merkle Tree Synchronization**: Implemented efficient state synchronization using Merkle Trees to minimize data transfer and ensure eventual consistency.
 * **BREAKING**: The `GanttSyncClient` interface has been updated to include Merkle Tree methods (`getMerkleRoot`, `syncWithMerkle`). Custom implementations of this interface must be updated.

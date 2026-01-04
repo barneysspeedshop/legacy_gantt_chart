@@ -5,8 +5,7 @@ import 'package:legacy_gantt_chart/src/legacy_gantt_view_model.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart'; // Added import
-import 'package:legacy_gantt_chart/src/sync/gantt_sync_client.dart';
-import 'package:legacy_gantt_chart/src/sync/hlc.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 class MockGanttSyncClient extends GanttSyncClient {
   final _controller = StreamController<Operation>.broadcast();
