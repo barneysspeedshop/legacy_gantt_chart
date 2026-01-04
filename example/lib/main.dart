@@ -361,6 +361,12 @@ class _GanttViewState extends State<GanttView> {
           caption: 'Clear All Dependencies',
           onTap: () => _handleClearDependencies(task),
         ),
+      ContextMenuItem.divider,
+      ContextMenuItem(
+        caption: 'Inspect... (Audit)',
+        trailing: const Icon(Icons.monitor_heart, size: 16),
+        onTap: () => _viewModel.controller.openInspector(context, task.id),
+      ),
     ];
   }
 

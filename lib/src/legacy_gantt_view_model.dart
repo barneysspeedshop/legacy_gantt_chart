@@ -37,9 +37,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// The raw list of all tasks to be displayed.
   /// If [syncClient] is provided, this list is mutable and managed by the [CRDTEngine].
   List<LegacyGanttTask> _tasks;
+
+  /// The public getter for the task list.
   List<LegacyGanttTask> get data => _tasks;
 
-  /// The list of conflict indicators to be displayed.
   /// The list of conflict indicators to be displayed.
   List<LegacyGanttTask> conflictIndicators;
 
@@ -47,10 +48,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
   List<LegacyGanttTaskDependency> dependencies;
 
   /// The list of rows currently visible in the viewport.
-  /// The list of rows currently visible in the viewport.
   List<LegacyGanttRow> visibleRows;
 
-  /// A map defining the maximum number of overlapping tasks for each row.
   /// A map defining the maximum number of overlapping tasks for each row.
   Map<String, int> rowMaxStackDepth;
 
@@ -59,8 +58,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The height of the time axis header.
   double? _axisHeight;
+
+  /// The public getter for the axis height.
   double? get axisHeight => _axisHeight;
 
+  /// Updates the axis height and notifies listeners.
   void updateAxisHeight(double? newHeight) {
     if (_axisHeight != newHeight) {
       if (isDisposed) return;
@@ -71,18 +73,26 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The start of the visible time range in milliseconds since epoch.
   double? _gridMin;
+
+  /// Public getter for the grid start.
   double? get gridMin => _gridMin;
 
   /// The end of the visible time range in milliseconds since epoch.
   double? _gridMax;
+
+  /// Public getter for the grid end.
   double? get gridMax => _gridMax;
 
   /// The start of the total time range in milliseconds since epoch.
   double? _totalGridMin;
+
+  /// Public getter for the total grid start.
   double? get totalGridMin => _totalGridMin;
 
   /// The end of the total time range in milliseconds since epoch.
   double? _totalGridMax;
+
+  /// Public getter for the total grid end.
   double? get totalGridMax => _totalGridMax;
 
   set gridMin(double? value) {
@@ -222,6 +232,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
   StreamSubscription<Operation>? _syncSubscription;
 
   final Map<String, RemoteCursor> _remoteCursors = {};
+
+  /// A map of active remote cursors, keyed by user ID.
   Map<String, RemoteCursor> get remoteCursors => Map.unmodifiable(_remoteCursors);
 
   bool _showRemoteCursors = true;
@@ -235,6 +247,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   final Map<String, RemoteGhost> _remoteGhosts = {};
+
+  /// A map of active remote ghosts (drag previews), keyed by user ID.
   Map<String, RemoteGhost> get remoteGhosts => Map.unmodifiable(_remoteGhosts);
 
   Timer? _ghostUpdateThrottle;
@@ -746,7 +760,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         type: 'CLEAR_DEPENDENCIES',
         data: {'taskId': task.id},
         timestamp: _currentTimestamp,
-        actorId: 'user',
+        actorId: syncClient?.actorId ?? 'user',
       ));
     }
 
@@ -772,7 +786,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         'rowId': rowId,
       },
       timestamp: _currentTimestamp,
-      actorId: 'user',
+      actorId: syncClient?.actorId ?? 'user',
     ));
   }
 
@@ -787,7 +801,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         'lag': dep.lag?.inMilliseconds,
       },
       timestamp: _currentTimestamp,
-      actorId: 'user',
+      actorId: syncClient?.actorId ?? 'user',
     ));
   }
 
@@ -815,6 +829,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DateTime? _ghostTaskStart;
   DateTime? _ghostTaskEnd;
   final Map<String, (DateTime, DateTime)> _bulkGhostTasks = {};
+
+  /// Detailed ghost task positions during a bulk drag operation.
+  /// Keys are task IDs, values are the temporary (start, end).
   Map<String, (DateTime, DateTime)> get bulkGhostTasks => _bulkGhostTasks;
   DragMode _dragMode = DragMode.none;
   PanType _panType = PanType.none;
@@ -834,14 +851,25 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Offset? _currentDragPosition;
   String? _dependencyHoveredTaskId;
 
+  /// The ID of the task where a dependency creation drag started.
   String? get dependencyStartTaskId => _dependencyStartTaskId;
   DependencyDragStatus _dependencyDragStatus = DependencyDragStatus.none;
+
+  /// The current state of the dependency creation interaction.
   DependencyDragStatus get dependencyDragStatus => _dependencyDragStatus;
 
   int? _dependencyDragDelayAmount;
+
+  /// The optional lag/lead time associated with the dependency being dragged.
   int? get dependencyDragDelayAmount => _dependencyDragDelayAmount;
+
+  /// The side of the task (start/end) where the dependency drag started.
   TaskPart? get dependencyStartSide => _dependencyStartSide;
+
+  /// The current global position of the dependency drag line end.
   Offset? get currentDragPosition => _currentDragPosition;
+
+  /// The ID of the task currently being hovered during a dependency drag.
   String? get dependencyHoveredTaskId => _dependencyHoveredTaskId;
 
   List<double> _rowVerticalOffsets = [];
@@ -853,8 +881,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Map<String, CpmTaskStats> _cpmStats = {};
 
   bool get showCriticalPath => _showCriticalPath;
+
+  /// The IDs of tasks that are part of the critical path.
   Set<String> get criticalTaskIds => _criticalTaskIds;
+
+  /// The dependencies that are part of the critical path.
   Set<LegacyGanttTaskDependency> get criticalDependencies => _criticalDependencies;
+
+  /// Detailed Critical Path Method (CPM) stats for each task (early/late start/finish, float).
   Map<String, CpmTaskStats> get cpmStats => _cpmStats;
 
   set showCriticalPath(bool value) {
@@ -894,13 +928,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The current selection rectangle in local coordinates (relative to the chart content).
   Rect? _selectionRect;
+
+  /// Public getter for the selection rectangle.
   Rect? get selectionRect => _selectionRect;
 
   /// The IDs of the currently selected tasks.
   final Set<String> _selectedTaskIds = {};
+
+  /// Public getter for the selected task IDs.
   Set<String> get selectedTaskIds => Set.unmodifiable(_selectedTaskIds);
 
-  /// Sets the current tool.
+  /// Sets the currently active tool.
   void setTool(GanttTool tool) {
     if (_currentTool != tool) {
       _currentTool = tool;
@@ -1340,7 +1378,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
               'end': newEnd.toIso8601String(),
             },
             timestamp: now,
-            actorId: 'user');
+            actorId: syncClient?.actorId ?? 'user');
         opsToSend.add(op);
       }
 

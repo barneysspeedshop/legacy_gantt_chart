@@ -264,6 +264,7 @@ class GanttViewModel extends ChangeNotifier {
     });
 
     _syncClient ??= OfflineGanttSyncClient(GanttDb.db);
+    controller.setSyncClient(_syncClient!);
 
     _pendingSeedReset = true;
     notifyListeners();
@@ -454,10 +455,16 @@ class GanttViewModel extends ChangeNotifier {
       newTask = newTask.copyWith(propagatesMoveToChildren: true, resizePolicy: ResizePolicy.none);
     }
 
+    // Set last updated by
+    newTask = newTask.copyWith(
+      lastUpdated: _currentHlc,
+      lastUpdatedBy: _currentUsername ?? 'local-user',
+    );
+
     await _localRepository.insertOrUpdateTask(newTask);
 
     if (_syncClient != null) {
-      await _syncClient!.sendOperation(Operation(
+      final op = Operation(
         type: 'UPDATE_TASK',
         data: {
           'id': newTask.id,
@@ -476,13 +483,20 @@ class GanttViewModel extends ChangeNotifier {
           'resize_policy': newTask.resizePolicy.index,
         },
         timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
+        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
+      );
+      await _syncClient!.sendOperation(op);
+      controller.recordOperation(op);
     }
   }
 
   Future<void> updateTask(LegacyGanttTask task) async {
-    await _localRepository.insertOrUpdateTask(task);
+    // Explicitly update the task with the current user as the last editor
+    final updatedTask = task.copyWith(
+      lastUpdated: _currentHlc,
+      lastUpdatedBy: _currentUsername ?? 'local-user',
+    );
+    await _localRepository.insertOrUpdateTask(updatedTask);
 
     if (_syncClient != null) {
       String ganttType = 'task';
@@ -492,7 +506,7 @@ class GanttViewModel extends ChangeNotifier {
         ganttType = 'summary';
       }
 
-      await _syncClient!.sendOperation(Operation(
+      final op = Operation(
         type: 'UPDATE_TASK',
         data: {
           'id': task.id,
@@ -514,8 +528,10 @@ class GanttViewModel extends ChangeNotifier {
           'resize_policy': task.resizePolicy.index,
         },
         timestamp: _currentHlc,
-        actorId: 'local-user', // Should ideally represent the current user
-      ));
+        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
+      );
+      await _syncClient!.sendOperation(op);
+      controller.recordOperation(op);
     }
   }
 
@@ -691,7 +707,16 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    await _localRepository.insertTasks(tasks);
+    // Explicitly set the last updated by for seeded tasks to 'local-user'
+    // so the inspector doesn't show 'Unknown'
+    final tasksWithUser = tasks
+        .map((t) => t.copyWith(
+              lastUpdated: _currentHlc,
+              lastUpdatedBy: 'local-user',
+            ))
+        .toList();
+
+    await _localRepository.insertTasks(tasksWithUser);
     await _localRepository.insertDependencies(dependencies);
     if (_syncClient != null) {
       final opsToSend = <Operation>[];
@@ -719,7 +744,6 @@ class GanttViewModel extends ChangeNotifier {
               'name': task.name,
               'start_date': task.start.millisecondsSinceEpoch,
               'end_date': task.end.millisecondsSinceEpoch,
-              'is_summary': task.isSummary,
               'isMilestone': task.isMilestone,
               'color': task.color?.toARGB32().toRadixString(16),
               'textColor': task.textColor?.toARGB32().toRadixString(16),
@@ -729,6 +753,7 @@ class GanttViewModel extends ChangeNotifier {
               'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
               'notes': task.notes,
               'parentId': task.parentId,
+              'last_updated_by': 'local-user',
             }
           },
           timestamp: _currentHlc,
@@ -749,6 +774,8 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       await _syncClient!.sendOperations(opsToSend);
+      // Manually record all operations for audit
+      opsToSend.forEach(controller.recordOperation);
     }
 
     final expansionMap = <String, bool>{};
@@ -793,7 +820,7 @@ class GanttViewModel extends ChangeNotifier {
             }
           },
           timestamp: _currentHlc,
-          actorId: 'local-user',
+          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
         ));
 
         for (final child in resource.children) {
@@ -809,11 +836,16 @@ class GanttViewModel extends ChangeNotifier {
               }
             },
             timestamp: _currentHlc,
-            actorId: 'local-user',
+            actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
           ));
         }
       }
       await _syncClient!.sendOperations(resourceOps);
+      // Manually record resources for audit
+      // for (final op in resourceOps) {
+      //   // Optionally record resource ops if needed, but for now focusing on tasks
+      //   // controller.recordOperation(op);
+      // }
     }
 
     _pendingSeedReset = true;
@@ -1023,6 +1055,9 @@ class GanttViewModel extends ChangeNotifier {
       initialVisibleStartDate: _startDate,
       initialVisibleEndDate: _startDate.add(Duration(days: _range)),
     );
+    if (_syncClient != null) {
+      controller.setSyncClient(_syncClient!);
+    }
     controller.setIsLoading(_isLoading);
 
     if (initialLocale != null) {
@@ -1738,7 +1773,7 @@ class GanttViewModel extends ChangeNotifier {
         }
 
         try {
-          _syncClient?.sendOperation(Operation(
+          final op = Operation(
             type: 'PRESENCE_UPDATE',
             data: {
               'viewportStart': visibleStartDate!.millisecondsSinceEpoch,
@@ -1749,7 +1784,10 @@ class GanttViewModel extends ChangeNotifier {
             },
             timestamp: _currentHlc,
             actorId: 'me',
-          ));
+          );
+          _syncClient?.sendOperation(op);
+          // Don't record presence in audit log to keep it clean, unless debugging
+          // controller.recordOperation(op);
         } catch (e) {
           print('Warning: Failed to broadcast presence: $e');
         }
@@ -1838,6 +1876,7 @@ class GanttViewModel extends ChangeNotifier {
         final wsClient = WebSocketGanttSyncClient(
           uri: wsUri,
           authToken: token,
+          userId: username,
         );
         wsClientToConnect = wsClient;
 
@@ -1851,6 +1890,10 @@ class GanttViewModel extends ChangeNotifier {
           await offlineClient.setInnerClient(wsClient);
           _syncClient = offlineClient;
         }
+      }
+
+      if (_syncClient != null) {
+        controller.setSyncClient(_syncClient!);
       }
 
       _connectionStateSubscription?.cancel();
@@ -1938,7 +1981,10 @@ class GanttViewModel extends ChangeNotifier {
           final opTs = opTsRaw is int
               ? Hlc.fromIntTimestamp(opTsRaw)
               : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
-          final opActor = opMap['actorId'] as String? ?? 'unknown';
+
+          final batchUserId = op.data['user_id'];
+          final opMapActor = opMap['actorId'] as String?;
+          final opActor = batchUserId ?? opMapActor ?? 'unknown';
 
           if (opData.containsKey('data') && opData['data'] is Map) {
             final innerData = opData['data'] as Map<String, dynamic>;
@@ -2056,6 +2102,7 @@ class GanttViewModel extends ChangeNotifier {
               parseDate(innerData['endDate']) ??
               existingTask.end,
           lastUpdated: op.timestamp,
+          lastUpdatedBy: innerData['user_id'] ?? innerData['userId'] ?? op.actorId,
           isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
           isSummary: ganttType != null
               ? (ganttType == 'summary')
@@ -2126,6 +2173,7 @@ class GanttViewModel extends ChangeNotifier {
           usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true,
           isAutoScheduled: innerData['is_auto_scheduled'] != false,
           lastUpdated: op.timestamp,
+          lastUpdatedBy: innerData['user_id'] ?? innerData['userId'] ?? op.actorId,
         );
 
         if (_useLocalDatabase) {
@@ -2182,6 +2230,7 @@ class GanttViewModel extends ChangeNotifier {
         usesWorkCalendar: data['uses_work_calendar'] == true,
         isAutoScheduled: data['is_auto_scheduled'] != false,
         lastUpdated: op.timestamp,
+        lastUpdatedBy: op.actorId,
       );
 
       if (_useLocalDatabase) {

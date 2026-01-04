@@ -4,8 +4,13 @@ import 'package:flutter/foundation.dart';
 /// Represents a row in the Gantt chart.
 @immutable
 class LegacyGanttRow {
+  /// The unique identifier for this row.
   final String id;
+
+  /// The timestamp of the last update to this row.
   final int? lastUpdated;
+
+  /// The ID of the user who last updated this row.
   final String? lastUpdatedBy;
 
   const LegacyGanttRow({
@@ -15,6 +20,7 @@ class LegacyGanttRow {
     this.lastUpdatedBy,
   });
 
+  /// The display label for the row (e.g., resource name).
   final String? label;
 
   @override

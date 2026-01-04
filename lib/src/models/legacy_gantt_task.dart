@@ -70,37 +70,88 @@ enum ResizePolicy {
 /// Represents a single task or event bar in the Gantt chart.
 @immutable
 class LegacyGanttTask {
+  /// The unique identifier for this task.
   final String id;
+
+  /// The ID of the row this task belongs to.
   final String rowId;
+
+  /// The start date and time of the task.
   final DateTime start;
+
+  /// The end date and time of the task.
   final DateTime end;
+
+  /// The display name of the task.
   final String? name;
+
+  /// The specific color of this task bar. Overrides theme defaults if provided.
   final Color? color;
+
+  /// The text color for this task. Overrides theme defaults if provided.
   final Color? textColor;
+
+  /// The vertical stack index of this task within its row, used for handling overlaps.
   final int stackIndex;
+
+  /// The original ID of the task, if it was imported or transformed.
   final String? originalId;
+
+  /// Whether this task represents a summary or parent task (e.g., a project phase).
   final bool isSummary;
+
+  /// Whether this task is a background highlight (e.g., holiday, weekend) rather than a workable task.
   final bool isTimeRangeHighlight;
+
+  /// Whether this task is a visual indicator of a scheduling conflict.
   final bool isOverlapIndicator;
+
+  /// The completion percentage of the task (0.0 to 1.0).
   final double completion;
+
+  /// Optional list of [LegacyGanttTaskSegment]s for split tasks.
   final List<LegacyGanttTaskSegment>? segments;
+
+  /// Whether this task is a zero-duration milestone.
   final bool isMilestone;
 
   /// A builder to create a custom widget for each day cell this task spans.
   final Widget Function(DateTime cellDate)? cellBuilder;
 
+  /// The timestamp of the last update to this task.
   final Hlc lastUpdated;
+
+  /// The ID of the user or system that last updated this task.
   final String? lastUpdatedBy;
 
+  /// The ID of the resource assigned to this task.
   final String? resourceId;
+
+  /// The ID of the parent task, if this task is part of a hierarchy.
   final String? parentId;
+
+  /// The planned start date of the task, for baseline comparison.
   final DateTime? baselineStart;
+
+  /// The planned end date of the task, for baseline comparison.
   final DateTime? baselineEnd;
+
+  /// Additional notes or description for the task.
   final String? notes;
+
+  /// Whether this task should respect the [WorkCalendar] for scheduling duration.
   final bool usesWorkCalendar;
+
+  /// The resource load factor (e.g., 1.0 for full allocation, 0.5 for half).
   final double load;
+
+  /// Whether this task is automatically scheduled by the engine.
   final bool? isAutoScheduled;
+
+  /// Whether moving this task should propagate changes to its children (if it is a summary).
   final bool propagatesMoveToChildren;
+
+  /// The policy for how this task reacts when its parent is resized.
   final ResizePolicy resizePolicy;
 
   /// Map of field names to their last update timestamp (HLC).
@@ -249,6 +300,7 @@ class LegacyGanttTask {
     // Construct Protocol Task
     final pt = ProtocolTask.fromJson({
       ...json,
+      'lastUpdatedBy': json['lastUpdatedBy'] ?? json['last_updated_by'], // Support both snake and camel for safety
       'metadata': meta, // ProtocolTask.fromJson looks for 'metadata'
     });
 

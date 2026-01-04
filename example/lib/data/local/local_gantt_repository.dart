@@ -58,6 +58,7 @@ class LocalGanttRepository {
             is_summary = ?9,
             is_milestone = ?10,
             resource_id = ?11,
+            resource_id = ?11,
             last_updated = ?12,
             completion = ?13,
             baseline_start = ?14,
@@ -69,7 +70,8 @@ class LocalGanttRepository {
             parent_id = ?18,
             is_auto_scheduled = ?19,
             propagates_move_to_children = ?20,
-            resize_policy = ?21
+            resize_policy = ?21,
+            last_updated_by = ?22
           WHERE id = ?1
           ''',
           [
@@ -93,14 +95,15 @@ class LocalGanttRepository {
             task.parentId,
             (task.isAutoScheduled ?? true) ? 1 : 0,
             task.propagatesMoveToChildren ? 1 : 0,
-            task.resizePolicy.index
+            task.resizePolicy.index,
+            task.lastUpdatedBy
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21)
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22)
           ''',
           [
             task.id,
@@ -123,7 +126,8 @@ class LocalGanttRepository {
             task.parentId,
             (task.isAutoScheduled ?? true) ? 1 : 0,
             task.propagatesMoveToChildren ? 1 : 0,
-            task.resizePolicy.index
+            task.resizePolicy.index,
+            task.lastUpdatedBy
           ],
         );
       }
@@ -134,6 +138,7 @@ class LocalGanttRepository {
   Future<void> insertOrUpdateTask(LegacyGanttTask task) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
+      print('LocalGanttRepository: Saving task ${task.id}, lastUpdatedBy: ${task.lastUpdatedBy}');
       await db.execute(
         '''
         UPDATE tasks SET
@@ -147,6 +152,7 @@ class LocalGanttRepository {
           is_summary = ?9,
           is_milestone = ?10,
           resource_id = ?11,
+          resource_id = ?11,
           last_updated = ?12,
           completion = ?13,
           baseline_start = ?14,
@@ -158,7 +164,8 @@ class LocalGanttRepository {
           parent_id = ?18,
           is_auto_scheduled = ?19,
           propagates_move_to_children = ?20,
-          resize_policy = ?21
+          resize_policy = ?21,
+          last_updated_by = ?22
         WHERE id = ?1
         ''',
         [
@@ -182,14 +189,15 @@ class LocalGanttRepository {
           task.parentId,
           (task.isAutoScheduled ?? true) ? 1 : 0,
           task.propagatesMoveToChildren ? 1 : 0,
-          task.resizePolicy.index
+          task.resizePolicy.index,
+          task.lastUpdatedBy
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21)
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22)
         ''',
         [
           task.id,
@@ -212,7 +220,8 @@ class LocalGanttRepository {
           task.parentId,
           (task.isAutoScheduled ?? true) ? 1 : 0,
           task.propagatesMoveToChildren ? 1 : 0,
-          task.resizePolicy.index
+          task.resizePolicy.index,
+          task.lastUpdatedBy
         ],
       );
     });
@@ -368,31 +377,38 @@ class LocalGanttRepository {
     });
   }
 
-  LegacyGanttTask _rowToTask(Map<String, Object?> row) => LegacyGanttTask(
-        id: row['id'] as String,
-        rowId: row['row_id'] as String,
-        start: DateTime.parse(row['start_date'] as String),
-        end: DateTime.parse(row['end_date'] as String),
-        name: row['name'] as String?,
-        color: _parseColor(row['color'] as String?),
-        textColor: _parseColor(row['text_color'] as String?),
-        stackIndex: (row['stack_index'] as int?) ?? 0,
-        isSummary: (row['is_summary'] as int?) == 1,
-        isMilestone: (row['is_milestone'] as int?) == 1,
-        resourceId: row['resource_id'] as String?,
-        originalId: row['resource_id']
-            as String?, // Keep for compatibility if needed, but resource_id is the canonical field now
-        completion: (row['completion'] as num?)?.toDouble() ?? 0.0,
-        baselineStart: row['baseline_start'] != null ? DateTime.tryParse(row['baseline_start'] as String) : null,
-        baselineEnd: row['baseline_end'] != null ? DateTime.tryParse(row['baseline_end'] as String) : null,
-        notes: row['notes'] as String?,
-        usesWorkCalendar: (row['uses_work_calendar'] as int?) == 1,
-        parentId: row['parent_id'] as String?,
-        isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
-        propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
-        resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
-        lastUpdated: _parseHlc(row['last_updated']),
-      );
+  LegacyGanttTask _rowToTask(Map<String, Object?> row) {
+    if (row['last_updated_by'] != null) {
+      // Debug print to confirm reading
+      print('LocalGanttRepository: Read task ${row['id']}, lastUpdatedBy: ${row['last_updated_by']}');
+    }
+    return LegacyGanttTask(
+      id: row['id'] as String,
+      rowId: row['row_id'] as String,
+      start: DateTime.parse(row['start_date'] as String),
+      end: DateTime.parse(row['end_date'] as String),
+      name: row['name'] as String?,
+      color: _parseColor(row['color'] as String?),
+      textColor: _parseColor(row['text_color'] as String?),
+      stackIndex: (row['stack_index'] as int?) ?? 0,
+      isSummary: (row['is_summary'] as int?) == 1,
+      isMilestone: (row['is_milestone'] as int?) == 1,
+      resourceId: row['resource_id'] as String?,
+      originalId:
+          row['resource_id'] as String?, // Keep for compatibility if needed, but resource_id is the canonical field now
+      completion: (row['completion'] as num?)?.toDouble() ?? 0.0,
+      baselineStart: row['baseline_start'] != null ? DateTime.tryParse(row['baseline_start'] as String) : null,
+      baselineEnd: row['baseline_end'] != null ? DateTime.tryParse(row['baseline_end'] as String) : null,
+      notes: row['notes'] as String?,
+      usesWorkCalendar: (row['uses_work_calendar'] as int?) == 1,
+      parentId: row['parent_id'] as String?,
+      isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
+      propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
+      resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
+      lastUpdated: _parseHlc(row['last_updated']),
+      lastUpdatedBy: row['last_updated_by'] as String?,
+    );
+  }
 
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(
         predecessorTaskId: row['from_id'] as String,

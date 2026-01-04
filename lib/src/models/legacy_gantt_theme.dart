@@ -6,15 +6,34 @@ import 'package:flutter/material.dart';
 /// colors, text styles, and dimensions.
 @immutable
 class LegacyGanttTheme {
+  /// The primary color of the task bars.
   final Color barColorPrimary;
+
+  /// The secondary color of the task bars (e.g., for gradients or borders).
   final Color barColorSecondary;
+
+  /// The default color for text within the chart.
   final Color textColor;
+
+  /// The background color of the chart area.
   final Color backgroundColor;
+
+  /// The color of the vertical and horizontal grid lines.
   final Color gridColor;
+
+  /// The color used for summary task bars.
   final Color summaryBarColor;
+
+  /// The color used for conflict indicator bars (usually red).
   final Color conflictBarColor;
+
+  /// The color used for the "ghost" bar during drag operations.
   final Color ghostBarColor;
+
+  /// The text style for the time axis labels.
   final TextStyle axisTextStyle;
+
+  /// The text style for labels inside task bars.
   final TextStyle taskTextStyle;
 
   /// The color of the lines drawn to represent task dependencies.
@@ -33,10 +52,20 @@ class LegacyGanttTheme {
 
   /// The color of the add icon (+) that appears in the empty space highlight.
   final Color emptySpaceAddIconColor;
+
+  /// The ratio of the task bar height to the row height (0.0 to 1.0).
   final double barHeightRatio;
+
+  /// The corner radius for task bars.
   final Radius barCornerRadius;
+
+  /// The background color used to highlight weekends.
   final Color weekendColor;
+
+  /// Whether to draw horizontal borders between rows.
   final bool showRowBorders;
+
+  /// The color of the row borders, if enabled.
   final Color? rowBorderColor;
 
   /// The color used to highlight tasks and dependencies on the critical path.

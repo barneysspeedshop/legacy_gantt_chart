@@ -104,6 +104,14 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     return Hlc.fromDate(DateTime.now(), 'offline-client');
   }
 
+  @override
+  String get actorId {
+    if (_innerClient != null) {
+      return _innerClient!.actorId;
+    }
+    return 'offline-user';
+  }
+
   final _outboundPendingCountController = StreamController<int>.broadcast();
 
   @override

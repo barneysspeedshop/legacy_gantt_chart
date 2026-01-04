@@ -31,6 +31,9 @@ class FakeGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
+
+  @override
+  String get actorId => 'test-actor';
 }
 
 void main() {

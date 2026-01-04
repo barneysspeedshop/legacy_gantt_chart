@@ -9,6 +9,7 @@ import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 class WebSocketGanttSyncClient implements GanttSyncClient {
   final Uri uri;
   final String? authToken;
+  final String? userId;
   WebSocketChannel? _channel;
   final _operationController = StreamController<Operation>.broadcast();
   final _connectionStateController = StreamController<bool>.broadcast();
@@ -21,11 +22,15 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   int _clockSkew = 0;
   bool _isClockSynced = false;
 
-  String get _nodeId => 'client-${uri.hashCode}';
+  String get _nodeId => userId ?? 'client-${uri.hashCode}';
+
+  @override
+  String get actorId => _nodeId;
 
   WebSocketGanttSyncClient({
     required this.uri,
     this.authToken,
+    this.userId,
     WebSocketChannel Function(Uri)? channelFactory,
   }) : _channelFactory = channelFactory ?? ((uri) => WebSocketChannel.connect(uri));
 

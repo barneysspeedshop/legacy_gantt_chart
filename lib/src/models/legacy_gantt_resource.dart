@@ -2,13 +2,22 @@ import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 /// Represents a resource (person or job) in the Gantt chart.
 class LegacyGanttResource {
+  /// The unique identifier for the resource.
   final String id;
-  final String name;
-  final String? parentId;
-  final bool isExpanded;
-  final String ganttType; // 'person' or 'job'
 
-  // Metadata for sync
+  /// The display name of the resource.
+  final String name;
+
+  /// The ID of the parent resource, if hierarchical.
+  final String? parentId;
+
+  /// Whether this resource group is expanded in the UI.
+  final bool isExpanded;
+
+  /// The type of resource ('person' or 'job').
+  final String ganttType;
+
+  /// Whether this resource has been marked as deleted (tombstone).
   final bool isDeleted;
 
   LegacyGanttResource({

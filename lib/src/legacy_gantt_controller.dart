@@ -1,8 +1,11 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
 import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
+import 'widgets/legacy_gantt_inspector.dart';
 
 /// A controller to programmatically manage a [LegacyGanttChartWidget].
 ///
@@ -17,6 +20,9 @@ class LegacyGanttController extends ChangeNotifier {
   List<LegacyGanttTaskDependency> _dependencies;
   List<LegacyGanttTask> _conflictIndicators;
   Map<String, List<ResourceBucket>> _resourceBuckets = {};
+
+  /// The diagnostic engine for causal integrity auditing.
+  CausalIntegrityAudit? _auditEngine;
 
   /// An optional asynchronous function to fetch tasks for a given date range.
   ///
@@ -304,6 +310,49 @@ class LegacyGanttController extends ChangeNotifier {
   void clearSelection() {
     _selectedTaskIds.clear();
     notifyListeners();
+  }
+
+  /// Sets the sync client and initializes the Causal Integrity Audit engine.
+  void setSyncClient(GanttSyncClient client) {
+    _auditEngine ??= CausalIntegrityAudit();
+
+    // Listen to all operations to build session history
+    client.operationStream.listen((op) {
+      _auditEngine?.recordOperation(op);
+    });
+  }
+
+  /// Manually record an operation into the audit log.
+  /// This is useful for capturing local operations that haven't been synced back yet.
+  void recordOperation(Operation op) {
+    _auditEngine?.recordOperation(op);
+  }
+
+  /// Opens the "Doctor" / Audit Inspector for a specific task.
+  void openInspector(BuildContext context, String taskId) {
+    final task = _tasks.firstWhereOrNull((t) => t.id == taskId);
+    if (task == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task not found in current view.')),
+      );
+      return;
+    }
+
+    if (_auditEngine == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Audit Engine not available. Connect to a sync client first.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => LegacyGanttInspector(
+        taskId: taskId,
+        task: task,
+        auditEngine: _auditEngine!,
+      ),
+    );
   }
 }
 

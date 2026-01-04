@@ -23,10 +23,19 @@ enum DependencyType {
 /// Represents a dependency relationship between two tasks in the Gantt chart.
 @immutable
 class LegacyGanttTaskDependency {
+  /// The ID of the task that must happen first (or determines the timing).
   final String predecessorTaskId;
+
+  /// The ID of the task that is dependent on the predecessor.
   final String successorTaskId;
+
+  /// The nature of the dependency (e.g., finish-to-start).
   final DependencyType type;
+
+  /// The optional duration of lag (delay) or lead (negative delay) between tasks.
   final Duration? lag;
+
+  /// The timestamp of the last update to this dependency, if tracked.
   final int? lastUpdated;
 
   const LegacyGanttTaskDependency({

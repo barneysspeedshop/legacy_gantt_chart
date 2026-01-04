@@ -68,6 +68,12 @@ class MockInnerClient implements WebSocketGanttSyncClient {
 
   @override
   Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
+
+  @override
+  String get actorId => 'mock-inner-actor';
+
+  @override
+  String? get userId => 'mock-user-id';
 }
 
 void main() {
