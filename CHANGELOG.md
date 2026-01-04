@@ -1,3 +1,7 @@
+## 7.0.1
+
+* **FIX**: Update to latest `legacy_gantt_protocol` to resolve an SDK version mismatch.
+
 ## 7.0.0
 
 🏗️ Standardization & Protocol v1.0
