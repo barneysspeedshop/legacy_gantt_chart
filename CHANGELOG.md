@@ -1,6 +1,9 @@
-## 7.1.0
+## 7.1.1
 
 * **FIX**: Update to latest `legacy_gantt_protocol` to resolve an SDK version mismatch.
+
+## 7.1.0
+
 * **FEATURE**: Implement Causal Integrity Auditing Tools
     * Implemented LegacyGanttInspector ("The Doctor") with Provenance, History, and Causal Graph tabs.
     * Integrated the engine into `LegacyGanttController`.
