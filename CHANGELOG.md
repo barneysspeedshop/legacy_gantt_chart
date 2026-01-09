@@ -1,3 +1,10 @@
+## 7.1.2
+
+* **FIX**: Resolved a visual regression where summary task highlights (green backgrounds) disappeared after synchronization.
+* **FIX**: Corrected a mapping mismatch where the sync server's `'project'` task type was not identified as a summary task.
+* **FIX**: Optimized conflict detection by ensuring summary tasks are correctly ignored during overlap checks.
+* **ENHANCEMENT**: Updated the example `GanttViewModel` for robust handling of diverse server-provided task types.
+
 ## 7.1.1
 
 * **FIX**: Update to latest `legacy_gantt_protocol` to resolve an SDK version mismatch.

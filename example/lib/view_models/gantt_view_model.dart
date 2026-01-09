@@ -2105,7 +2105,7 @@ class GanttViewModel extends ChangeNotifier {
           lastUpdatedBy: innerData['user_id'] ?? innerData['userId'] ?? op.actorId,
           isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
           isSummary: ganttType != null
-              ? (ganttType == 'summary')
+              ? (ganttType == 'summary' || ganttType == 'project')
               : (innerData['is_summary'] == true || innerData['isSummary'] == true ? true : existingTask.isSummary),
           color: _parseColor(innerData['color']) ?? existingTask.color,
           textColor:
@@ -2159,7 +2159,9 @@ class GanttViewModel extends ChangeNotifier {
           name: innerData['name'] ?? 'Unnamed Task',
           start: start,
           end: end,
-          isSummary: (ganttType == 'summary') || (innerData['is_summary'] == true) || (innerData['isSummary'] == true),
+          isSummary: (ganttType == 'summary' || ganttType == 'project') ||
+              (innerData['is_summary'] == true) ||
+              (innerData['isSummary'] == true),
           isMilestone: ganttType == 'milestone',
           color: _parseColor(innerData['color']),
           textColor: _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']),
@@ -2217,7 +2219,8 @@ class GanttViewModel extends ChangeNotifier {
         name: data['name'],
         start: start,
         end: end,
-        isSummary: ganttType == 'summary' || data['is_summary'] == true || data['isSummary'] == true,
+        isSummary:
+            ganttType == 'summary' || ganttType == 'project' || data['is_summary'] == true || data['isSummary'] == true,
         isMilestone: ganttType == 'milestone' || data['is_milestone'] == true || data['isMilestone'] == true,
         color: _parseColor(data['color']),
         textColor: _parseColor(data['textColor']),

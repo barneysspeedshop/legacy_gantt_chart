@@ -490,75 +490,110 @@ class LegacyGanttViewModel extends ChangeNotifier {
     ganttHorizontalScrollController?.addListener(_onHorizontalScrollControllerUpdate);
 
     if (syncClient != null) {
-      _syncSubscription = syncClient!.operationStream.listen((op) {
-        if (isDisposed) return;
-        if (op.type == 'INSERT_DEPENDENCY') {
-          final data = op.data;
-          final typeStr = data['type'] as String? ?? 'finishToStart';
-          final depType =
-              DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
-          final newDep = LegacyGanttTaskDependency(
-            predecessorTaskId: data['predecessorTaskId'],
-            successorTaskId: data['successorTaskId'],
-            type: depType,
-            lag: data['lag'] != null ? Duration(milliseconds: data['lag']) : null,
-          );
-          if (!dependencies.contains(newDep)) {
-            dependencies = List.from(dependencies)..add(newDep);
-            onDependencyAdd?.call(newDep);
-            _recalculateCriticalPath();
-            notifyListeners();
-          }
-        } else if (op.type == 'DELETE_DEPENDENCY') {
-          final data = op.data;
-          final pred = data['predecessorTaskId'];
-          final succ = data['successorTaskId'];
-          final initialLen = dependencies.length;
-          dependencies =
-              dependencies.where((d) => !(d.predecessorTaskId == pred && d.successorTaskId == succ)).toList();
-          if (dependencies.length != initialLen) {
-            notifyListeners();
-          }
-        } else if (op.type == 'CLEAR_DEPENDENCIES') {
-          final taskId = op.data['taskId'];
-          if (taskId != null) {
-            final initialLen = dependencies.length;
-            dependencies =
-                dependencies.where((d) => d.predecessorTaskId != taskId && d.successorTaskId != taskId).toList();
-            if (dependencies.length != initialLen) {
-              notifyListeners();
-            }
-          }
-        } else if (op.type == 'RESET_DATA') {
-          debugPrint('WARNING: RESET_DATA received. This operation is deprecated for normal syncing.');
-          debugPrint('Please use BATCH_UPDATE with the full state for seeding to ensure CRDT convergence.');
-          debugPrint('Proceeding with destructive wipe (Emergency Admin Action)...');
-          dependencies = [];
-          _tasks.clear();
-          conflictIndicators = [];
-          _calculateDomains();
-          notifyListeners();
-        } else if (op.type == 'CURSOR_MOVE') {
-          _handleRemoteCursorMove(op.data, op.actorId);
-        } else if (op.type == 'GHOST_UPDATE') {
-          _handleRemoteGhostUpdate(op.data, op.actorId);
-        } else if (op.type == 'PRESENCE_UPDATE') {
-          _handlePresenceUpdate(op.data, op.actorId);
-        } else {
-          _safeMergeTasks([op]);
+      _syncSubscription = syncClient!.operationStream.listen(_handleIncomingOperation);
+    }
+  }
 
-          if (taskGrouper != null) {
-            final conflicts = LegacyGanttConflictDetector().run(
-              tasks: _tasks,
-              taskGrouper: taskGrouper!,
-            );
-            conflictIndicators = conflicts;
+  void _handleIncomingOperation(Operation op) {
+    if (isDisposed) return;
+
+    final List<Operation> taskOps = [];
+    _processOperation(op, taskOps);
+
+    if (taskOps.isNotEmpty) {
+      _safeMergeTasks(taskOps);
+
+      if (taskGrouper != null) {
+        final conflicts = LegacyGanttConflictDetector().run(
+          tasks: _tasks,
+          taskGrouper: taskGrouper!,
+        );
+        conflictIndicators = conflicts;
+      }
+      _calculateDomains(); // Recalculate domains as data changed
+      _recalculateCriticalPath();
+      notifyListeners();
+    }
+  }
+
+  void _processOperation(Operation op, List<Operation> taskOps) {
+    if (op.type == 'BATCH_UPDATE') {
+      final operations = op.data['operations'] as List;
+      for (final rawOp in operations) {
+        if (rawOp is Map<String, dynamic>) {
+          try {
+            final subOp = Operation.fromJson(rawOp);
+            _processOperation(subOp, taskOps);
+          } catch (e) {
+            debugPrint('Error parsing batch operation: $e');
           }
-          _calculateDomains(); // Recalculate domains as data changed
-          _recalculateCriticalPath();
-          notifyListeners();
         }
-      });
+      }
+      return;
+    }
+
+    if (op.type == 'INSERT_DEPENDENCY') {
+      _handleInsertDependency(op.data);
+    } else if (op.type == 'DELETE_DEPENDENCY') {
+      _handleDeleteDependency(op.data);
+    } else if (op.type == 'CLEAR_DEPENDENCIES') {
+      _handleClearDependencies(op.data);
+    } else if (op.type == 'RESET_DATA') {
+      debugPrint('WARNING: RESET_DATA received. This operation is deprecated for normal syncing.');
+      debugPrint('Please use BATCH_UPDATE with the full state for seeding to ensure CRDT convergence.');
+      debugPrint('Proceeding with destructive wipe (Emergency Admin Action)...');
+      dependencies = [];
+      _tasks.clear();
+      conflictIndicators = [];
+      _calculateDomains();
+      notifyListeners();
+    } else if (op.type == 'CURSOR_MOVE') {
+      _handleRemoteCursorMove(op.data, op.actorId);
+    } else if (op.type == 'GHOST_UPDATE') {
+      _handleRemoteGhostUpdate(op.data, op.actorId);
+    } else if (op.type == 'PRESENCE_UPDATE') {
+      _handlePresenceUpdate(op.data, op.actorId);
+    } else {
+      taskOps.add(op);
+    }
+  }
+
+  void _handleInsertDependency(Map<String, dynamic> data) {
+    final typeStr = data['type'] as String? ?? 'finishToStart';
+    final depType =
+        DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
+    final newDep = LegacyGanttTaskDependency(
+      predecessorTaskId: data['predecessorTaskId'],
+      successorTaskId: data['successorTaskId'],
+      type: depType,
+      lag: data['lag'] != null ? Duration(milliseconds: data['lag']) : null,
+    );
+    if (!dependencies.contains(newDep)) {
+      dependencies = List.from(dependencies)..add(newDep);
+      onDependencyAdd?.call(newDep);
+      _recalculateCriticalPath();
+      notifyListeners();
+    }
+  }
+
+  void _handleDeleteDependency(Map<String, dynamic> data) {
+    final pred = data['predecessorTaskId'];
+    final succ = data['successorTaskId'];
+    final initialLen = dependencies.length;
+    dependencies = dependencies.where((d) => !(d.predecessorTaskId == pred && d.successorTaskId == succ)).toList();
+    if (dependencies.length != initialLen) {
+      notifyListeners();
+    }
+  }
+
+  void _handleClearDependencies(Map<String, dynamic> data) {
+    final taskId = data['taskId'];
+    if (taskId != null) {
+      final initialLen = dependencies.length;
+      dependencies = dependencies.where((d) => d.predecessorTaskId != taskId && d.successorTaskId != taskId).toList();
+      if (dependencies.length != initialLen) {
+        notifyListeners();
+      }
     }
   }
 
