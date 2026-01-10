@@ -9,6 +9,7 @@ class GanttGridData {
   final double? completion;
   final List<GanttGridData> children;
   bool isExpanded; // State for expansion
+  final double? sortOrder;
 
   GanttGridData({
     required this.id,
@@ -18,6 +19,7 @@ class GanttGridData {
     this.completion,
     this.children = const [],
     this.isExpanded = false,
+    this.sortOrder,
   });
 
   factory GanttGridData.fromJob(GanttJobData job) => GanttGridData(
@@ -26,6 +28,7 @@ class GanttGridData {
         isParent: false,
         taskName: job.taskName ?? job.name,
         completion: job.completion,
+        sortOrder: null,
       );
 
   GanttGridData copyWith({
@@ -36,6 +39,7 @@ class GanttGridData {
     double? completion,
     List<GanttGridData>? children,
     bool? isExpanded,
+    double? sortOrder,
   }) =>
       GanttGridData(
         id: id ?? this.id,
@@ -43,5 +47,6 @@ class GanttGridData {
         isParent: isParent ?? this.isParent,
         children: children ?? this.children,
         isExpanded: isExpanded ?? this.isExpanded,
+        sortOrder: sortOrder ?? this.sortOrder,
       );
 }

@@ -158,7 +158,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
                 batchTimestamp = currentHlc;
               }
 
-              // Update local clock using receive
               _lastHlc = _lastHlc.receive(batchTimestamp, correctedTimestamp);
 
               final op = Operation(
@@ -226,7 +225,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               parsedTimestamp = currentHlc;
             }
 
-            // Update local clock using receive
             _lastHlc = _lastHlc.receive(parsedTimestamp, correctedTimestamp);
 
             final op = Operation(
@@ -279,15 +277,11 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     _channel!.sink.add(jsonEncode({
       'type': 'GET_MERKLE_ROOT',
     }));
-    // Timeout after 10s
     return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
   }
 
   @override
   Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {
-    // For now, if we detect drift, we could just log it or trigger a refresh?
-    // Since buckets receive isn't implemented server-side, we can't do partial sync.
-    // Ideally we would send 'REQUEST_SYNC' here.
     print('Syncing with Merkle: remoteRoot=$remoteRoot (Not fully implemented yet)');
   }
 

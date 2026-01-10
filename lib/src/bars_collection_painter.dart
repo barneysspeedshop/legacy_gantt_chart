@@ -107,8 +107,12 @@ class BarsCollectionPainter extends CustomPainter {
   final bool isSecondaryHovered;
   final Offset? secondaryHoverPosition;
 
+  /// Map of tasks grouped by row ID, for efficient access.
+  final Map<String, List<LegacyGanttTask>> tasksByRow;
+
   BarsCollectionPainter({
     required this.data,
+    required this.tasksByRow,
     required this.conflictIndicators,
     required this.visibleRows,
     required this.domain,
@@ -236,14 +240,6 @@ class BarsCollectionPainter extends CustomPainter {
       cumulativeRowTop = 0; // Reset for main drawing loop
     }
 
-    final Map<String, List<LegacyGanttTask>> tasksByRow = {};
-    final visibleRowIds = visibleRows.map((r) => r.id).toSet();
-    for (final task in data) {
-      if (visibleRowIds.contains(task.rowId)) {
-        tasksByRow.putIfAbsent(task.rowId, () => []).add(task);
-      }
-    }
-
     final Map<String, List<LegacyGanttTask>> milestonesByParent = {};
     if (rollUpMilestones) {
       for (final task in data) {
@@ -302,8 +298,11 @@ class BarsCollectionPainter extends CustomPainter {
         final double barStartX = scale(task.start);
         final double barEndX = scale(task.end);
 
-        if (barEndX < 0 || barStartX > size.width) {
+        if (barEndX < 0) {
           continue;
+        }
+        if (barStartX > size.width) {
+          break; // Since tasks are sorted by start time, we can stop here.
         }
 
         final double barWidth = max(0, barEndX - barStartX);
@@ -355,8 +354,11 @@ class BarsCollectionPainter extends CustomPainter {
 
           final double taskStartX = scale(task.start);
           final double taskEndX = scale(task.end);
-          if (taskEndX < 0 || taskStartX > size.width) {
+          if (taskEndX < 0) {
             continue;
+          }
+          if (taskStartX > size.width) {
+            break; // Since tasks are sorted by start time, we can stop here.
           }
 
           final isBeingDragged = task.id == draggedTaskId;
@@ -746,7 +748,6 @@ class BarsCollectionPainter extends CustomPainter {
 
     canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
 
-    // Optional: Draw a small triangle or circle at the top to make it more visible
     final path = Path();
     const double markerSize = 6.0;
     path.moveTo(x - markerSize, 0);

@@ -19,8 +19,8 @@ void main() {
     // 2. Insert initial data (One parent, collapsed)
     final repo = LocalGanttRepository();
     await repo.init();
-    await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
-    await repo.insertOrUpdateResource(LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
+    await repo.insertOrUpdateResource(const LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
+    await repo.insertOrUpdateResource(const LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
 
     // Add a task to ensure grid data is built (otherwise logic might skip)
     await repo.insertOrUpdateTask(LegacyGanttTask(

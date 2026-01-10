@@ -103,6 +103,7 @@ void main() {
     const row2 = LegacyGanttRow(id: 'row2');
 
     final painter = BarsCollectionPainter(
+      tasksByRow: {},
       data: [summaryTask, childTask],
       conflictIndicators: [],
       // Ensure visibleRows includes both rows continuously

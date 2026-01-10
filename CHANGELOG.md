@@ -1,3 +1,13 @@
+## 7.2.0
+
+*   **BETA FEATURE**: Introduced experimental support for importing tasks from CSV files, including robust validation and streaming support for large datasets.
+*   **PERFORMANCE**: Significantly optimized rendering performance for large datasets.
+    *   Implemented row-based task caching to reduce linear scans.
+    *   Added horizontal viewport culling in `BarsCollectionPainter` to skip drawing off-screen tasks.
+    *   Reduced widget tree overhead by optimizing `_DefaultTaskBar` creation.
+*   **FIX**: Resolved an issue where horizontal scrolling with a trackpad could unintentionally drag tasks.
+*   **FIX**: Fix for an issue where axis labels would overlap at wide zoom levels by implementing label collision detection and adding Month/Year tick intervals.
+
 ## 7.1.2
 
 * **FIX**: Resolved a visual regression where summary task highlights (green backgrounds) disappeared after synchronization.

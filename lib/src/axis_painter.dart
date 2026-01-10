@@ -150,6 +150,7 @@ class AxisPainter extends CustomPainter {
 
     bool isFirstVisibleTickFound = false;
     DateTime? previousTickTime;
+    double lastLabelRightEdge = double.negativeInfinity;
 
     for (final entry in tickPositions) {
       final tickX = entry.key;
@@ -191,17 +192,26 @@ class AxisPainter extends CustomPainter {
         );
         textPainter.layout();
 
-        double textY;
-        if (verticallyCenterLabels) {
-          textY = y + (height - textPainter.height) / 2;
-        } else {
-          textY = y - textPainter.height;
-        }
+        final double labelWidth = textPainter.width;
+        final double labelX = tickX - (labelWidth / 2);
 
-        textPainter.paint(
-          canvas,
-          Offset(tickX - (textPainter.width / 2), textY),
-        );
+        // Check for collision with the previously drawn label
+        // We add a small padding (8.0) to ensure readability
+        if (labelX >= lastLabelRightEdge + 8.0) {
+          double textY;
+          if (verticallyCenterLabels) {
+            textY = y + (height - textPainter.height) / 2;
+          } else {
+            textY = y - textPainter.height;
+          }
+
+          textPainter.paint(
+            canvas,
+            Offset(labelX, textY),
+          );
+
+          lastLabelRightEdge = labelX + labelWidth;
+        }
       }
     }
   }
@@ -254,6 +264,8 @@ final List<_TickStep> _tickSteps = [
   _TickStep(const Duration(days: 1), (dt) => DateFormat('EEE d').format(dt)),
   _TickStep(const Duration(days: 2), (dt) => DateFormat('d MMM').format(dt)),
   _TickStep(const Duration(days: 7), (dt) => 'Week ${_weekNumber(dt)}'),
+  _TickStep(const Duration(days: 30), (dt) => DateFormat('MMM yyyy').format(dt)),
+  _TickStep(const Duration(days: 365), (dt) => DateFormat('yyyy').format(dt)),
 ];
 
 int _weekNumber(DateTime date) {

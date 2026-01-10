@@ -729,6 +729,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                         children: [
                           Expanded(
                             child: Listener(
+                              onPointerDown: vm.onPointerEvent,
+                              onPointerUp: vm.onPointerEvent,
+                              onPointerCancel: vm.onPointerEvent,
                               onPointerSignal: (event) {
                                 if (event is PointerScrollEvent) {
                                   if (event.scrollDelta.dx != 0) {
@@ -791,6 +794,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   size: Size(
                                                       constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
                                                   painter: BarsCollectionPainter(
+                                                    tasksByRow: vm.tasksByRow,
                                                     conflictIndicators: vm.conflictIndicators,
                                                     dependencies: vm.dependencies,
                                                     data: vm.data,
@@ -974,48 +978,49 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     final List<Widget> taskWidgets = [];
     double cumulativeRowTop = 0;
 
-    final Map<String, List<LegacyGanttTask>> tasksByRow = {};
-    final visibleRowIds = vm.visibleRows.map((r) => r.id).toSet();
-    for (final task in tasks) {
-      if (visibleRowIds.contains(task.rowId) && !task.isTimeRangeHighlight) {
-        tasksByRow.putIfAbsent(task.rowId, () => []).add(task);
-      }
-    }
-
     for (final rowData in vm.visibleRows) {
-      final tasksInThisRow = tasksByRow[rowData.id] ?? [];
-      for (final task in tasksInThisRow) {
-        final startX = vm.totalScale(task.start);
-        final endX = vm.totalScale(task.end);
-        final width = endX - startX;
+      final tasksInThisRow = vm.tasksByRow[rowData.id];
 
-        if (width <= 0) {
-          continue;
+      if (tasksInThisRow != null) {
+        for (final task in tasksInThisRow) {
+          if (task.isTimeRangeHighlight) continue;
+
+          final startX = vm.totalScale(task.start);
+          final endX = vm.totalScale(task.end);
+          final width = endX - startX;
+
+          if (width <= 0) {
+            continue;
+          }
+
+          final top = cumulativeRowTop + (task.stackIndex * vm.rowHeight) + vm.translateY;
+
+          Widget taskWidget;
+          if (task.isOverlapIndicator) {
+            taskWidget = _OverlapIndicatorBar(theme: theme);
+          } else if (widget.taskBarBuilder != null) {
+            taskWidget = widget.taskBarBuilder!(task);
+          } else {
+            if (widget.taskContentBuilder == null) {
+              continue;
+            }
+
+            taskWidget = _DefaultTaskBar(
+              task: task,
+              vm: vm,
+              theme: theme,
+              content: widget.taskContentBuilder!(task),
+            );
+          }
+
+          taskWidgets.add(Positioned(
+            left: startX,
+            top: top,
+            width: width,
+            height: vm.rowHeight,
+            child: taskWidget,
+          ));
         }
-
-        final top = cumulativeRowTop + (task.stackIndex * vm.rowHeight) + vm.translateY;
-
-        Widget taskWidget;
-        if (task.isOverlapIndicator) {
-          taskWidget = _OverlapIndicatorBar(theme: theme);
-        } else if (widget.taskBarBuilder != null) {
-          taskWidget = widget.taskBarBuilder!(task);
-        } else {
-          taskWidget = _DefaultTaskBar(
-            task: task,
-            vm: vm,
-            theme: theme,
-            content: widget.taskContentBuilder != null ? widget.taskContentBuilder!(task) : null,
-          );
-        }
-
-        taskWidgets.add(Positioned(
-          left: startX,
-          top: top,
-          width: width,
-          height: vm.rowHeight,
-          child: taskWidget,
-        ));
       }
       final stackDepth = vm.rowMaxStackDepth[rowData.id] ?? 1;
       cumulativeRowTop += vm.rowHeight * stackDepth;
@@ -1027,36 +1032,34 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     final List<Widget> customCells = [];
     double cumulativeRowTop = 0;
 
-    final Map<String, List<LegacyGanttTask>> tasksByRow = {};
-    final visibleRowIds = vm.visibleRows.map((r) => r.id).toSet();
-    for (final task in tasks) {
-      if (visibleRowIds.contains(task.rowId) && task.cellBuilder != null) {
-        tasksByRow.putIfAbsent(task.rowId, () => []).add(task);
-      }
-    }
-
     for (final rowData in vm.visibleRows) {
-      final tasksInThisRow = tasksByRow[rowData.id] ?? [];
-      for (final task in tasksInThisRow) {
-        final taskStart = task.start;
-        final taskEnd = task.end;
+      final tasksInThisRow = vm.tasksByRow[rowData.id];
 
-        var currentDate = DateTime(taskStart.year, taskStart.month, taskStart.day);
-        while (currentDate.isBefore(taskEnd)) {
-          final segmentStart = taskStart.isAfter(currentDate) ? taskStart : currentDate;
-          final nextDay = currentDate.add(const Duration(days: 1));
-          final segmentEnd = taskEnd.isBefore(nextDay) ? taskEnd : nextDay;
+      if (tasksInThisRow != null) {
+        for (final task in tasksInThisRow) {
+          if (task.cellBuilder == null) continue;
 
-          final startX = vm.totalScale(segmentStart);
-          final endX = vm.totalScale(segmentEnd);
-          final width = endX - startX;
+          final taskStart = task.start;
+          final taskEnd = task.end;
+          var currentDate = DateTime(taskStart.year, taskStart.month, taskStart.day);
 
-          if (width > 0) {
-            final top = cumulativeRowTop + (task.stackIndex * vm.rowHeight) + vm.translateY;
-            customCells.add(Positioned(
-                left: startX, top: top, width: width, height: vm.rowHeight, child: task.cellBuilder!(currentDate)));
+          while (currentDate.isBefore(taskEnd)) {
+            final segmentStart = taskStart.isAfter(currentDate) ? taskStart : currentDate;
+
+            final nextDay = currentDate.add(const Duration(days: 1));
+            final segmentEnd = taskEnd.isBefore(nextDay) ? taskEnd : nextDay;
+
+            final startX = vm.totalScale(segmentStart);
+            final endX = vm.totalScale(segmentEnd);
+            final width = endX - startX;
+
+            if (width > 0) {
+              final top = cumulativeRowTop + (task.stackIndex * vm.rowHeight) + vm.translateY;
+              customCells.add(Positioned(
+                  left: startX, top: top, width: width, height: vm.rowHeight, child: task.cellBuilder!(currentDate)));
+            }
+            currentDate = nextDay;
           }
-          currentDate = nextDay;
         }
       }
       final stackDepth = vm.rowMaxStackDepth[rowData.id] ?? 1;

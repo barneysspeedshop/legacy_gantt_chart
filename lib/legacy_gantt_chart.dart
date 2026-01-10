@@ -15,7 +15,6 @@ export 'src/models/legacy_gantt_dependency.dart';
 export 'src/legacy_gantt_controller.dart';
 export 'src/sync/websocket_gantt_sync_client.dart';
 export 'src/widgets/legacy_gantt_toolbar.dart';
-// Protocol exports
 export 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 export 'src/utils/critical_path_calculator.dart';

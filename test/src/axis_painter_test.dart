@@ -185,7 +185,15 @@ void main() {
       expect(findPainter(), findsOneWidget);
     }
 
-    testWidgets('handles > 60 days interval (weeks)', (WidgetTester tester) async {
+    testWidgets('handles > 730 days interval (years)', (WidgetTester tester) async {
+      await testTickInterval(tester, const Duration(days: 800));
+    });
+
+    testWidgets('handles > 60 days interval (months)', (WidgetTester tester) async {
+      await testTickInterval(tester, const Duration(days: 70));
+    });
+
+    testWidgets('handles > 14 days interval (weeks)', (WidgetTester tester) async {
       await testTickInterval(tester, const Duration(days: 65));
     });
 

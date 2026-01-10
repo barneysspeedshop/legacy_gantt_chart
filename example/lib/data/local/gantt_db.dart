@@ -84,7 +84,9 @@ class GanttDb {
             parent_id TEXT,
             is_expanded INTEGER DEFAULT 1,
             last_updated INTEGER,
-            deleted_at INTEGER
+            deleted_at INTEGER,
+            sort_order REAL,
+            is_deleted INTEGER DEFAULT 0
           )
         ''');
 
@@ -288,7 +290,6 @@ class GanttDb {
             await db.execute('ALTER TABLE tasks ADD COLUMN resize_policy INTEGER DEFAULT 0');
           } catch (_) {}
         }
-
         if (oldVersion < 17) {
           try {
             await db.execute('ALTER TABLE tasks ADD COLUMN last_updated_by TEXT');
@@ -297,10 +298,26 @@ class GanttDb {
           }
         }
 
-        // SqliteCrdt automatically ensures all CRDT columns (is_deleted, hlc, etc.) are present
-        // on open, so we don't need manual migration for is_deleted.
+        if (oldVersion < 18) {
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN sort_order REAL');
+          } catch (e) {
+            print('Migration to v18 (sort_order) error: $e');
+          }
+        }
+        if (oldVersion < 19) {
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN sort_order REAL');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE resources ADD COLUMN is_deleted INTEGER DEFAULT 0');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN is_deleted INTEGER DEFAULT 0');
+          } catch (_) {}
+        }
       },
-      version: 17,
+      version: 19,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)

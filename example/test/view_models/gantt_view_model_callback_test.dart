@@ -19,8 +19,8 @@ void main() {
     // 2. Insert initial data (Collapsed parent)
     final repo = LocalGanttRepository();
     await repo.init();
-    await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
-    await repo.insertOrUpdateResource(LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
+    await repo.insertOrUpdateResource(const LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
+    await repo.insertOrUpdateResource(const LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
 
     // Add task so _processLocalData runs
     await repo.insertOrUpdateTask(LegacyGanttTask(
@@ -41,7 +41,7 @@ void main() {
 
     // 5. Simulate Remote Update (Expand p1)
     // Directly update the repository. This should trigger the stream listener -> _processLocalData.
-    await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: true));
+    await repo.insertOrUpdateResource(const LocalResource(id: 'p1', name: 'Parent 1', isExpanded: true));
 
     // Wait for stream to process
     await Future.delayed(const Duration(milliseconds: 200));

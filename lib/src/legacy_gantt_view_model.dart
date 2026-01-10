@@ -41,6 +41,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// The public getter for the task list.
   List<LegacyGanttTask> get data => _tasks;
 
+  Map<String, List<LegacyGanttTask>> _tasksByRow = {};
+  Map<String, List<LegacyGanttTask>> get tasksByRow => _tasksByRow;
+
   /// The list of conflict indicators to be displayed.
   List<LegacyGanttTask> conflictIndicators;
 
@@ -492,6 +495,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (syncClient != null) {
       _syncSubscription = syncClient!.operationStream.listen(_handleIncomingOperation);
     }
+    _rebuildTasksByRow();
   }
 
   void _handleIncomingOperation(Operation op) {
@@ -510,6 +514,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         );
         conflictIndicators = conflicts;
       }
+      _rebuildTasksByRow();
       _calculateDomains(); // Recalculate domains as data changed
       _recalculateCriticalPath();
       notifyListeners();
@@ -545,6 +550,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       dependencies = [];
       _tasks.clear();
       conflictIndicators = [];
+      _rebuildTasksByRow();
       _calculateDomains();
       notifyListeners();
     } else if (op.type == 'CURSOR_MOVE') {
@@ -722,6 +728,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _baseResourceBuckets = aggregateResourceLoad(_tasks,
           start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
           end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
+      _rebuildTasksByRow();
       notifyListeners();
     } else {}
   }
@@ -1092,6 +1099,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _height = height;
       _calculateDomains();
       _calculateRowOffsets(); // Recalculate if layout changes
+
+      if (!isDisposed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!isDisposed) notifyListeners();
+        });
+      }
     }
 
     if (scrollController != null && scrollController!.hasClients) {
@@ -1404,24 +1417,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
         localStateChanged = true;
       }
 
-      if (syncClient != null) {
-        final op = Operation(
-            type: 'UPDATE_TASK',
-            data: {
-              'id': taskId,
-              'start': newStart.toIso8601String(),
-              'end': newEnd.toIso8601String(),
-            },
-            timestamp: now,
-            actorId: syncClient?.actorId ?? 'user');
-        opsToSend.add(op);
-      }
-
+      final op = Operation(
+          type: 'UPDATE_TASK', data: updatedTask.toJson(), timestamp: now, actorId: syncClient?.actorId ?? 'user');
       if (onBulkTaskUpdate != null) {
         bulkUpdates.add((task, newStart, newEnd));
       } else {
         onTaskUpdate?.call(task, newStart, newEnd);
       }
+      opsToSend.add(op);
     }
 
     if (bulkUpdates.isNotEmpty) {
@@ -1597,18 +1600,94 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void onVerticalPanCancel() {
+    if (_panType == PanType.vertical) {
+      _translateY = _initialTranslateY;
+      notifyListeners();
+    }
     _resetDragState();
   }
 
   void _resetDragState() {
+    _dragMode = DragMode.none;
+    _panType = PanType.none;
     _draggedTask = null;
     _ghostTaskStart = null;
     _ghostTaskEnd = null;
-    _bulkGhostTasks.clear(); // Clear bulk ghost tasks on reset
-    _dragMode = DragMode.none;
-    _panType = PanType.none;
-    _showResizeTooltip = false;
-    notifyListeners();
+    _bulkGhostTasks.clear();
+    _initialTouchY = 0;
+    _initialTranslateY = 0;
+    _dragStartGlobalX = 0;
+    _originalTaskStart = null;
+    _originalTaskEnd = null;
+    _hoveredRowId = null;
+    _hoveredDate = null;
+    _dependencyStartTaskId = null;
+    _dependencyStartSide = null;
+    _currentDragPosition = null;
+    _dependencyDragStatus = DependencyDragStatus.none;
+    _dependencyDragDelayAmount = null;
+    _dependencyHoveredTaskId = null;
+    if (!isDisposed) notifyListeners();
+  }
+
+  bool _isPrimaryButtonDown = false;
+
+  void onPointerEvent(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      if (event.buttons & kPrimaryMouseButton != 0) {
+        _isPrimaryButtonDown = true;
+      }
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _isPrimaryButtonDown = false;
+    }
+  }
+
+  void _rebuildTasksByRow() {
+    _tasksByRow = {};
+    final Map<String, int> calculatedMaxStackDepth = {};
+
+    final Map<String, List<LegacyGanttTask>> rawGrouping = {};
+    for (final task in _tasks) {
+      if (task.isDeleted) continue;
+      rawGrouping.putIfAbsent(task.rowId, () => []).add(task);
+    }
+
+    for (final entry in rawGrouping.entries) {
+      final rowId = entry.key;
+      final tasks = entry.value;
+
+      tasks.sort((a, b) => a.start.compareTo(b.start));
+
+      final List<LegacyGanttTask> layoutTasks = [];
+      final List<DateTime> stackEndTimes = [];
+
+      for (final task in tasks) {
+        int assignedStackIndex = 0;
+        bool placed = false;
+
+        for (int i = 0; i < stackEndTimes.length; i++) {
+          if (stackEndTimes[i].isBefore(task.start) || stackEndTimes[i].isAtSameMomentAs(task.start)) {
+            assignedStackIndex = i;
+            stackEndTimes[i] = task.end;
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          assignedStackIndex = stackEndTimes.length;
+          stackEndTimes.add(task.end);
+        }
+
+        layoutTasks.add(task.copyWith(stackIndex: assignedStackIndex));
+      }
+
+      _tasksByRow[rowId] = layoutTasks;
+      calculatedMaxStackDepth[rowId] = stackEndTimes.length;
+    }
+
+    rowMaxStackDepth.clear();
+    rowMaxStackDepth.addAll(calculatedMaxStackDepth);
   }
 
   void onPanStart(
@@ -1726,7 +1805,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           (hit.part == TaskPart.startHandle || hit.part == TaskPart.endHandle)) {
         _dependencyHoveredTaskId = hit.task.id;
 
-        // Admissibility Logic
         if (_wouldCreateCycle(_dependencyStartTaskId!, hit.task.id)) {
           _dependencyDragStatus = DependencyDragStatus.cycle;
         } else {
@@ -1734,8 +1812,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           final targetStats = _cpmStats[hit.task.id];
 
           if (sourceStats != null && targetStats != null) {
-            // Formula: efinish(A) <= lstart(B)
-            // Note: Our stats use minutes relative to project start.
             if (sourceStats.earlyFinish <= targetStats.lateStart) {
               _dependencyDragStatus = DependencyDragStatus.admissible;
             } else {
@@ -1748,28 +1824,29 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _dependencyHoveredTaskId = null;
       }
       notifyListeners();
-    } else if (_panType == PanType.vertical) {
       onVerticalPanUpdate(details);
     } else {
       if (details.delta.dx.abs() > details.delta.dy.abs()) {
-        final hit = _getTaskPartAtPosition(_initialLocalPosition);
-        if (hit != null) {
-          _panType = PanType.horizontal;
-          _draggedTask = hit.task;
-          _originalTaskStart = hit.task.start;
-          _originalTaskEnd = hit.task.end;
-          switch (hit.part) {
-            case TaskPart.startHandle:
-              _dragMode = DragMode.resizeStart;
-              break;
-            case TaskPart.endHandle:
-              _dragMode = DragMode.resizeEnd;
-              break;
-            case TaskPart.body:
-              _dragMode = DragMode.move;
-              break;
+        if (_isPrimaryButtonDown) {
+          final hit = _getTaskPartAtPosition(_initialLocalPosition);
+          if (hit != null) {
+            _panType = PanType.horizontal;
+            _draggedTask = hit.task;
+            _originalTaskStart = hit.task.start;
+            _originalTaskEnd = hit.task.end;
+            switch (hit.part) {
+              case TaskPart.startHandle:
+                _dragMode = DragMode.resizeStart;
+                break;
+              case TaskPart.endHandle:
+                _dragMode = DragMode.resizeEnd;
+                break;
+              case TaskPart.body:
+                _dragMode = DragMode.move;
+                break;
+            }
+            onHorizontalPanUpdate(details);
           }
-          onHorizontalPanUpdate(details);
         }
       } else {
         _panType = PanType.vertical;
@@ -2513,7 +2590,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
           : projectTime.toIso8601String().substring(0, 16);
 
       final tzAbbr = projectTimezoneAbbreviation ?? 'Project';
-      // Use non-breaking spaces for alignment and grouping
       return "${localStr.replaceAll(' ', '\u00A0')}\u00A0(Local)\n${projectStr.replaceAll(' ', '\u00A0')}\u00A0($tzAbbr)";
     }
 

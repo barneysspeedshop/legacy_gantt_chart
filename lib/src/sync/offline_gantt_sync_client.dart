@@ -133,17 +133,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _flushQueue() async {
-    print('OfflineClient: _flushQueue called. isConnected: $_isConnected, innerClient: $_innerClient');
     if (_activeFlushFuture != null) {
-      print('OfflineClient: Flush already active, waiting for it...');
       return _activeFlushFuture;
     }
     _activeFlushFuture = _performFlush();
     try {
       await _activeFlushFuture;
-      print('OfflineClient: Flush completed.');
-    } catch (e, st) {
-      print('OfflineClient: Flush failed with error: $e\n$st');
     } finally {
       _activeFlushFuture = null;
       _updatePendingCount();
@@ -152,15 +147,11 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> _performFlush() async {
     if (!_isConnected || _innerClient == null) {
-      print('OfflineClient: Aborting flush because not connected or no inner client.');
       return;
     }
 
-    print('OfflineClient: Starting flush loop...');
-
     while (_isConnected && _innerClient != null) {
       if (!_isDbReady) {
-        print('OfflineClient: DB not ready, waiting...');
         await _dbInitFuture;
       }
 
@@ -192,7 +183,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           }
           final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
 
-          // Legacy: Normalize data if it uses old keys or formats, but keep them robust
           if (dataMap.containsKey('start')) {
             final startVal = dataMap['start'];
             if (startVal is String || startVal is int) {
@@ -287,7 +277,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       return;
     }
 
-    // Legacy: Normalize data if it uses old keys or formats, but keep them robust
     if (operation.data.containsKey('start')) {
       final startVal = operation.data['start'];
       if (startVal is String || startVal is int) {
@@ -337,7 +326,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       if (kIsWeb && opsToQueue.length > 100 && (!_isConnected || _innerClient == null)) {
         print('OfflineClient: Large batch on Web ($opsToQueue.length ops) and not connected. Waiting up to 2s...');
         try {
-          // Wait for true on connection stream
           await _connectionStateController.stream
               .firstWhere((isConnected) => isConnected)
               .timeout(const Duration(seconds: 2));

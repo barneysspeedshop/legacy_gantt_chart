@@ -1,5 +1,5 @@
 import 'dart:ui';
-import 'package:collection/collection.dart';
+
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:synchronized/synchronized.dart';
 
@@ -428,9 +428,11 @@ class LocalGanttRepository {
 
   Stream<List<LocalResource>> watchResources() async* {
     final db = await GanttDb.db;
-    yield* db.watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY id ASC').map((rows) {
+    yield* db
+        .watch('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY COALESCE(sort_order, 100000000.0) ASC, id ASC')
+        .map((rows) {
       final resources = rows.map((row) => _rowToResource(row)).toList();
-      resources.sort((a, b) => compareNatural(a.id, b.id));
+      // No longer force sort by ID, trust DB order (which uses sort_order)
       return resources;
     });
   }
@@ -447,6 +449,7 @@ class LocalGanttRepository {
             parent_id = ?3,
             is_expanded = ?4,
             last_updated = ?5,
+            sort_order = ?6,
             deleted_at = NULL,
             is_deleted = 0
           WHERE id = ?1
@@ -457,13 +460,14 @@ class LocalGanttRepository {
             resource.parentId,
             resource.isExpanded ? 1 : 0,
             resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
+            resource.sortOrder,
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
-          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+          INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, sort_order, deleted_at)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
           ''',
           [
             resource.id,
@@ -471,6 +475,7 @@ class LocalGanttRepository {
             resource.parentId,
             resource.isExpanded ? 1 : 0,
             resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
+            resource.sortOrder,
           ],
         );
       }
@@ -488,6 +493,7 @@ class LocalGanttRepository {
           parent_id = ?3,
           is_expanded = ?4,
           last_updated = ?5,
+          sort_order = ?6,
           deleted_at = NULL,
           is_deleted = 0
         WHERE id = ?1
@@ -498,13 +504,14 @@ class LocalGanttRepository {
           resource.parentId,
           resource.isExpanded ? 1 : 0,
           resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
+          resource.sortOrder,
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, deleted_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+        INSERT OR IGNORE INTO resources (id, name, parent_id, is_expanded, last_updated, sort_order, deleted_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
         ''',
         [
           resource.id,
@@ -512,9 +519,14 @@ class LocalGanttRepository {
           resource.parentId,
           resource.isExpanded ? 1 : 0,
           resource.lastUpdated?.toString() ?? DateTime.now().millisecondsSinceEpoch,
+          resource.sortOrder,
         ],
       );
     });
+  }
+
+  Future<void> updateResource(LocalResource resource) async {
+    await insertResources([resource]);
   }
 
   Future<void> updateResourceExpansion(String id, bool isExpanded, Hlc timestamp) async {
@@ -537,7 +549,7 @@ class LocalGanttRepository {
   Future<void> deleteResource(String id, Hlc timestamp) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
-      await db.execute('UPDATE resources SET deleted_at = ?, last_updated = ? WHERE id = ?',
+      await db.execute('UPDATE resources SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
           [timestamp.toString(), timestamp.toString(), id]);
     });
   }
@@ -546,8 +558,13 @@ class LocalGanttRepository {
         id: row['id'] as String,
         name: row['name'] as String?,
         parentId: row['parent_id'] as String?,
-        isExpanded: (row['is_expanded'] as int?) == 1,
+        isExpanded:
+            (row['is_expanded'] is String ? int.tryParse(row['is_expanded'] as String) : row['is_expanded'] as int?) ==
+                1,
         lastUpdated: _parseHlc(row['last_updated']),
+        sortOrder: row['sort_order'] is String
+            ? double.tryParse(row['sort_order'] as String)
+            : (row['sort_order'] as num?)?.toDouble(),
       );
 
   Future<Hlc> getMaxLastUpdated() async {
@@ -605,6 +622,31 @@ class LocalResource {
   final String? parentId;
   final bool isExpanded;
   final Hlc? lastUpdated;
+  final double? sortOrder;
 
-  LocalResource({required this.id, this.name, this.parentId, this.isExpanded = true, this.lastUpdated});
+  const LocalResource({
+    required this.id,
+    this.name,
+    this.parentId,
+    this.isExpanded = true,
+    this.lastUpdated,
+    this.sortOrder,
+  });
+
+  LocalResource copyWith({
+    String? id,
+    String? name,
+    String? parentId,
+    bool? isExpanded,
+    Hlc? lastUpdated,
+    double? sortOrder,
+  }) =>
+      LocalResource(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        parentId: parentId ?? this.parentId,
+        isExpanded: isExpanded ?? this.isExpanded,
+        lastUpdated: lastUpdated ?? this.lastUpdated,
+        sortOrder: sortOrder ?? this.sortOrder,
+      );
 }

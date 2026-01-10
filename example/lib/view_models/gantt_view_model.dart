@@ -52,6 +52,8 @@ class GanttViewModel extends ChangeNotifier {
   /// The list of dependencies between tasks.
   List<LegacyGanttTaskDependency> _dependencies = [];
   List<LocalResource> _localResources = [];
+  List<LocalResource> get localResources => UnmodifiableListView(_localResources);
+  List<LegacyGanttTask> get allTasks => UnmodifiableListView(_allGanttTasks);
 
   /// The hierarchical data structure for the grid on the left side of the chart.
   List<GanttGridData> _gridData = [];
@@ -280,9 +282,14 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> _processLocalData() async {
     if (_allGanttTasks.isEmpty) {
       _setLoading(false);
+      _setLoading(false);
       _conflictIndicators = [];
+      _ganttTasks = [];
+      _dependencies = [];
       _gridData = [];
       _rowMaxStackDepth = {};
+      _totalStartDate = null;
+      _totalEndDate = null;
       notifyListeners();
       return;
     }
@@ -487,6 +494,128 @@ class GanttViewModel extends ChangeNotifier {
       );
       await _syncClient!.sendOperation(op);
       controller.recordOperation(op);
+    }
+  }
+
+  Future<void> addTask(LegacyGanttTask task) async {
+    // Ensure last updated info is set
+    final newTask = task.copyWith(
+      lastUpdated: _currentHlc,
+      lastUpdatedBy: _currentUsername ?? 'local-user',
+    );
+
+    await _localRepository.insertOrUpdateTask(newTask);
+
+    if (_syncClient != null) {
+      String ganttType = 'task';
+      if (newTask.isMilestone) {
+        ganttType = 'milestone';
+      } else if (newTask.isSummary) {
+        ganttType = 'summary';
+      }
+
+      final op = Operation(
+        type: 'INSERT_TASK',
+        data: {
+          'gantt_type': ganttType,
+          'data': {
+            'id': newTask.id,
+            'rowId': newTask.rowId,
+            'name': newTask.name,
+            'start_date': newTask.start.millisecondsSinceEpoch,
+            'end_date': newTask.end.millisecondsSinceEpoch,
+            'isMilestone': newTask.isMilestone,
+            'color': newTask.color?.toARGB32().toRadixString(16),
+            'textColor': newTask.textColor?.toARGB32().toRadixString(16),
+            'completion': newTask.completion,
+            'resourceId': newTask.resourceId,
+            'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
+            'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
+            'notes': newTask.notes,
+            'parentId': newTask.parentId,
+            'last_updated_by': newTask.lastUpdatedBy,
+          }
+        },
+        timestamp: _currentHlc,
+        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
+      );
+      await _syncClient!.sendOperation(op);
+      controller.recordOperation(op);
+    }
+  }
+
+  Future<void> addResources(List<LocalResource> resources) async {
+    await _localRepository.insertResources(resources);
+    // Sync logic for resources if needed - currently sync client might support it
+    // But for now, local insert is key for the view.
+    // If we want to sync resources:
+    if (_syncClient != null) {
+      for (var res in resources) {
+        final op = Operation(
+          type: 'INSERT_RESOURCE', // Assuming backend supports this
+          data: {
+            'id': res.id,
+            'name': res.name,
+            'parentId': res.parentId,
+            'isExpanded': res.isExpanded,
+            'last_updated': _currentHlc.toString(),
+            'sort_order': res.sortOrder,
+          },
+          timestamp: _currentHlc,
+          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
+        );
+        await _syncClient!.sendOperation(op);
+        controller.recordOperation(op);
+      }
+    }
+  }
+
+  Future<void> addTasks(List<LegacyGanttTask> tasks) async {
+    await _localRepository.insertTasks(tasks);
+    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
+      // We might want to batch network ops too, but for now just loop
+      for (final newTask in tasks) {
+        final op = Operation(
+          type: 'INSERT_TASK',
+          data: {
+            'id': newTask.id,
+            'color': newTask.color?.toARGB32().toRadixString(16),
+            'text_color': newTask.textColor?.toARGB32().toRadixString(16),
+            'name': newTask.name,
+            'start_date': newTask.start.millisecondsSinceEpoch,
+            'end_date': newTask.end.millisecondsSinceEpoch,
+            'rowId': newTask.rowId,
+            'is_summary': newTask.isSummary,
+            'uses_work_calendar': newTask.usesWorkCalendar,
+            'resource_id': newTask.resourceId,
+          },
+          timestamp: _currentHlc,
+          actorId: 'local-user',
+        );
+        await _syncClient!.sendOperation(op);
+      }
+    }
+  }
+
+  Future<void> addDependencies(List<LegacyGanttTaskDependency> dependencies) async {
+    // Use the batch insert method provided by the repository
+    await _localRepository.insertDependencies(dependencies);
+
+    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
+      for (final dep in dependencies) {
+        final op = Operation(
+          type: 'INSERT_DEPENDENCY',
+          data: {
+            'id': '${dep.predecessorTaskId}_${dep.successorTaskId}',
+            'predecessor_task_id': dep.predecessorTaskId,
+            'successor_task_id': dep.successorTaskId,
+            'type': dep.type.index,
+          },
+          timestamp: _currentHlc,
+          actorId: 'local-user',
+        );
+        await _syncClient!.sendOperation(op);
+      }
     }
   }
 
@@ -902,6 +1031,7 @@ class GanttViewModel extends ChangeNotifier {
             children: grandChildren,
             isExpanded: child.isExpanded,
             completion: completion,
+            sortOrder: child.sortOrder,
           ));
         }
       }
@@ -1013,26 +1143,217 @@ class GanttViewModel extends ChangeNotifier {
   List<Map<String, dynamic>> get flatGridData {
     if (_cachedFlatGridData != null) return _cachedFlatGridData!;
     final List<Map<String, dynamic>> flatList = [];
-    for (final parent in _gridData) {
+
+    void collect(GanttGridData node, String? parentId) {
       flatList.add({
-        'id': parent.id,
-        'name': parent.name,
-        'completion': parent.completion,
-        'parentId': null, // Explicitly set parentId to null for root nodes
-        'isExpanded': parent.isExpanded,
+        'id': node.id,
+        'name': node.name,
+        'completion': node.completion,
+        'parentId': parentId,
+        'isExpanded': node.isExpanded,
+        'sortOrder': node.sortOrder,
       });
-      for (final child in parent.children) {
-        flatList.add({
-          'id': child.id,
-          'name': child.name,
-          'completion': child.completion,
-          'parentId': parent.id,
-          'isExpanded': child.isExpanded,
-        });
+      for (final child in node.children) {
+        collect(child, node.id);
       }
     }
+
+    for (final node in _gridData) {
+      collect(node, null);
+    }
+
     _cachedFlatGridData = flatList;
     return flatList;
+  }
+
+  Future<void> reorderResources(int oldIndex, int newIndex) async {
+    if (!_useLocalDatabase) return;
+
+    final flatList = flatGridData;
+    if (oldIndex < 0 || oldIndex >= flatList.length) return;
+
+    // Adjust newIndex if dragging downwards
+    int effectiveNewIndex = newIndex;
+    if (oldIndex < newIndex) {
+      effectiveNewIndex -= 1;
+    }
+
+    if (effectiveNewIndex < 0 || effectiveNewIndex >= flatList.length) return;
+    if (oldIndex == effectiveNewIndex) return; // No change
+
+    final movedItem = flatList[oldIndex];
+    final movedId = movedItem['id'] as String;
+
+    // Determines the new parent and neighbor based on the target position
+    String? newParentId;
+    double? prevSortOrder;
+    double? nextSortOrder;
+
+    // Logic:
+    // - If we drop at index 0, we become the very first item (root level).
+    // - If we drop at index i, we are "after" item at i-1.
+    // - We adopt parent logic of item at i-1 unless it is expanded.
+
+    if (effectiveNewIndex == 0) {
+      // Placing at the start
+      newParentId = null;
+      // Get sort order of the item that is currently at 0 (now becoming 1)
+      // Note: If we are effectively moving it, we should look at the list logic *after removal*.
+
+      // Better simulation:
+      final simulatedList = List<Map<String, dynamic>>.from(flatList);
+      simulatedList.removeAt(oldIndex);
+      // Determine neighbors in simulated list
+      // Target index is newIndex.
+      final nextItem = simulatedList.isNotEmpty ? simulatedList[0] : null;
+
+      if (nextItem != null) {
+        // We go before nextItem
+        nextSortOrder = nextItem['sortOrder'] as double?;
+        prevSortOrder = nextSortOrder != null ? nextSortOrder - 2.0 : 0.0;
+      } else {
+        prevSortOrder = 0.0;
+      }
+    } else {
+      // Simulate removal to find correct neighbors
+      final simulatedList = List<Map<String, dynamic>>.from(flatList);
+      simulatedList.removeAt(oldIndex);
+
+      // We are inserting at newIndex in the simulatedList
+      // Check boundaries
+      if (effectiveNewIndex > simulatedList.length) effectiveNewIndex = simulatedList.length;
+
+      final prevItem = simulatedList[effectiveNewIndex - 1];
+      final nextItem = effectiveNewIndex < simulatedList.length ? simulatedList[effectiveNewIndex] : null;
+
+      // Prevent dropping a parent into its own descendants (no-op)
+      // This forces the user to drag *past* the entire block of children to move the parent.
+      if (movedItem['isExpanded'] == true) {
+        bool isDescendant = false;
+        String? currentAncestorId = prevItem['parentId'] as String?;
+        // Walk up the ancestry of prevItem
+        while (currentAncestorId != null) {
+          if (currentAncestorId == movedId) {
+            isDescendant = true;
+            break;
+          }
+          // Find the parent object in the list
+          final parentMap = flatList.firstWhere(
+            (element) => element['id'] == currentAncestorId,
+            orElse: () => {},
+          );
+          if (parentMap.isEmpty) break; // Should not happen in a consistent tree
+          currentAncestorId = parentMap['parentId'] as String?;
+        }
+
+        if (isDescendant) {
+          // Dropped inside own children block. No-op.
+          return;
+        }
+      }
+
+      // Heuristic for Parent:
+      // We prioritize UN-NESTING at boundaries to allow users to "drag out" items easily.
+      // 1. If dragging to the very bottom of the list (nextItem == null) -> Become Root.
+      // 2. If dragging immediately before a Root item -> Become Root (un-nest from previous group).
+      bool becomeRoot = false;
+      if (nextItem == null) {
+        becomeRoot = true;
+      } else if (nextItem['parentId'] == null) {
+        becomeRoot = true;
+      }
+
+      if (becomeRoot) {
+        newParentId = null;
+      } else if (prevItem['isExpanded'] == true) {
+        // If previous item is expanded, we become its first child
+        newParentId = prevItem['id'] as String;
+      } else {
+        // Otherwise we become its sibling (stay nested if prevItem is nested)
+        newParentId = prevItem['parentId'] as String?;
+      }
+
+      // Calculate Sort Order
+      // To handle insertion into "Unsorted" (NULL sortOrder) blocks, we must lazily initialize
+      // the sortOrder of neighbors if they are missing.
+
+      // Helper to update neighbor if needed
+      Future<double> ensureSortOrder(Map<String, dynamic> item, int listIndex) async {
+        if (item['sortOrder'] != null) return item['sortOrder'] as double;
+        // Logic: Use Index * large_step to maintain relative order within the unsorted block
+        // while making it smaller than the "NULL=100M" default.
+        final newOrder = listIndex * 10000.0;
+
+        final resId = item['id'] as String;
+        final resource = _localResources.firstWhereOrNull((r) => r.id == resId);
+        if (resource != null) {
+          await _localRepository.updateResource(resource.copyWith(
+            sortOrder: newOrder,
+            lastUpdated: _currentHlc,
+          ));
+        }
+        return newOrder;
+      }
+
+      if (effectiveNewIndex == 0) {
+        // Start of list
+        if (nextItem != null) {
+          nextSortOrder = await ensureSortOrder(nextItem, 0);
+          prevSortOrder = nextSortOrder - 1000.0;
+        } else {
+          // Empty list?
+          prevSortOrder = 0.0;
+          nextSortOrder = null;
+        }
+      } else {
+        // Between items or end
+        final prevIdx = effectiveNewIndex - 1;
+        prevSortOrder = await ensureSortOrder(prevItem, prevIdx);
+
+        if (nextItem != null) {
+          final nextIdx = effectiveNewIndex;
+          nextSortOrder = await ensureSortOrder(nextItem, nextIdx);
+        } else {
+          nextSortOrder = null;
+        }
+      }
+
+      // fallback for sort orders
+      double finalSortOrder;
+      if (nextSortOrder != null) {
+        if (nextSortOrder <= prevSortOrder) {
+          // Should not happen in correctly sorted list, but handle it
+          finalSortOrder = prevSortOrder + 1.0;
+        } else {
+          finalSortOrder = (prevSortOrder + nextSortOrder) / 2.0;
+        }
+      } else {
+        finalSortOrder = prevSortOrder + 1.0;
+      }
+
+      // Update LocalResource
+      final resource = _localResources.firstWhereOrNull((r) => r.id == movedId);
+      if (resource != null) {
+        final updatedResource = LocalResource(
+            id: resource.id,
+            name: resource.name,
+            parentId: newParentId,
+            isExpanded: resource.isExpanded,
+            lastUpdated: Hlc.fromDate(DateTime.now(), 'local-user'),
+            sortOrder: finalSortOrder);
+
+        // Optimistic update
+        final index = _localResources.indexWhere((r) => r.id == movedId);
+        if (index != -1) {
+          _localResources[index] = updatedResource;
+          // Re-sort local resources to reflect change immediately?
+          _localResources.sort((a, b) => (a.sortOrder ?? 0).compareTo(b.sortOrder ?? 0));
+        }
+
+        await _processLocalData(); // Rebuild grid
+        await _localRepository.insertOrUpdateResource(updatedResource);
+      }
+    }
   }
 
   /// Calculates the list of `LegacyGanttRow`s that should be visible based on the
@@ -1040,12 +1361,17 @@ class GanttViewModel extends ChangeNotifier {
   /// This is passed to the `LegacyGanttChartWidget` to determine which rows to render.
   List<LegacyGanttRow> get visibleGanttRows {
     final List<LegacyGanttRow> rows = [];
-    for (final item in visibleGridData) {
-      rows.add(LegacyGanttRow(id: item.id));
-      if (item.isParent && item.isExpanded) {
-        rows.addAll(item.children.map((child) => LegacyGanttRow(id: child.id)));
+
+    void collect(List<GanttGridData> items) {
+      for (final item in items) {
+        rows.add(LegacyGanttRow(id: item.id));
+        if (item.isParent && item.isExpanded) {
+          collect(item.children); // Recurse!
+        }
       }
     }
+
+    collect(visibleGridData);
     return rows;
   }
 
@@ -3192,22 +3518,43 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Deletes a row from the grid and all associated tasks from the Gantt chart.
   void deleteRow(String rowId) {
-    if (_apiResponse == null) return;
+    print('DEBUG: deleteRow called for $rowId');
+    if (_apiResponse == null) {
+      print('DEBUG: apiResponse is null');
+      return;
+    }
 
-    final resourcesToDelete = <String>{};
-    final parentData = _gridData.firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
-
-    if (parentData != null) {
-      resourcesToDelete.add(rowId);
-    } else {
-      final parentToDelete = _gridData.firstWhereOrNull((p) => p.id == rowId);
-      if (parentToDelete != null) {
-        resourcesToDelete.add(rowId);
-        resourcesToDelete.addAll(parentToDelete.children.map((c) => c.id));
+    // Helper to recursively collect all descendant IDs
+    void collectIds(GanttGridData node, Set<String> ids) {
+      ids.add(node.id);
+      for (final child in node.children) {
+        collectIds(child, ids);
       }
     }
 
-    if (resourcesToDelete.isEmpty) return; // Should not happen if rowId is valid
+    // Helper to find node
+    GanttGridData? findNode(List<GanttGridData> nodes, String id) {
+      for (final node in nodes) {
+        if (node.id == id) return node;
+        final found = findNode(node.children, id);
+        if (found != null) return found;
+      }
+      return null;
+    }
+
+    final resourcesToDelete = <String>{};
+    final nodeToDelete = findNode(_gridData, rowId);
+
+    if (nodeToDelete != null) {
+      print('DEBUG: Found node $_gridData');
+      collectIds(nodeToDelete, resourcesToDelete);
+    } else {
+      print('DEBUG: Row $rowId not found in gridData');
+      return;
+    }
+
+    print('DEBUG: Deleting ${resourcesToDelete.length} resources');
+
     final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
     if (_useLocalDatabase) {
       for (final task in tasksToDelete) {
@@ -3240,14 +3587,24 @@ class GanttViewModel extends ChangeNotifier {
     if (!_useLocalDatabase) {
       final nextTasks = _allGanttTasks.where((task) => !tasksToDelete.contains(task)).toList();
 
-      if (parentData != null) {
-        parentData.children.removeWhere((child) => child.id == rowId);
-        final parentResource = _apiResponse?.resourcesData.firstWhereOrNull((r) => r.id == parentData.id);
-        parentResource?.children.removeWhere((job) => job.id == rowId);
-      } else {
-        _gridData.removeWhere((p) => p.id == rowId);
-        _apiResponse?.resourcesData.removeWhere((r) => r.id == rowId);
+      // Recursive remove from in-memory grid
+      bool removeNode(List<GanttGridData> nodes, String id) {
+        final index = nodes.indexWhere((n) => n.id == id);
+        if (index != -1) {
+          nodes.removeAt(index);
+          return true;
+        }
+        for (final node in nodes) {
+          if (removeNode(node.children, id)) return true;
+        }
+        return false;
       }
+
+      removeNode(_gridData, rowId);
+
+      // Also remove from apiResponse (if simplified structure)
+      _apiResponse?.resourcesData.removeWhere((r) => r.id == rowId || resourcesToDelete.contains(r.id));
+      // Deep removal in apiResponse is harder but for local/demo mode usually shallow or 2-level.
       _cachedFlatGridData = null;
 
       final (recalculatedTasks, newMaxDepth, newConflictIndicators) =

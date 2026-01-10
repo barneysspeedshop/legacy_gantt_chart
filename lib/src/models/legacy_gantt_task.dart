@@ -10,7 +10,6 @@ int? _colorToHex(Color? color) {
 Color? _parseColor(dynamic value) {
   if (value == null) return null;
   if (value is String) {
-    // Try standard hex
     try {
       if (value.startsWith('#')) return Color(int.parse(value.substring(1), radix: 16));
       return Color(int.parse(value, radix: 16));
@@ -273,13 +272,7 @@ class LegacyGanttTask {
         },
       );
 
-  // Wrappers for existing JSON compatibility if needed, or delegation
   factory LegacyGanttTask.fromJson(Map<String, dynamic> json) {
-    // We can parse JSON manually as before OR map it to ProtocolTask first.
-    // To minimize regression, let's keep the logic close to original but using the new types?
-    // Actually, reconstructing the ProtocolTask from the flat JSON is easier.
-
-    // Construct metadata
     final meta = <String, dynamic>{
       'color': json['color'],
       'textColor': json['textColor'],
@@ -297,7 +290,6 @@ class LegacyGanttTask {
       'baselineEnd': json['baselineEnd'],
     };
 
-    // Construct Protocol Task
     final pt = ProtocolTask.fromJson({
       ...json,
       'lastUpdatedBy': json['lastUpdatedBy'] ?? json['last_updated_by'], // Support both snake and camel for safety
@@ -308,7 +300,6 @@ class LegacyGanttTask {
   }
 
   Map<String, dynamic> toJson() {
-    // Flatten ProtocolTask serialization
     final pt = toProtocolTask();
     final json = pt.toJson();
     final meta = json['metadata'] as Map<String, dynamic>? ?? {};
@@ -404,8 +395,6 @@ class LegacyGanttTask {
           : ResizePolicy.none,
       baselineStart: meta['baselineStart'] != null ? DateTime.parse(meta['baselineStart']) : null,
       baselineEnd: meta['baselineEnd'] != null ? DateTime.parse(meta['baselineEnd']) : null,
-
-      // Preserve transient state
       cellBuilder: cellBuilder,
     );
   }

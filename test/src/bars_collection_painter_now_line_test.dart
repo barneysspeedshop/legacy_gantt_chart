@@ -40,6 +40,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},
@@ -69,6 +70,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},
@@ -97,6 +99,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},

@@ -134,7 +134,6 @@ class LegacyGanttInspector extends StatelessWidget {
   }
 
   Widget _buildGraphTab(BuildContext context) {
-    // A simplified visualizer for conflicts
     final history = auditEngine.getHistoryForTask(taskId);
     if (history.length < 2) {
       return const Center(child: Text('Not enough history to visualize causal graph.'));
@@ -145,7 +144,6 @@ class LegacyGanttInspector extends StatelessWidget {
       children: [
         const Text('Conflict Resolution Log', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        // Compare adjacent operations for conflict analysis (simple linear scan)
         for (var i = 0; i < history.length - 1; i++) ...[
           _buildConflictRow(context, history[i], history[i + 1]),
           const Divider(),
@@ -158,7 +156,6 @@ class LegacyGanttInspector extends StatelessWidget {
     final fieldCandidates = opB.data.keys.where((k) => k != 'id' && k != 'data').toList();
     if (fieldCandidates.isEmpty) return const SizedBox.shrink();
 
-    // Just analyze the first field for demonstration
     final field = fieldCandidates.first;
     final analysis = auditEngine.analyzeConflict(opA, opB, field);
 

@@ -37,6 +37,7 @@ void main() {
 
     test('shouldRepaint returns true when data changes', () {
       final oldPainter = BarsCollectionPainter(
+        tasksByRow: {},
         data: [task1],
         visibleRows: [row1],
         rowMaxStackDepth: {'r1': 1},
@@ -48,6 +49,7 @@ void main() {
       );
 
       final newPainter = BarsCollectionPainter(
+        tasksByRow: {},
         data: [task1, LegacyGanttTask(id: 't2', rowId: 'r1', start: DateTime.now(), end: DateTime.now())],
         visibleRows: [row1],
         rowMaxStackDepth: {'r1': 1},
@@ -63,6 +65,7 @@ void main() {
 
     test('shouldRepaint returns false when nothing changes', () {
       final oldPainter = BarsCollectionPainter(
+        tasksByRow: {},
         data: [task1],
         visibleRows: [row1],
         rowMaxStackDepth: {'r1': 1},
@@ -74,6 +77,7 @@ void main() {
       );
 
       final newPainter = BarsCollectionPainter(
+        tasksByRow: {},
         data: [task1],
         visibleRows: [row1],
         rowMaxStackDepth: {'r1': 1},
@@ -94,6 +98,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},
@@ -126,6 +131,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1, conflict],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},
@@ -164,6 +170,7 @@ void main() {
             body: CustomPaint(
               size: const Size(500, 500),
               painter: BarsCollectionPainter(
+                tasksByRow: {},
                 data: [task1, task2],
                 visibleRows: [row1],
                 rowMaxStackDepth: {'r1': 1},
@@ -203,6 +210,7 @@ void main() {
               body: CustomPaint(
         size: const Size(800, 600),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1, task2, task3, task4, task5],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 5},
@@ -223,6 +231,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -250,6 +259,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [milestone, summary],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 2},
@@ -278,6 +288,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [segmented, highlight],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 2},
@@ -297,6 +308,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -318,6 +330,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -339,6 +352,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -359,6 +373,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -382,6 +397,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [task1],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -408,6 +424,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [parent, child],
           visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
           rowMaxStackDepth: {'r1': 1, 'r2': 1},
@@ -438,6 +455,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [task1],
               visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 1},
@@ -462,6 +480,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [milestone],
               visibleRows: [row1],
               rowMaxStackDepth: {'r1': 1},
@@ -494,6 +513,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [
                 summary,
                 conflict
@@ -525,6 +545,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [taskWithConflict],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -544,6 +565,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [task1],
               visibleRows: [row1],
               rowMaxStackDepth: {'r1': 1},
@@ -568,6 +590,7 @@ void main() {
               body: CustomPaint(
         size: const Size(500, 500),
         painter: BarsCollectionPainter(
+          tasksByRow: {},
           data: [],
           visibleRows: [row1],
           rowMaxStackDepth: {'r1': 1},
@@ -597,6 +620,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [t1, t2],
               visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 1},
@@ -632,6 +656,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [t1, t2, t3],
               visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 2, 'r2': 1},
@@ -667,6 +692,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [t1, t2, t3],
               visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 2, 'r2': 1},
@@ -703,6 +729,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [t1, t2, t3],
               visibleRows: [row1, const LegacyGanttRow(id: 'r2')],
               rowMaxStackDepth: {'r1': 1, 'r2': 2}, // t2, t3 in r2
@@ -733,6 +760,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [taskWithProgress],
               visibleRows: [row1],
               rowMaxStackDepth: {'r1': 1},
@@ -754,6 +782,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [task1],
               visibleRows: [row1],
               rowMaxStackDepth: {'r1': 1},
@@ -794,6 +823,7 @@ void main() {
           body: CustomPaint(
             size: const Size(500, 500),
             painter: BarsCollectionPainter(
+              tasksByRow: {},
               data: [milestoneTask],
               visibleRows: [row1],
               rowMaxStackDepth: {'r1': 1},

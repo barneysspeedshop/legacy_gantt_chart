@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -20,6 +21,12 @@ import 'ui/dialogs/create_task_dialog.dart';
 import 'platform/platform_init.dart'
     if (dart.library.io) 'platform/platform_init_io.dart'
     if (dart.library.html) 'platform/platform_init_web.dart';
+import 'package:csv/csv.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart'; // For compute
+import 'ui/dialogs/csv_import_dialog.dart';
+import 'utils/csv_importer.dart';
+import 'data/local/local_gantt_repository.dart'; // For LocalResource
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -370,6 +377,171 @@ class _GanttViewState extends State<GanttView> {
     ];
   }
 
+  // --- CSV Import ---
+
+  Future<void> _handleCsvImport() async {
+    try {
+      final XFile? file = await openFile(acceptedTypeGroups: [
+        const XTypeGroup(label: 'CSV Files', extensions: ['csv']),
+      ]);
+
+      if (file == null) return;
+
+      final contents = await file.readAsString();
+
+      // Step 1: Parse CSV structure in background (using compute as before)
+      // This gives us the rows to show in the mapping dialog.
+      // Optimization: We could stream this too, but for now getting the rows for the dialog is okay.
+      // If the file is HUGE, we might want to only parse the first N rows for the dialog,
+      // but CsvToListConverter parses all.
+      // For now, keep this step.
+      final rows = await compute(_parseCsvBackground, contents);
+
+      if (!mounted) return;
+
+      final mapping = await showDialog<CsvImportMapping>(
+        context: context,
+        builder: (context) => CsvImportDialog(rows: rows),
+      );
+
+      if (mapping == null) return;
+
+      if (!mounted) return;
+
+      // Step 2: Stream conversion in background isolate
+      await _spawnCsvImportIsolate(rows, mapping);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error importing CSV: $e')),
+      );
+    }
+  }
+
+  Future<void> _spawnCsvImportIsolate(List<List<dynamic>> rows, CsvImportMapping mapping) async {
+    final receivePort = ReceivePort();
+
+    // Prepare lightweight existing data to avoid serializing closures
+    final existingTaskKeys = _viewModel.allTasks
+        .where((t) => t.originalId != null)
+        .map((t) => (id: t.id, originalId: t.originalId))
+        .toList();
+
+    final existingResourceNames =
+        _viewModel.localResources.where((r) => r.name != null).map((r) => (id: r.id, name: r.name)).toList();
+
+    // Spawn Isolate
+    await Isolate.spawn(_streamTasksBackground, {
+      'sendPort': receivePort.sendPort,
+      'rows': rows.skip(1).toList(), // Skip header for processing
+      'mapping': mapping,
+      'existingTaskKeys': existingTaskKeys,
+      'existingResourceNames': existingResourceNames,
+    });
+
+    final importedTaskIds = <String>{};
+    final importedResourceIds = <String>{};
+    int totalTasks = 0;
+    int totalResources = 0;
+
+    // Show progress (simplistic snackbar that updates?)
+    // Note: repeatedly showing snackbars is bad UX. Better to show a dialog or ONE snackbar.
+    // Ideally we use a ProgressDialog. For now, we'll wait for completion and show status.
+    // Or we can show a "Importing..." message.
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Importing in progress...'), duration: Duration(days: 1)),
+    );
+
+    try {
+      await for (final message in receivePort) {
+        if (message['type'] == 'chunk') {
+          final data = message['data'] as ({List<LegacyGanttTask> tasks, List<LocalResource> resources});
+          final tasks = data.tasks;
+          final resources = data.resources;
+
+          if (resources.isNotEmpty) {
+            _viewModel.addResources(resources);
+            importedResourceIds.addAll(resources.map((r) => r.id));
+            totalResources += resources.length;
+          }
+          if (tasks.isNotEmpty) {
+            _viewModel.addTasks(tasks);
+            importedTaskIds.addAll(tasks.map((t) => t.id));
+            totalTasks += tasks.length;
+          }
+
+          // Optional: Update progress indicator
+        } else if (message['type'] == 'done') {
+          break;
+        } else if (message['type'] == 'error') {
+          throw Exception(message['error']);
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import complete: $totalTasks tasks, $totalResources resources.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      // Rollback Prompt
+      if (importedTaskIds.isNotEmpty || importedResourceIds.isNotEmpty) {
+        final shouldRollback = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Import Failed'),
+            content: Text(
+                'Error: $e\n\nPartial import: $totalTasks tasks, $totalResources resources.\nDo you want to rollback (undo) these changes?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep Partial'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Rollback'),
+              ),
+            ],
+          ),
+        );
+
+        if (!mounted) return;
+
+        if (shouldRollback == true) {
+          _rollbackImport(importedTaskIds, importedResourceIds);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Import rolled back.')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import failed: $e')),
+        );
+      }
+    } finally {
+      receivePort.close();
+    }
+  }
+
+  void _rollbackImport(Set<String> taskIds, Set<String> resourceIds) {
+    // 1. Delete new resources (which also deletes their child tasks)
+    resourceIds.forEach(_viewModel.deleteRow);
+
+    // 2. Delete remaining new tasks (e.g. those added to existing resources)
+    // We check availability because deleteRow might have already removed some.
+    for (final taskId in taskIds) {
+      final task = _viewModel.allTasks.firstWhereOrNull((t) => t.id == taskId);
+      if (task != null) {
+        _viewModel.handleDeleteTask(task);
+      }
+    }
+  }
+
   // --- User Presence UI ---
   List<Widget> _buildUserChips(BuildContext context, GanttViewModel vm) => vm.connectedUsers.entries.map((entry) {
         final userId = entry.key;
@@ -502,6 +674,11 @@ class _GanttViewState extends State<GanttView> {
                   icon: const Icon(Icons.data_object),
                   tooltip: 'Export Tasks to JSON',
                   onPressed: () => _showJsonExportDialog(vm),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  tooltip: 'Import Tasks from CSV',
+                  onPressed: _handleCsvImport,
                 ),
               ],
             ),
@@ -1126,7 +1303,20 @@ class _GanttViewState extends State<GanttView> {
                                           showFooter: false,
                                           allowFiltering: false, // Filtering can be enabled if desired.
                                           selectedRowId: vm.selectedRowId,
+                                          onReorder: (oldIndex, newIndex) {
+                                            vm.reorderResources(oldIndex, newIndex);
+                                          },
                                           columnDefs: [
+                                            DataColumnDef(
+                                              id: 'drag',
+                                              caption: '',
+                                              width: 40,
+                                              minWidth: 40,
+                                              isDragHandle: true,
+                                              cellBuilder: (context, data) => const Center(
+                                                child: Icon(Icons.drag_indicator, color: Colors.grey, size: 20),
+                                              ),
+                                            ),
                                             DataColumnDef(
                                               id: 'name',
                                               caption: 'Name',
@@ -1675,5 +1865,48 @@ class _GanttViewState extends State<GanttView> {
         defaultEndTime: const TimeOfDay(hour: 17, minute: 0),
       ),
     );
+  }
+}
+// --- Isolate Helpers ---
+
+List<List<dynamic>> _parseCsvBackground(String contents) {
+  // smart detect EOL
+  String? eol;
+  if (contents.contains('\r\n')) {
+    eol = '\r\n';
+  } else if (contents.contains('\n')) {
+    eol = '\n';
+  } else if (contents.contains('\r')) {
+    eol = '\r';
+  }
+  return CsvToListConverter(eol: eol).convert(contents);
+}
+
+// Helper for background processing
+/// Isolate entry point for streaming task conversion.
+void _streamTasksBackground(Map<String, dynamic> message) async {
+  final SendPort sendPort = message['sendPort'];
+  final List<List<dynamic>> rows = message['rows'];
+  final CsvImportMapping mapping = message['mapping'];
+  final List<({String id, String? originalId})> existingTaskKeys = message['existingTaskKeys'];
+  final List<({String id, String? name})> existingResourceNames = message['existingResourceNames'];
+
+  try {
+    final stream = CsvImporter.streamConvertRowsToTasks(
+      rows,
+      mapping,
+      existingTaskKeys: existingTaskKeys,
+      existingResourceNames: existingResourceNames,
+      chunkSize: 50, // Yield frequently (e.g. every 50 rows) for smooth UI updates
+    );
+
+    // Stream chunks back
+    await for (final chunk in stream) {
+      sendPort.send({'type': 'chunk', 'data': chunk});
+    }
+
+    sendPort.send({'type': 'done'});
+  } catch (e, stack) {
+    sendPort.send({'type': 'error', 'error': e.toString(), 'stack': stack.toString()});
   }
 }
