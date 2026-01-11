@@ -3,6 +3,7 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:flutter/material.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Ghost Propagation', () {
     test('Dragging a summary task should show ghost bars for children', () {
       final parent = LegacyGanttTask(

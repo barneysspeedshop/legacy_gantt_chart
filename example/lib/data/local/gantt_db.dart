@@ -34,7 +34,6 @@ class GanttDb {
     final db = await SqliteCrdt.open(
       path,
       onCreate: (db, version) async {
-        // Tasks table
         await db.execute('''
           CREATE TABLE tasks (
             id TEXT PRIMARY KEY,
@@ -85,8 +84,7 @@ class GanttDb {
             is_expanded INTEGER DEFAULT 1,
             last_updated INTEGER,
             deleted_at INTEGER,
-            sort_order REAL,
-            is_deleted INTEGER DEFAULT 0
+            sort_order REAL
           )
         ''');
 

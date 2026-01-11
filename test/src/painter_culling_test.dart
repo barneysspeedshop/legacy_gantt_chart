@@ -69,7 +69,9 @@ void main() {
 
     // Case 1: All visible
     var painter = BarsCollectionPainter(
-      tasksByRow: {},
+      tasksByRow: {
+        for (var t in tasks) t.rowId: [t]
+      },
       conflictIndicators: [],
       data: tasks,
       domain: [DateTime(2023), DateTime(2024)],
@@ -93,7 +95,9 @@ void main() {
     // So if Scrolled 1500px down, translateY = -1500.
 
     painter = BarsCollectionPainter(
-      tasksByRow: {},
+      tasksByRow: {
+        for (var t in tasks) t.rowId: [t]
+      },
       conflictIndicators: [],
       data: tasks,
       domain: [DateTime(2023), DateTime(2024)],

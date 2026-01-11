@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Elastic Resize with Work Calendar', () {
     test('Should scale child task based on WORKING duration, not absolute time', () {
       // 1. Setup Calendar: Weekends (Sat/Sun) are non-working

@@ -7,6 +7,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('LegacyGanttViewModel Draw Dependencies', () {
     late LegacyGanttViewModel viewModel;
     late List<LegacyGanttTask> tasks;

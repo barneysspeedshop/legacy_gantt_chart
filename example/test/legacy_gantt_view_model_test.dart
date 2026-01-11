@@ -95,15 +95,18 @@ void main() {
       final task1CenterY = viewModel.timeAxisHeight + viewModel.rowHeight / 2;
 
       // Start pan on the task body
-      viewModel.onPanStart(DragStartDetails(
-        globalPosition: Offset(task1StartX + 20, task1CenterY), // +20 to be away from resize handles
-        localPosition: Offset(task1StartX + 20, task1CenterY),
-      ));
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: Offset(task1StartX + 20, task1CenterY), // +20 to be away from resize handles
+            localPosition: Offset(task1StartX + 20, task1CenterY),
+          ),
+          overrideTask: tasks[0],
+          overridePart: TaskPart.body);
 
       // It should detect a horizontal pan and set the drag mode.
       viewModel.onPanUpdate(DragUpdateDetails(
-        globalPosition: Offset(task1StartX + 30, task1CenterY),
-        delta: const Offset(10, 0),
+        globalPosition: Offset(task1StartX + 70, task1CenterY),
+        delta: const Offset(50, 0),
       ));
 
       expect(viewModel.draggedTask, isNotNull);
@@ -111,10 +114,10 @@ void main() {
       expect(viewModel.ghostTaskStart, isNotNull);
       expect(viewModel.ghostTaskEnd, isNotNull);
 
-      // The drag was 10 pixels. We need to convert this back to a duration.
+      // The drag was 50 pixels. We need to convert this back to a duration.
       final totalDomainDurationMs =
           viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
-      final durationMs = (10 / 1000) * totalDomainDurationMs;
+      final durationMs = (50 / 1000) * totalDomainDurationMs;
       final durationDelta = Duration(milliseconds: durationMs.round());
 
       expect(viewModel.ghostTaskStart, tasks[0].start.add(durationDelta));
@@ -129,15 +132,18 @@ void main() {
       final task1CenterY = viewModel.timeAxisHeight + viewModel.rowHeight / 2;
 
       // Start pan on the start handle of the task (within 10px of the start)
-      viewModel.onPanStart(DragStartDetails(
-        globalPosition: Offset(task1StartX + 2, task1CenterY),
-        localPosition: Offset(task1StartX + 2, task1CenterY),
-      ));
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: Offset(task1StartX + 2, task1CenterY),
+            localPosition: Offset(task1StartX + 2, task1CenterY),
+          ),
+          overrideTask: tasks[0],
+          overridePart: TaskPart.startHandle);
 
       // It should detect a horizontal pan and set the drag mode to resizeStart.
       viewModel.onPanUpdate(DragUpdateDetails(
-        globalPosition: Offset(task1StartX + 12, task1CenterY),
-        delta: const Offset(10, 0),
+        globalPosition: Offset(task1StartX + 52, task1CenterY),
+        delta: const Offset(50, 0),
       ));
 
       expect(viewModel.draggedTask, isNotNull);
@@ -147,7 +153,7 @@ void main() {
 
       final totalDomainDurationMs =
           viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
-      final durationMs = (10 / 1000) * totalDomainDurationMs;
+      final durationMs = (50 / 1000) * totalDomainDurationMs;
       final durationDelta = Duration(milliseconds: durationMs.round());
 
       expect(viewModel.ghostTaskStart, tasks[0].start.add(durationDelta));
@@ -160,15 +166,18 @@ void main() {
       final task1CenterY = viewModel.timeAxisHeight + viewModel.rowHeight / 2;
 
       // Start pan on the start handle
-      viewModel.onPanStart(DragStartDetails(
-        globalPosition: Offset(task1StartX + 2, task1CenterY),
-        localPosition: Offset(task1StartX + 2, task1CenterY),
-      ));
+      viewModel.onPanStart(
+          DragStartDetails(
+            globalPosition: Offset(task1StartX + 2, task1CenterY),
+            localPosition: Offset(task1StartX + 2, task1CenterY),
+          ),
+          overrideTask: tasks[0],
+          overridePart: TaskPart.startHandle);
 
       // Pan horizontally with a small vertical drift
       viewModel.onPanUpdate(DragUpdateDetails(
-        globalPosition: Offset(task1StartX + 12, task1CenterY + 5),
-        delta: const Offset(10, 5), // dx > dy
+        globalPosition: Offset(task1StartX + 52, task1CenterY + 5),
+        delta: const Offset(50, 5), // dx > dy
       ));
 
       // With the fix, this should be treated as a horizontal pan
@@ -178,7 +187,7 @@ void main() {
 
       final totalDomainDurationMs =
           viewModel.totalDomain.last.millisecondsSinceEpoch - viewModel.totalDomain.first.millisecondsSinceEpoch;
-      final durationMs = (10 / 1000) * totalDomainDurationMs;
+      final durationMs = (50 / 1000) * totalDomainDurationMs;
       final durationDelta = Duration(milliseconds: durationMs.round());
 
       expect(viewModel.ghostTaskStart, tasks[0].start.add(durationDelta));

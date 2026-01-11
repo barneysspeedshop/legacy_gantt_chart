@@ -3,6 +3,7 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:flutter/material.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Elastic Scaling with WorkCalendar', () {
     late LegacyGanttViewModel viewModel;
     const workCalendar = WorkCalendar(

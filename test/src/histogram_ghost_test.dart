@@ -4,6 +4,7 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Histogram Ghost with Work Calendar', () {
     test('Should NOT add load to non-working days during drag', () {
       const calendar = WorkCalendar(weekendDays: {DateTime.saturday, DateTime.sunday});

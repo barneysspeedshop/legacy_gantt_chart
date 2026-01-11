@@ -5,6 +5,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_task.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('LegacyGanttViewModel - Rolled Up Milestone Hit Testing', () {
     late LegacyGanttViewModel viewModel;
     const row1 = LegacyGanttRow(id: 'r1', label: 'Summary Row');

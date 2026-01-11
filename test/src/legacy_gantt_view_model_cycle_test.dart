@@ -7,6 +7,7 @@ import 'package:legacy_gantt_chart/src/models/legacy_gantt_row.dart';
 import 'package:legacy_gantt_chart/src/legacy_gantt_controller.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('LegacyGanttViewModel Cycle Detection', () {
     late LegacyGanttViewModel viewModel;
     const row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
