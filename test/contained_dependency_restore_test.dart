@@ -135,4 +135,63 @@ void main() {
     expect(dep.successorTaskId, taskId2);
     expect(dep.type, DependencyType.contained);
   });
+
+  test('ViewModel correctly infers isSummary from ganttType=project in metadata', () async {
+    final mockSyncClient = MockGanttSyncClient();
+    final viewModel = LegacyGanttViewModel(
+      syncClient: mockSyncClient,
+      data: [],
+      conflictIndicators: [],
+      dependencies: [],
+      visibleRows: [],
+      rowMaxStackDepth: {},
+      rowHeight: 32,
+    );
+
+    const taskId = 'project-task-1';
+
+    // IMPORTANT: We do NOT set isSummary here, or set it to false if possible in some contexts.
+    // We rely on metadata 'ganttType'
+
+    // To properly simulate the "metadata" field coming from ProtocolTask.fromJson,
+    // we need to match how LegacyGanttTask deserializes.
+    // However, Operation data is passed to `_processOperation` -> `_safeMergeTasks` -> `_crdtEngine.mergeTasks`.
+    // The CRDT engine deals with `ProtocolTask`.
+    // `Operation` structure for `INSERT_TASK` typically flattens fields.
+    // Let's verify how `Operation` converts to `ProtocolTask` or how `_safeMergeTasks` consumes it.
+    // _safeMergeTasks calls `_crdtEngine.mergeTasks`. `mergeTasks` takes `currentProtocolTasks` and `ops`.
+    // It returns `List<ProtocolTask>`.
+    // Then `LegacyGanttTask.fromProtocolTask(pt)` is called.
+    // ProtocolTask preserves 'metadata'.
+    // So if we send 'ganttType' in the operation's data, it needs to end up in `ProtocolTask.metadata`.
+    // By convention, extra fields in Operation data often end up in metadata if CRDT handles them that way,
+    // OR we should explicitly put them in a 'metadata' map in the operation if that's the protocol.
+    // Looking at `LegacyGanttTask.toJson`, it merges metadata into the main map.
+    // So 'ganttType' at the top level of the map should be treated as metadata by `ProtocolTask.fromJson` if it's not a standard field.
+    // Let's verify `ProtocolTask.fromJson` behavior (not visible here but implied).
+    // Assuming standard behavior: fields not in the named args go into metadata.
+
+    final opWithFlattenedMetadata = Operation(
+      type: 'INSERT_TASK',
+      data: {
+        'id': taskId,
+        'name': 'Project Task',
+        'start': DateTime.now().toIso8601String(),
+        'end': DateTime.now().add(const Duration(days: 5)).toIso8601String(),
+        'ganttType': 'project', // This should flow into metadata
+        'rowId': 'r1',
+      },
+      timestamp: Hlc.fromDate(DateTime.now(), 'server'),
+      actorId: 'server',
+    );
+
+    mockSyncClient.emit(opWithFlattenedMetadata);
+
+    await Future.delayed(Duration.zero);
+
+    expect(viewModel.data.length, 1);
+    final task = viewModel.data.first;
+    expect(task.id, taskId);
+    expect(task.isSummary, isTrue, reason: 'Task with ganttType="project" should have isSummary=true');
+  });
 }

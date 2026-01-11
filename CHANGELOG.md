@@ -1,3 +1,8 @@
+## 7.2.1
+
+* **FIX**: Resolved a regression where tasks with `ganttType: 'project'` were not correctly identified as summary tasks, causing visual highlights for contained dependencies to disappear.
+* **TEST**: Added specific regression tests (`contained_dependency_restore_test.dart`) to ensure `LegacyGanttTask` correctly infers `isSummary` from metadata, preventing future regressions.
+
 ## 7.2.0
 
 *   **BETA FEATURE**: Introduced experimental support for importing tasks from CSV files, including robust validation and streaming support for large datasets.
