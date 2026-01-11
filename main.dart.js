@@ -50686,7 +50686,7 @@ return A.k(a.dl("          CREATE TABLE tasks (\n            id TEXT PRIMARY KEY
 case 2:s=3
 return A.k(a.dl("          CREATE TABLE dependencies (\n            from_id TEXT,\n            to_id TEXT,\n            type INTEGER,\n            lag_ms INTEGER,\n            last_updated INTEGER,\n            deleted_at INTEGER,\n            PRIMARY KEY (from_id, to_id)\n          )\n        "),$async$$2)
 case 3:s=4
-return A.k(a.dl("          CREATE TABLE resources (\n            id TEXT PRIMARY KEY,\n            name TEXT,\n            parent_id TEXT,\n            is_expanded INTEGER DEFAULT 1,\n            last_updated INTEGER,\n            deleted_at INTEGER,\n            sort_order REAL,\n            is_deleted INTEGER DEFAULT 0\n          )\n        "),$async$$2)
+return A.k(a.dl("          CREATE TABLE resources (\n            id TEXT PRIMARY KEY,\n            name TEXT,\n            parent_id TEXT,\n            is_expanded INTEGER DEFAULT 1,\n            last_updated INTEGER,\n            deleted_at INTEGER,\n            sort_order REAL\n          )\n        "),$async$$2)
 case 4:s=5
 return A.k(a.dl("          CREATE TABLE offline_queue (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            type TEXT,\n            data TEXT,\n            timestamp INTEGER,\n            actor_id TEXT\n          )\n        "),$async$$2)
 case 5:s=6
