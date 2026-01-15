@@ -1306,6 +1306,7 @@ class _GanttViewState extends State<GanttView> {
                                           onReorder: (oldIndex, newIndex) {
                                             vm.reorderResources(oldIndex, newIndex);
                                           },
+
                                           columnDefs: [
                                             DataColumnDef(
                                               id: 'drag',

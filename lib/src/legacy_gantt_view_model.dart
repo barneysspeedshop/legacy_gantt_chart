@@ -434,7 +434,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     required List<LegacyGanttTask> data,
     required this.dependencies,
     required this.visibleRows,
-    required this.rowMaxStackDepth,
+    required Map<String, int> rowMaxStackDepth,
     this.onDependencyAdd,
     required this.rowHeight,
     double? axisHeight,
@@ -472,7 +472,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     bool showSlack = false,
     this.projectTimezoneAbbreviation,
     this.projectTimezoneOffset,
-  })  : _tasks = List.from(data),
+  })  : rowMaxStackDepth = Map.of(rowMaxStackDepth),
+        _tasks = List.from(data),
         _rollUpMilestones = rollUpMilestones,
         _showSlack = showSlack,
         _workCalendar = workCalendar,
@@ -753,7 +754,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   void updateRowMaxStackDepth(Map<String, int> rowMaxStackDepth) {
     if (!mapEquals(this.rowMaxStackDepth, rowMaxStackDepth)) {
       if (isDisposed) return;
-      this.rowMaxStackDepth = rowMaxStackDepth;
+      this.rowMaxStackDepth = Map.of(rowMaxStackDepth);
       _calculateRowOffsets();
       notifyListeners();
     }
@@ -1168,6 +1169,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     scrollController?.removeListener(_onExternalScroll);
     ganttHorizontalScrollController?.removeListener(_onHorizontalScrollControllerUpdate);
     _syncSubscription?.cancel();
+    _ghostUpdateThrottle?.cancel();
     super.dispose();
   }
 

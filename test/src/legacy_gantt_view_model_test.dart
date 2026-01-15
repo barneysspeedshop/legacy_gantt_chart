@@ -37,6 +37,12 @@ void main() {
       );
     });
 
+    tearDown(() {
+      try {
+        viewModel.dispose();
+      } catch (_) {}
+    });
+
     test('initial state and layout calculation', () {
       viewModel.updateLayout(1000, 500);
 
@@ -262,6 +268,12 @@ void main() {
       // Calling updateVisibleRange to be sure logic runs.
       viewModel.updateVisibleRange(DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble(),
           DateTime(2023, 1, 1, 10).millisecondsSinceEpoch.toDouble());
+    });
+
+    tearDown(() {
+      try {
+        viewModel.dispose();
+      } catch (_) {}
     });
 
     test('onTap hitting a task', () {

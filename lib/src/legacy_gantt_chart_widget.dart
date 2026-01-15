@@ -705,13 +705,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                       final double totalContentWidth =
                           vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
 
-                      final double totalContentHeight =
-                          (widget.showEmptyRows ? widget.visibleRows.map((r) => r.id) : vm.data.map((t) => t.rowId))
-                              .toSet()
-                              .fold<double>(
-                                0.0,
-                                (prev, rowId) => prev + widget.rowHeight * (widget.rowMaxStackDepth[rowId] ?? 1),
-                              );
+                      final double totalContentHeight = widget.visibleRows
+                          .where((row) => widget.showEmptyRows || (vm.tasksByRow[row.id]?.isNotEmpty ?? false))
+                          .fold<double>(
+                            0.0,
+                            (prev, row) => prev + widget.rowHeight * (widget.rowMaxStackDepth[row.id] ?? 1),
+                          );
 
                       final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
                       final double chartHeight;

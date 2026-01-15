@@ -1,3 +1,7 @@
+## 7.2.2
+
+* **FIX**: Fix for an issue that caused nested parent rows expand/collapse to be ignored
+
 ## 7.2.1
 
 * **FIX**: Resolved a regression where tasks with `ganttType: 'project'` were not correctly identified as summary tasks, causing visual highlights for contained dependencies to disappear.

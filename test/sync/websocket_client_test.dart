@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:async/async.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -21,9 +20,12 @@ void main() {
       outgoingController = StreamController.broadcast();
     });
 
-    tearDown(() {
+    tearDown(() async {
       incomingController.close();
       outgoingController.close();
+      try {
+        await client.dispose();
+      } catch (_) {}
     });
 
     WebSocketChannel mockChannelFactory(Uri uri) =>
@@ -68,15 +70,15 @@ void main() {
 
       // Start listening to outgoing before connecting
       // Expect 1 message: subscribe (auth is in handshake)
-      final streamQueue = StreamQueue(outgoingController.stream);
+      // 1. Subscribe Message (Auth verified in handshake)
+      final subMsgFuture = expectLater(outgoingController.stream, emits(predicate((subMsg) {
+        final subJson = jsonDecode(subMsg as String);
+        return subJson['type'] == 'subscribe' && subJson['channel'] == 'tenant-123';
+      })));
 
       client.connect('tenant-123');
 
-      // 1. Subscribe Message (Auth verified in handshake)
-      final subMsg = await streamQueue.next;
-      final subJson = jsonDecode(subMsg as String);
-      expect(subJson['type'], equals('subscribe'));
-      expect(subJson['channel'], equals('tenant-123'));
+      await subMsgFuture;
     });
 
     test('preserves gantt_type in unwrapped UPDATE_TASK message', () async {

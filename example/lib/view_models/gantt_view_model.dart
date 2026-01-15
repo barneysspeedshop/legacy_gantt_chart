@@ -1118,6 +1118,7 @@ class GanttViewModel extends ChangeNotifier {
   double? get controlPanelWidth => _controlPanelWidth;
 
   List<GanttGridData> get visibleGridData => _gridData;
+
   LocalGanttRepository get localRepository => _localRepository;
 
   /// Returns a signature string representing the current expansion state of the grid.
@@ -3153,7 +3154,19 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Toggles the expanded/collapsed state of a parent row in the grid.
   void toggleExpansion(String id) {
-    final item = _gridData.firstWhereOrNull((element) => element.id == id);
+    GanttGridData? findItem(List<GanttGridData> items) {
+      final stack = [...items];
+      while (stack.isNotEmpty) {
+        final current = stack.removeLast();
+        if (current.id == id) return current;
+        if (current.children.isNotEmpty) {
+          stack.addAll(current.children);
+        }
+      }
+      return null;
+    }
+
+    final item = findItem(_gridData);
     if (item == null || !_gridScrollController.hasClients) return;
 
     final currentOffset = _gridScrollController.offset;
