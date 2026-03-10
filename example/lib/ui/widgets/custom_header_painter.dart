@@ -38,9 +38,10 @@ class CustomHeaderPainter extends CustomPainter {
       tickInterval = const Duration(days: 1);
     }
 
-    DateTime current = totalDomain.first;
+    DateTime current = _roundDownTo(visibleDomain.first, tickInterval);
     String? lastMonth;
-    while (current.isBefore(totalDomain.last)) {
+    final loopEnd = visibleDomain.last.add(tickInterval);
+    while (current.isBefore(loopEnd)) {
       final next = current.add(tickInterval);
       final monthFormat = DateFormat('MMMM yyyy', selectedLocale);
       final dayFormat = DateFormat('d', selectedLocale);
@@ -95,4 +96,15 @@ class CustomHeaderPainter extends CustomPainter {
       !listEquals(oldDelegate.totalDomain, totalDomain) ||
       oldDelegate.theme != theme ||
       oldDelegate.selectedLocale != selectedLocale;
+
+  DateTime _roundDownTo(DateTime dt, Duration delta) {
+    if (delta.inDays >= 7) {}
+    final int ms = dt.millisecondsSinceEpoch;
+    final int deltaMs = delta.inMilliseconds;
+    final int offset = dt.timeZoneOffset.inMilliseconds;
+    final int localMs = ms + offset;
+    final int roundedLocalMs = (localMs ~/ deltaMs) * deltaMs;
+    final int resultMs = roundedLocalMs - offset;
+    return DateTime.fromMillisecondsSinceEpoch(resultMs, isUtc: dt.isUtc);
+  }
 }

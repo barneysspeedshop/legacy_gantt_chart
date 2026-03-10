@@ -26,6 +26,9 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart'; // For compute
 import 'ui/dialogs/csv_import_dialog.dart';
 import 'utils/csv_importer.dart';
+
+import 'services/gantt_natural_language_service.dart';
+import 'ui/widgets/gantt_assistant_widget.dart';
 import 'data/local/local_gantt_repository.dart'; // For LocalResource
 
 Future<void> main() async {
@@ -97,8 +100,10 @@ class _GanttViewState extends State<GanttView> {
     _uriController = TextEditingController(text: 'https://api.gantt-sync.com');
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
-    _passwordController = TextEditingController(text: 'password');
+    _passwordController = TextEditingController();
   }
+
+  final GanttNaturalLanguageService _nlService = GanttNaturalLanguageService();
 
   @override
   void dispose() {
@@ -682,6 +687,9 @@ class _GanttViewState extends State<GanttView> {
                 ),
               ],
             ),
+
+            const Divider(height: 24),
+            GanttAssistantWidget(service: _nlService, viewModel: vm),
             const Divider(height: 24),
             Text('Server Sync', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -802,6 +810,7 @@ class _GanttViewState extends State<GanttView> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: () async {

@@ -377,8 +377,7 @@ class GanttViewModel extends ChangeNotifier {
       _totalEndDate = maxEnd;
 
       if (_visibleStartDate == null || _visibleEndDate == null) {
-        _visibleStartDate = _totalStartDate!.subtract(_ganttStartPadding);
-        _visibleEndDate = _totalEndDate!.add(_ganttEndPadding);
+        _setInitialVisibleWindow();
       }
     }
 
@@ -664,6 +663,96 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  /// Bulk-update many tasks in a single database transaction.
+  /// Use this instead of calling [updateTask] in a loop for best performance.
+  Future<void> updateTasksBulk(List<LegacyGanttTask> tasks) async {
+    final hlc = _currentHlc;
+    final actor = _currentUsername ?? 'local-user';
+    final updatedTasks = tasks
+        .map((t) => t.copyWith(lastUpdated: hlc, lastUpdatedBy: actor))
+        .toList();
+
+    // Build a quick lookup for the updated versions
+    final updatedById = {for (final t in updatedTasks) t.id: t};
+
+    // Optimistically patch the in-memory list so the UI can update immediately
+    // without waiting for the watchTasks stream round-trip.
+    _allGanttTasks = _allGanttTasks
+        .map((t) => updatedById[t.id] ?? t)
+        .toList();
+
+    // Re-process in the background — don't block the caller (avoids keeping the
+    // assistant widget's spinner alive during the heavy re-stack computation).
+    unawaited(_processLocalData());
+
+    // One batched DB write (fire-and-forget; watchTasks stream will re-confirm)
+    await _localRepository.insertOrUpdateTasks(updatedTasks);
+
+    // Send sync operations if connected
+    if (_syncClient != null) {
+      for (final task in updatedTasks) {
+        String ganttType = 'task';
+        if (task.isMilestone) {
+          ganttType = 'milestone';
+        } else if (task.isSummary) {
+          ganttType = 'summary';
+        }
+        final op = Operation(
+          type: 'UPDATE_TASK',
+          data: {
+            'id': task.id,
+            'color': task.color?.toARGB32().toRadixString(16),
+            'text_color': task.textColor?.toARGB32().toRadixString(16),
+            'name': task.name,
+            'start_date': task.start.millisecondsSinceEpoch,
+            'end_date': task.end.millisecondsSinceEpoch,
+            'gantt_type': ganttType,
+            'is_summary': task.isSummary,
+            'completion': task.completion,
+            'resourceId': task.resourceId,
+            'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
+            'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
+            'notes': task.notes,
+            'uses_work_calendar': task.usesWorkCalendar,
+            'parentId': task.parentId,
+            'propagates_move_to_children': task.propagatesMoveToChildren,
+            'resize_policy': task.resizePolicy.index,
+          },
+          timestamp: hlc,
+          actorId: _syncClient?.actorId ?? actor,
+        );
+        await _syncClient!.sendOperation(op);
+        controller.recordOperation(op);
+      }
+    }
+  }
+
+  /// Soft-delete a batch of tasks at once.
+  Future<void> deleteTasksBulk(List<LegacyGanttTask> tasks) async {
+    final hlc = _currentHlc;
+    final idsToDelete = tasks.map((t) => t.id).toSet();
+
+    // Remove from in-memory list optimistically
+    _allGanttTasks = _allGanttTasks.where((t) => !idsToDelete.contains(t.id)).toList();
+    unawaited(_processLocalData());
+
+    // Persist each deletion (repository uses soft-delete)
+    for (final task in tasks) {
+      await _localRepository.deleteTask(task.id, hlc);
+
+      if (_syncClient != null) {
+        final op = Operation(
+          type: 'DELETE_TASK',
+          data: {'id': task.id},
+          timestamp: hlc,
+          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
+        );
+        await _syncClient!.sendOperation(op);
+        controller.recordOperation(op);
+      }
+    }
+  }
+
   Future<void> updateTaskBehavior(LegacyGanttTask task, {bool? propagates, ResizePolicy? policy}) async {
     final newTask = task.copyWith(
       propagatesMoveToChildren: propagates ?? task.propagatesMoveToChildren,
@@ -839,6 +928,7 @@ class GanttViewModel extends ChangeNotifier {
     // Explicitly set the last updated by for seeded tasks to 'local-user'
     // so the inspector doesn't show 'Unknown'
     final tasksWithUser = tasks
+        .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
         .map((t) => t.copyWith(
               lastUpdated: _currentHlc,
               lastUpdatedBy: 'local-user',
@@ -855,7 +945,7 @@ class GanttViewModel extends ChangeNotifier {
         timestamp: _currentHlc,
         actorId: 'local-user',
       ));
-      for (final task in tasks) {
+      for (final task in tasksWithUser) {
         String ganttType = 'task';
         if (task.isMilestone) {
           ganttType = 'milestone';
@@ -1724,8 +1814,6 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       _setLoading(false);
-      _visibleStartDate = _visibleStartDate ?? effectiveTotalStartDate;
-      _visibleEndDate = _visibleEndDate ?? effectiveTotalEndDate;
       if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
       notifyListeners();
@@ -1739,13 +1827,21 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  /// Sets a default visible window when no other range is available.
+  /// Sets an initial visible window based on data bounds, zooming into a sensible 4-week range.
   void _setInitialVisibleWindow() {
-    final now = DateTime.now();
-    _totalStartDate = now.subtract(const Duration(days: 15));
-    _totalEndDate = now.add(const Duration(days: 15));
-    _visibleStartDate = effectiveTotalStartDate;
-    _visibleEndDate = effectiveTotalEndDate;
+    if (_totalStartDate == null || _totalEndDate == null) {
+      final now = DateTime.now();
+      _totalStartDate = now.subtract(const Duration(days: 15));
+      _totalEndDate = now.add(const Duration(days: 15));
+    }
+
+    if (effectiveTotalStartDate != null && effectiveTotalEndDate != null) {
+      _visibleStartDate = effectiveTotalStartDate;
+      final defaultVisibleEnd = _visibleStartDate!.add(const Duration(days: 28));
+      _visibleEndDate = defaultVisibleEnd.isBefore(effectiveTotalEndDate!)
+          ? defaultVisibleEnd
+          : effectiveTotalEndDate;
+    }
   }
 
   Color _parseColorHex(String? hexString, Color defaultColor) {

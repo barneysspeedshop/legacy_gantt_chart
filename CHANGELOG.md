@@ -1,3 +1,11 @@
+## 7.3.0
+
+* **FEATURE**: **Gantt Assistant (GenAI)**: Integrated Gemini-powered natural language assistant to manage the Gantt chart.
+    * Supports tasks like adding ("Add 3 tasks"), updating ("Mark as 50% done"), moving ("Shift Task A after Task B"), deleting, and reassigning.
+    * **Functional Documentation**: Users can ask "Help with [topic]" or "What can you do?" to receive detailed guidance and examples directly in the chat.
+    * **Context-Aware Queries**: Supports complex queries like "Do I have any overlaps?" with pre-computed conflict detection sent to the LLM.
+    * **Clarification Handling**: Implemented a clarification loop where the assistant can ask for more information if a command is ambiguous.
+
 ## 7.2.2
 
 * **FIX**: Fix for an issue that caused nested parent rows expand/collapse to be ignored

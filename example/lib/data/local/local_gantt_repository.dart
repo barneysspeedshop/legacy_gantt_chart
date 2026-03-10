@@ -135,6 +135,70 @@ class LocalGanttRepository {
     });
   }
 
+  Future<void> insertOrUpdateTasks(List<LegacyGanttTask> tasks) async {
+    if (tasks.isEmpty) return;
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      final batch = db.batch();
+      for (final task in tasks) {
+        batch.execute(
+          '''
+          UPDATE tasks SET
+            row_id = ?2,
+            start_date = ?3,
+            end_date = ?4,
+            name = ?5,
+            color = ?6,
+            text_color = ?7,
+            stack_index = ?8,
+            is_summary = ?9,
+            is_milestone = ?10,
+            resource_id = ?11,
+            last_updated = ?12,
+            completion = ?13,
+            baseline_start = ?14,
+            baseline_end = ?15,
+            notes = ?16,
+            deleted_at = NULL,
+            is_deleted = 0,
+            uses_work_calendar = ?17,
+            parent_id = ?18,
+            is_auto_scheduled = ?19,
+            propagates_move_to_children = ?20,
+            resize_policy = ?21,
+            last_updated_by = ?22
+          WHERE id = ?1
+          ''',
+          [
+            task.id,
+            task.rowId,
+            task.start.toIso8601String(),
+            task.end.toIso8601String(),
+            task.name,
+            task.color?.toARGB32().toRadixString(16),
+            task.textColor?.toARGB32().toRadixString(16),
+            task.stackIndex,
+            task.isSummary ? 1 : 0,
+            task.isMilestone ? 1 : 0,
+            task.resourceId ?? task.originalId,
+            task.lastUpdated.toString(),
+            task.completion,
+            task.baselineStart?.toIso8601String(),
+            task.baselineEnd?.toIso8601String(),
+            task.notes,
+            task.usesWorkCalendar ? 1 : 0,
+            task.parentId,
+            (task.isAutoScheduled ?? true) ? 1 : 0,
+            task.propagatesMoveToChildren ? 1 : 0,
+            task.resizePolicy.index,
+            task.lastUpdatedBy
+          ],
+        );
+      }
+      await batch.commit();
+    });
+  }
+
   Future<void> insertOrUpdateTask(LegacyGanttTask task) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
@@ -151,7 +215,6 @@ class LocalGanttRepository {
           stack_index = ?8,
           is_summary = ?9,
           is_milestone = ?10,
-          resource_id = ?11,
           resource_id = ?11,
           last_updated = ?12,
           completion = ?13,

@@ -1096,10 +1096,33 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// This is crucial for calculating the time scale.
   void updateLayout(double width, double height) {
     if (_width != width || _height != height) {
+      // Capture the visible start date BEFORE recalculating so we can restore
+      // the correct scroll position afterward (free-scroll path only — the
+      // scrubber-driven path is handled inside _updateVisibleExtentFromScroll).
+      final visibleStartBeforeResize =
+          _visibleExtent.isNotEmpty && _gridMin == null && _gridMax == null ? _visibleExtent.first : null;
+
       _width = width;
       _height = height;
       _calculateDomains();
       _calculateRowOffsets(); // Recalculate if layout changes
+
+      // After the new scale is built, jump the horizontal scroll controller to
+      // the pixel offset that corresponds to the pre-resize visible start date.
+      // This keeps the timeline anchored to the same date after a resize.
+      if (visibleStartBeforeResize != null &&
+          ganttHorizontalScrollController != null &&
+          ganttHorizontalScrollController!.hasClients &&
+          _totalDomain.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (isDisposed) return;
+          if (ganttHorizontalScrollController == null || !ganttHorizontalScrollController!.hasClients) return;
+          final targetX = _totalScale(visibleStartBeforeResize);
+          final pos = ganttHorizontalScrollController!.position;
+          final clamped = targetX.clamp(pos.minScrollExtent, pos.maxScrollExtent);
+          ganttHorizontalScrollController!.jumpTo(clamped);
+        });
+      }
 
       if (!isDisposed) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1241,6 +1264,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _updateVisibleExtentFromScroll() {
+    // If gridMin/gridMax are set they are the source of truth (e.g. driven by
+    // the timeline scrubber). Do not override them with a scroll-ratio
+    // calculation — this would cause the visible window to drift on resize.
+    if (_gridMin != null && _gridMax != null) return;
+
     final controller = ganttHorizontalScrollController;
     if (controller == null || !controller.hasClients || _totalDomain.isEmpty) {
       return;

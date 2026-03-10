@@ -127,22 +127,12 @@ class AxisPainter extends CustomPainter {
     final String Function(DateTime) labelFormat = selectedStep.labelFormat;
 
     final List<MapEntry<double, DateTime>> tickPositions = [];
+    if (domain.isNotEmpty) {
+      DateTime currentTick = _roundDownTo(domain.first, tickInterval);
 
-    if (visibleDomain.isNotEmpty && domain.first.isBefore(domain.last)) {
-      DateTime currentTick = _roundDownTo(visibleDomain.first, tickInterval);
+      final loopEnd = domain.last.add(tickInterval);
 
-      if (currentTick.isBefore(domain.first)) {
-        currentTick = _roundDownTo(domain.first, tickInterval);
-        if (currentTick.isBefore(domain.first)) {
-          currentTick = currentTick.add(tickInterval);
-        }
-      }
-
-      final effectiveEnd = visibleDomain.last.isBefore(domain.last) ? visibleDomain.last : domain.last;
-      final loopEnd = effectiveEnd.add(tickInterval);
-
-      while (currentTick.isBefore(loopEnd) &&
-          (currentTick.isBefore(domain.last) || currentTick.isAtSameMomentAs(domain.last))) {
+      while (currentTick.isBefore(loopEnd)) {
         tickPositions.add(MapEntry(scale(currentTick), currentTick));
         currentTick = currentTick.add(tickInterval);
       }

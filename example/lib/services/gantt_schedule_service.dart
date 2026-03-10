@@ -204,7 +204,17 @@ class GanttScheduleService {
     }
 
     final allRows = processedGridData.expand((e) => [e, ...e.children]).map((e) => LegacyGanttRow(id: e.id)).toList();
-    fetchedTasks.addAll(_generateWeekendHighlights(allRows, startDate, startDate.add(Duration(days: range))));
+    
+    DateTime computedStart = startDate;
+    DateTime computedEnd = startDate.add(Duration(days: range));
+    if (fetchedTasks.isNotEmpty) {
+      for (final t in fetchedTasks) {
+        if (t.start.isBefore(computedStart)) computedStart = t.start;
+        if (t.end.isAfter(computedEnd)) computedEnd = t.end;
+      }
+    }
+    
+    fetchedTasks.addAll(_generateWeekendHighlights(allRows, computedStart, computedEnd));
 
     // Map Event ID -> Assignment ID (Task ID)
     final Map<String, String> eventToAssignmentId = {};
@@ -263,7 +273,7 @@ class GanttScheduleService {
   }
 
   List<LegacyGanttTask> _generateWeekendHighlights(List<LegacyGanttRow> rows, DateTime start, DateTime end) {
-    if (rows.length > 100) {
+    if (rows.length > 500) {
       return [];
     }
     final List<LegacyGanttTask> holidays = [];

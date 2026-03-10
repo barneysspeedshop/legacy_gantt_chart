@@ -875,7 +875,76 @@ void main() {
       expect(childUpdate, isNull);
     });
   });
-}
+
+  group('LegacyGanttViewModel resize behavior', () {
+    const row1 = LegacyGanttRow(id: 'r1', label: 'Row 1');
+    final task1 = LegacyGanttTask(
+      id: 't1',
+      rowId: 'r1',
+      start: DateTime(2023, 3, 1),
+      end: DateTime(2023, 3, 15),
+      name: 'Task 1',
+    );
+
+    test('resize preserves visibleExtent when gridMin/gridMax are set (scrubber path)', () {
+      final viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [task1],
+        dependencies: [],
+        visibleRows: [row1],
+        rowMaxStackDepth: {'r1': 1},
+        rowHeight: 27.0,
+      );
+
+      // Set scrubber-driven visible window: March 5 - March 10.
+      final start = DateTime(2023, 3, 5);
+      final end = DateTime(2023, 3, 10);
+      viewModel.updateVisibleRange(
+        start.millisecondsSinceEpoch.toDouble(),
+        end.millisecondsSinceEpoch.toDouble(),
+      );
+      viewModel.updateLayout(1000, 500);
+
+      // Sanity: visible extent is the scrubber window.
+      expect(viewModel.visibleExtent.first, start);
+      expect(viewModel.visibleExtent.last, end);
+
+      // Simulate a window resize (width shrinks).
+      viewModel.updateLayout(600, 500);
+
+      // The visible dates must remain exactly the same.
+      expect(viewModel.visibleExtent.first, start, reason: 'visibleStart must not drift on resize when gridMin is set');
+      expect(viewModel.visibleExtent.last, end, reason: 'visibleEnd must not drift on resize when gridMax is set');
+
+      viewModel.dispose();
+    });
+
+    test('resize does not change visible start date when gridMin/gridMax are not set (free-scroll path)', () {
+      final viewModel = LegacyGanttViewModel(
+        conflictIndicators: [],
+        data: [task1],
+        dependencies: [],
+        visibleRows: [row1],
+        rowMaxStackDepth: {'r1': 1},
+        rowHeight: 27.0,
+      );
+
+      viewModel.updateLayout(1000, 500);
+
+      expect(viewModel.visibleExtent, isNotEmpty);
+      final startBefore = viewModel.visibleExtent.first;
+
+      // Simulate a resize (width shrinks).
+      viewModel.updateLayout(600, 500);
+
+      // The visible start date must not have shifted.
+      expect(viewModel.visibleExtent.first, startBefore,
+          reason: 'visible start must not drift on resize (free-scroll path)');
+
+      viewModel.dispose();
+    });
+  }); // end resize group
+} // end main
 
 class MockGanttSyncClient extends GanttSyncClient {
   final _controller = StreamController<Operation>.broadcast();
