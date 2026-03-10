@@ -204,7 +204,7 @@ class GanttScheduleService {
     }
 
     final allRows = processedGridData.expand((e) => [e, ...e.children]).map((e) => LegacyGanttRow(id: e.id)).toList();
-    
+
     DateTime computedStart = startDate;
     DateTime computedEnd = startDate.add(Duration(days: range));
     if (fetchedTasks.isNotEmpty) {
@@ -213,7 +213,7 @@ class GanttScheduleService {
         if (t.end.isAfter(computedEnd)) computedEnd = t.end;
       }
     }
-    
+
     fetchedTasks.addAll(_generateWeekendHighlights(allRows, computedStart, computedEnd));
 
     // Map Event ID -> Assignment ID (Task ID)

@@ -54,8 +54,7 @@ class UpdateTaskCommand extends GanttCommand {
   });
 
   @override
-  String get description =>
-      'Update task(s) for ${resourceNames.join(", ")} with ${updates.keys.join(", ")}';
+  String get description => 'Update task(s) for ${resourceNames.join(", ")} with ${updates.keys.join(", ")}';
 }
 
 class TransposeTasksCommand extends GanttCommand {
@@ -102,9 +101,7 @@ class AnchorScheduleCommand extends GanttCommand {
 
   @override
   String get description {
-    final target = targetTaskName != null
-        ? '${relativeSide ?? "at"} "$targetTaskName"'
-        : '$targetDate';
+    final target = targetTaskName != null ? '${relativeSide ?? "at"} "$targetTaskName"' : '$targetDate';
     return 'Anchor schedule so first task starts $target';
   }
 }
@@ -134,14 +131,14 @@ class ReassignTasksCommand extends GanttCommand {
   });
 
   @override
-  String get description =>
-      'Reassign task(s) from ${fromResourceNames.join(", ")} to $toResourceName';
+  String get description => 'Reassign task(s) from ${fromResourceNames.join(", ")} to $toResourceName';
 }
 
 /// Create a dependency between two tasks.
 class AddDependencyCommand extends GanttCommand {
   final String predecessorTaskName;
   final String successorTaskName;
+
   /// "FS" (finish-to-start), "SS", "FF", "SF"
   final String dependencyType;
 
@@ -152,8 +149,7 @@ class AddDependencyCommand extends GanttCommand {
   });
 
   @override
-  String get description =>
-      'Add $dependencyType dependency: "$predecessorTaskName" → "$successorTaskName"';
+  String get description => 'Add $dependencyType dependency: "$predecessorTaskName" → "$successorTaskName"';
 }
 
 /// Compress or stretch the schedule by a factor.
@@ -182,8 +178,7 @@ class ShiftWorkingDaysCommand extends GanttCommand {
   });
 
   @override
-  String get description =>
-      'Shift task(s) for ${resourceNames.join(", ")} by $offsetWorkingDays working days';
+  String get description => 'Shift task(s) for ${resourceNames.join(", ")} by $offsetWorkingDays working days';
 }
 
 /// Remove gaps between tasks for specified resources (pack them end-to-end).
@@ -403,13 +398,12 @@ Payload schemas:
   }
 
   GanttCommand? _dispatchParse(String status, Map<String, dynamic> payload) {
-    List<String> strings(String key) =>
-        (payload[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    List<String> strings(String key) => (payload[key] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
 
     switch (status) {
       case 'help':
         return HelpCommand(payload['topic'] ?? 'all');
-        
+
       case 'clarify':
         return ClarificationRequiredCommand(payload['message'] as String? ?? '');
 
@@ -442,9 +436,7 @@ Payload schemas:
         return TransposeTasksCommand(
           resourceNames: strings('resourceNames'),
           taskName: payload['taskName'] as String?,
-          offset: payload['offsetDays'] != null
-              ? Duration(days: (payload['offsetDays'] as num).toInt())
-              : null,
+          offset: payload['offsetDays'] != null ? Duration(days: (payload['offsetDays'] as num).toInt()) : null,
           targetDate: DateTime.tryParse(payload['targetDate'] as String? ?? ''),
           targetTaskName: payload['targetTaskName'] as String?,
           relativeSide: payload['relativeSide'] as String?,
@@ -500,7 +492,8 @@ Payload schemas:
 
       case 'mirror':
         final endDate = DateTime.tryParse(payload['targetEndDate'] as String? ?? '');
-        if (endDate == null) return ClarificationRequiredCommand('Please specify a valid target end date for mirroring.');
+        if (endDate == null)
+          return ClarificationRequiredCommand('Please specify a valid target end date for mirroring.');
         return MirrorScheduleCommand(
           targetEndDate: endDate,
           resourceNames: strings('resourceNames'),

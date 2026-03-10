@@ -668,18 +668,14 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> updateTasksBulk(List<LegacyGanttTask> tasks) async {
     final hlc = _currentHlc;
     final actor = _currentUsername ?? 'local-user';
-    final updatedTasks = tasks
-        .map((t) => t.copyWith(lastUpdated: hlc, lastUpdatedBy: actor))
-        .toList();
+    final updatedTasks = tasks.map((t) => t.copyWith(lastUpdated: hlc, lastUpdatedBy: actor)).toList();
 
     // Build a quick lookup for the updated versions
     final updatedById = {for (final t in updatedTasks) t.id: t};
 
     // Optimistically patch the in-memory list so the UI can update immediately
     // without waiting for the watchTasks stream round-trip.
-    _allGanttTasks = _allGanttTasks
-        .map((t) => updatedById[t.id] ?? t)
-        .toList();
+    _allGanttTasks = _allGanttTasks.map((t) => updatedById[t.id] ?? t).toList();
 
     // Re-process in the background — don't block the caller (avoids keeping the
     // assistant widget's spinner alive during the heavy re-stack computation).
@@ -1838,9 +1834,7 @@ class GanttViewModel extends ChangeNotifier {
     if (effectiveTotalStartDate != null && effectiveTotalEndDate != null) {
       _visibleStartDate = effectiveTotalStartDate;
       final defaultVisibleEnd = _visibleStartDate!.add(const Duration(days: 28));
-      _visibleEndDate = defaultVisibleEnd.isBefore(effectiveTotalEndDate!)
-          ? defaultVisibleEnd
-          : effectiveTotalEndDate;
+      _visibleEndDate = defaultVisibleEnd.isBefore(effectiveTotalEndDate!) ? defaultVisibleEnd : effectiveTotalEndDate;
     }
   }
 

@@ -1,3 +1,7 @@
+## 7.3.1
+
+* **FIX**: Fix lint
+
 ## 7.3.0
 
 * **FEATURE**: **Gantt Assistant (GenAI)**: Integrated Gemini-powered natural language assistant to manage the Gantt chart.
