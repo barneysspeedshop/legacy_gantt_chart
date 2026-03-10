@@ -492,8 +492,9 @@ Payload schemas:
 
       case 'mirror':
         final endDate = DateTime.tryParse(payload['targetEndDate'] as String? ?? '');
-        if (endDate == null)
+        if (endDate == null) {
           return ClarificationRequiredCommand('Please specify a valid target end date for mirroring.');
+        }
         return MirrorScheduleCommand(
           targetEndDate: endDate,
           resourceNames: strings('resourceNames'),
