@@ -1657,6 +1657,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _dependencyDragStatus = DependencyDragStatus.none;
     _dependencyDragDelayAmount = null;
     _dependencyHoveredTaskId = null;
+    _showResizeTooltip = false;
     if (!isDisposed) notifyListeners();
   }
 
