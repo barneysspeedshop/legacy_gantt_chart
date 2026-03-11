@@ -1163,6 +1163,9 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
     final task = widget.task;
     final theme = widget.theme;
     final vm = widget.vm;
+    final content = widget.content;
+    final barHeight = vm.rowHeight * theme.barHeightRatio;
+    final verticalInset = (vm.rowHeight - barHeight) / 2;
     return Focus(
       focusNode: _focusNode,
       onFocusChange: (hasFocus) {
@@ -1181,7 +1184,28 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (widget.content != null) widget.content!,
+              if (content != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: verticalInset,
+                  height: barHeight,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.all(theme.barCornerRadius),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: DefaultTextStyle(
+                        style: theme.taskTextStyle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: content,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_isHovered && vm.onTaskDelete != null)
                 Positioned(
                   right: 0,
