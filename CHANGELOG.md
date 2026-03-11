@@ -1,3 +1,8 @@
+## 7.3.2
+
+* **FIX**: Fix for an issue that caused task drag/resize tooltips to persist after drag/resize completed
+* **FIX**: Fix for an issue that caused poor alignment when task height is taller than task content
+
 ## 7.3.1
 
 * **FIX**: Fix lint
