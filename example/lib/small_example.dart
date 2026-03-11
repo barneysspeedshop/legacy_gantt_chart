@@ -40,6 +40,7 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
   // The total range defines the full scrollable area for the scrubber.
   final DateTime _totalStartDate = DateTime(2024, 5, 15);
   final DateTime _totalEndDate = DateTime(2024, 7, 15);
+
   // The visible range is what the user sees in the main chart.
   late DateTime _visibleStartDate;
   late DateTime _visibleEndDate;
@@ -101,7 +102,8 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
         rowId: 'project_a',
         name: 'Project Deadline',
         start: DateTime(2024, 6, 20),
-        end: DateTime(2024, 6, 20), // Same start and end for a milestone
+        end: DateTime(2024, 6, 20),
+        // Same start and end for a milestone
         isMilestone: true,
       ),
     ];
@@ -136,8 +138,9 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
               width: 120, // Adjust width as needed
               child: _RowHeader(
                 scrollController: _scrollController,
-                rowHeight: 32.0,
-                axisHeight: 27.0, // Should match axisHeight in Gantt chart
+                rowHeight: 70.0,
+                axisHeight: 27.0,
+                // Should match axisHeight in Gantt chart
                 rows: const [
                   LegacyGanttRow(id: 'project_a'),
                   LegacyGanttRow(id: 'resource_1'),
@@ -179,7 +182,7 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
                                 'resource_1': 1,
                                 'resource_2': 1,
                               },
-                              rowHeight: 32.0,
+                              rowHeight: 70.0,
                               axisHeight: 27.0,
 
                               // --- Scroll Controller for synchronization ---
@@ -194,6 +197,45 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
                               // --- Interactivity ---
                               enableDragAndDrop: true,
                               enableResize: true,
+                              taskContentBuilder: (task) {
+                                final onTaskColor = Theme.of(context).colorScheme.onPrimary;
+                                final secondaryTextColor = onTaskColor.withValues(alpha: 0.8);
+                                final durationLabel =
+                                    '${task.start.day}.${task.start.month}. - ${task.end.day}.${task.end.month}';
+
+                                return Row(
+                                  children: [
+                                    Icon(
+                                      task.isSummary ? Icons.summarize_outlined : Icons.task_alt,
+                                      size: 18,
+                                      color: onTaskColor,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            task.name ?? 'Unnamed Task',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            durationLabel,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: secondaryTextColor,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                               onTaskUpdate: (task, newStart, newEnd) {
                                 // Handle task updates by finding the task and updating its dates.
                                 setState(() {

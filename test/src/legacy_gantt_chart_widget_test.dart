@@ -421,5 +421,37 @@ void main() {
       // If the fix works, no exception is thrown.
       // If not fixed, "A LegacyGanttViewModel was used after being disposed" would be thrown here.
     });
+
+    testWidgets('centers taskContentBuilder content vertically within taller rows', (WidgetTester tester) async {
+      const contentKey = Key('custom_task_content');
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            height: 120,
+            child: LegacyGanttChartWidget(
+              data: [task1],
+              visibleRows: rows,
+              rowMaxStackDepth: rowMaxStackDepth,
+              rowHeight: 80,
+              axisHeight: 0,
+              gridMin: now.millisecondsSinceEpoch.toDouble(),
+              gridMax: nextWeek.millisecondsSinceEpoch.toDouble(),
+              totalGridMin: now.millisecondsSinceEpoch.toDouble(),
+              totalGridMax: nextWeek.millisecondsSinceEpoch.toDouble(),
+              taskContentBuilder: (task) => const Text('Task 1', key: contentKey),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.pumpAndSettle();
+
+      final chartRect = tester.getRect(find.byType(LegacyGanttChartWidget));
+      final contentRect = tester.getRect(find.byKey(contentKey));
+
+      expect(contentRect.center.dy - chartRect.top, closeTo(40, 4));
+    });
   });
 }
