@@ -1,3 +1,10 @@
+## Unreleased
+
+* **FEATURE**: Added optional vertical task dragging between rows.
+    * Introduced `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
+    * Added `onTaskMove(task, newStart, newEnd, newRowId)` for consumers that need to persist row reassignment.
+    * Kept existing `onTaskUpdate` behavior unchanged for time-only moves and resize operations.
+
 ## 7.3.1
 
 * **FIX**: Fix lint

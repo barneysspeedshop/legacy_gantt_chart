@@ -69,7 +69,7 @@ The name `legacy_gantt_chart` is a tribute to the package's author, Patrick Lega
 
 ### Interactivity
 -   **Task Creation:** Create new tasks by clicking on empty chart space.
--   **Drag & Drop:** Move tasks along the timeline or between rows.
+-   **Drag & Drop:** Move tasks along the timeline, and optionally between rows.
 -   **Task Resizing:** Resize tasks by dragging their start or end handles.
 -   **Touch Support:** All interactions work seamlessly on touch devices.
 -   **Task Tooltips:** Tooltips appear when dragging or resizing tasks.
@@ -471,6 +471,38 @@ LegacyGanttChartWidget(
   },
 )
 ```
+
+#### Optional row reassignment while dragging
+
+By default, dragging a task only changes its time range. If you also want to allow
+reassigning a task to a different row while dragging, enable `enableVerticalTaskDrag`.
+
+When the user drops the task onto another row, the widget emits `onTaskMove` with
+the updated `newRowId` in addition to the new start and end dates.
+
+```dart
+LegacyGanttChartWidget(
+  // ... other properties
+  enableDragAndDrop: true,
+  enableResize: true,
+  enableVerticalTaskDrag: true,
+  onTaskMove: (task, newStart, newEnd, newRowId) {
+    // Persist the date change and the new row assignment.
+    // For example, map newRowId back to your domain model and update
+    // the assigned person/resource before sending it to your backend.
+  },
+  onTaskUpdate: (task, newStart, newEnd) {
+    // This is still used for regular time-only updates.
+  },
+)
+```
+
+Notes:
+
+- `enableVerticalTaskDrag` is opt-in and defaults to `false`.
+- `onTaskMove` is only called when the row actually changes.
+- `onTaskUpdate` continues to be used for horizontal move / resize operations that
+  keep the task on the same row.
 
 ### Custom Task Appearance
 

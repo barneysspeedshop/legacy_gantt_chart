@@ -125,6 +125,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Whether tasks can be moved by dragging.
   final bool enableDragAndDrop;
 
+  /// Whether dragging a task may also change its row assignment.
+  final bool enableVerticalTaskDrag;
+
   /// Whether tasks can be resized from their start or end handles.
   final bool enableResize;
 
@@ -133,6 +136,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// A callback invoked when a task is successfully moved or resized.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
+
+  /// A callback invoked when a task move changes its row assignment.
+  final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd, String newRowId)? onTaskMove;
 
   /// A callback invoked when a task is double-tapped.
   final Function(LegacyGanttTask task)? onTaskDoubleClick;
@@ -444,8 +450,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     double? totalGridMax,
     this.enableDragAndDrop = false,
     this.enableResize = false,
+    this.enableVerticalTaskDrag = false,
     this.enableAutoScheduling = true,
     this.onTaskUpdate,
+    this.onTaskMove,
     this.onTaskDoubleClick,
     this.onTaskDelete,
     this.onEmptySpaceClick,
@@ -871,6 +879,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   LegacyGanttTask? _draggedTask;
   DateTime? _ghostTaskStart;
   DateTime? _ghostTaskEnd;
+  String? _ghostTaskRowId;
   final Map<String, (DateTime, DateTime)> _bulkGhostTasks = {};
 
   /// Detailed ghost task positions during a bulk drag operation.
@@ -1053,6 +1062,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The projected end time of the task being dragged/resized.
   DateTime? get ghostTaskEnd => _ghostTaskEnd;
+
+  /// The projected row of the task being dragged.
+  String? get ghostTaskRowId => _ghostTaskRowId;
 
   /// The full date range of the chart, from `totalGridMin` to `totalGridMax`.
   List<DateTime> get totalDomain => _totalDomain;
@@ -1363,6 +1375,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _draggedTask = hit.task;
       _originalTaskStart = hit.task.start;
       _originalTaskEnd = hit.task.end;
+      _ghostTaskRowId = hit.task.rowId;
       switch (hit.part) {
         case TaskPart.startHandle:
           _dragMode = DragMode.resizeStart;
@@ -1424,6 +1437,31 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _resetDragState();
   }
 
+  bool get _canMoveDraggedTaskAcrossRows {
+    final draggedTask = _draggedTask;
+    if (!enableVerticalTaskDrag || _dragMode != DragMode.move || draggedTask == null) {
+      return false;
+    }
+
+    return _selectedTaskIds.isEmpty || (_selectedTaskIds.length == 1 && _selectedTaskIds.contains(draggedTask.id));
+  }
+
+  void _updateGhostTaskRow(Offset localPosition) {
+    final draggedTask = _draggedTask;
+    if (draggedTask == null) {
+      _ghostTaskRowId = null;
+      return;
+    }
+
+    if (!_canMoveDraggedTaskAcrossRows) {
+      _ghostTaskRowId = draggedTask.rowId;
+      return;
+    }
+
+    final (rowId, _) = _getRowAndTimeAtPosition(localPosition);
+    _ghostTaskRowId = rowId ?? _ghostTaskRowId ?? draggedTask.rowId;
+  }
+
   void _commitBulkUpdates() {
     if (_bulkGhostTasks.isEmpty) return;
 
@@ -1440,7 +1478,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
       if (task.id.isEmpty) continue;
 
       final now = syncClient?.currentHlc ?? Hlc.fromDate(DateTime.now(), 'local');
-      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: now);
+      final updatedRowId = taskId == _draggedTask?.id ? (_ghostTaskRowId ?? task.rowId) : task.rowId;
+      final updatedTask = task.copyWith(start: newStart, end: newEnd, rowId: updatedRowId, lastUpdated: now);
       final index = _tasks.indexWhere((t) => t.id == taskId);
       if (index != -1) {
         _tasks[index] = updatedTask;
@@ -1449,7 +1488,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
       final op = Operation(
           type: 'UPDATE_TASK', data: updatedTask.toJson(), timestamp: now, actorId: syncClient?.actorId ?? 'user');
-      if (onBulkTaskUpdate != null) {
+      if (updatedRowId != task.rowId) {
+        onTaskMove?.call(task, newStart, newEnd, updatedRowId);
+      } else if (onBulkTaskUpdate != null) {
         bulkUpdates.add((task, newStart, newEnd));
       } else {
         onTaskUpdate?.call(task, newStart, newEnd);
@@ -1643,6 +1684,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _draggedTask = null;
     _ghostTaskStart = null;
     _ghostTaskEnd = null;
+    _ghostTaskRowId = null;
     _bulkGhostTasks.clear();
     _initialTouchY = 0;
     _initialTranslateY = 0;
@@ -1737,6 +1779,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _draggedTask = overrideTask;
       _originalTaskStart = overrideTask.start;
       _originalTaskEnd = overrideTask.end;
+      _ghostTaskRowId = overrideTask.rowId;
 
       switch (overridePart ?? TaskPart.body) {
         case TaskPart.startHandle:
@@ -1795,6 +1838,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
           end: time,
           name: 'New Task',
         );
+        _ghostTaskRowId = rowId;
         notifyListeners();
       }
       return;
@@ -1857,14 +1901,21 @@ class LegacyGanttViewModel extends ChangeNotifier {
       notifyListeners();
       onVerticalPanUpdate(details);
     } else {
-      if (details.delta.dx.abs() > details.delta.dy.abs()) {
-        if (_isPrimaryButtonDown) {
-          final hit = _getTaskPartAtPosition(_initialLocalPosition);
-          if (hit != null) {
+      final prefersHorizontal = details.delta.dx.abs() > details.delta.dy.abs();
+      if (_isPrimaryButtonDown) {
+        final hit = _getTaskPartAtPosition(_initialLocalPosition);
+        if (hit != null) {
+          final shouldStartMoveDrag =
+              hit.part == TaskPart.body && enableDragAndDrop && (enableVerticalTaskDrag || prefersHorizontal);
+          final shouldStartResizeDrag =
+              hit.part != TaskPart.body && prefersHorizontal && (enableDragAndDrop || enableResize);
+
+          if (shouldStartMoveDrag || shouldStartResizeDrag) {
             _panType = PanType.horizontal;
             _draggedTask = hit.task;
             _originalTaskStart = hit.task.start;
             _originalTaskEnd = hit.task.end;
+            _ghostTaskRowId = hit.task.rowId;
             switch (hit.part) {
               case TaskPart.startHandle:
                 _dragMode = DragMode.resizeStart;
@@ -1877,12 +1928,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
                 break;
             }
             onHorizontalPanUpdate(details);
+            return;
           }
         }
-      } else {
-        _panType = PanType.vertical;
-        onVerticalPanUpdate(details);
       }
+
+      _panType = PanType.vertical;
+      onVerticalPanUpdate(details);
     }
   }
 
@@ -2420,6 +2472,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
     _ghostTaskStart = newStart;
     _ghostTaskEnd = newEnd;
+    _updateGhostTaskRow(details.localPosition);
     _resizeTooltipText = tooltipText;
     _showResizeTooltip = showTooltip;
     if (showTooltip) {

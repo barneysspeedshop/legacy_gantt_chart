@@ -160,8 +160,21 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// Provides the updated [LegacyGanttTask] and its new `start` and `end` times.
   final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd)? onTaskUpdate;
 
+  /// A callback function that is invoked when a task move changes the row assignment.
+  ///
+  /// This is only emitted when [enableVerticalTaskDrag] is true and the user drops
+  /// a task onto a different row.
+  final Function(LegacyGanttTask task, DateTime newStart, DateTime newEnd, String newRowId)? onTaskMove;
+
   /// A callback function invoked when a batch of tasks are updated.
   final Function(List<(LegacyGanttTask, DateTime, DateTime)>)? onBulkTaskUpdate;
+
+  /// Enables moving tasks vertically between rows while dragging.
+  ///
+  /// When enabled, horizontal dragging continues to adjust the task dates, while
+  /// the pointer's vertical position determines the target row. Row changes are
+  /// reported through [onTaskMove].
+  final bool enableVerticalTaskDrag;
 
   /// A callback function invoked when a user double-taps or double-clicks on a task bar.
   ///
@@ -385,6 +398,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.taskBarBuilder,
     this.taskContentBuilder,
     this.onTaskUpdate,
+    this.onTaskMove,
     this.onTaskDoubleClick,
     this.onTaskDelete,
     this.resizeTooltipDateFormat,
@@ -401,6 +415,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.emptyStateBuilder,
     this.showEmptyRows = false,
     this.onBulkTaskUpdate,
+    this.enableVerticalTaskDrag = false,
     this.height,
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
@@ -641,7 +656,9 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             totalGridMax: widget.totalGridMax,
             enableDragAndDrop: widget.enableDragAndDrop,
             enableResize: widget.enableResize,
+            enableVerticalTaskDrag: widget.enableVerticalTaskDrag,
             onTaskUpdate: widget.onTaskUpdate,
+            onTaskMove: widget.onTaskMove,
             onTaskDoubleClick: widget.onTaskDoubleClick,
             onTaskDelete: widget.onTaskDelete,
             onEmptySpaceClick: widget.onEmptySpaceClick,
@@ -807,6 +824,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                         vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
                                                     ghostTaskStart: vm.ghostTaskStart,
                                                     ghostTaskEnd: vm.ghostTaskEnd,
+                                                    ghostTaskRowId: vm.ghostTaskRowId,
                                                     remoteGhosts: vm.remoteGhosts,
                                                     theme: effectiveTheme,
                                                     hoveredRowId: vm.hoveredRowId,
@@ -976,12 +994,19 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   List<Widget> _buildTaskWidgets(LegacyGanttViewModel vm, List<LegacyGanttTask> tasks, LegacyGanttTheme theme) {
     final List<Widget> taskWidgets = [];
     double cumulativeRowTop = 0;
+    final draggedTask = vm.draggedTask;
+    final shouldRenderDraggedTaskSeparately =
+        draggedTask != null && vm.ghostTaskStart != null && vm.ghostTaskEnd != null;
 
     for (final rowData in vm.visibleRows) {
       final tasksInThisRow = vm.tasksByRow[rowData.id];
 
       if (tasksInThisRow != null) {
         for (final task in tasksInThisRow) {
+          if (shouldRenderDraggedTaskSeparately && draggedTask.id == task.id) {
+            continue;
+          }
+
           if (task.isTimeRangeHighlight) continue;
 
           final startX = vm.totalScale(task.start);
@@ -1024,6 +1049,49 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final stackDepth = vm.rowMaxStackDepth[rowData.id] ?? 1;
       cumulativeRowTop += vm.rowHeight * stackDepth;
     }
+
+    if (shouldRenderDraggedTaskSeparately) {
+      final ghostRowId = vm.ghostTaskRowId ?? draggedTask.rowId;
+      final rowIndex = vm.visibleRows.indexWhere((row) => row.id == ghostRowId);
+      final rowTop = rowIndex == -1 ? null : vm.getRowVerticalOffset(rowIndex);
+
+      if (rowTop != null) {
+        final startX = vm.totalScale(vm.ghostTaskStart!);
+        final endX = vm.totalScale(vm.ghostTaskEnd!);
+        final width = endX - startX;
+
+        if (width > 0) {
+          Widget taskWidget;
+          if (draggedTask.isOverlapIndicator) {
+            taskWidget = _OverlapIndicatorBar(theme: theme);
+          } else if (widget.taskBarBuilder != null) {
+            taskWidget = widget.taskBarBuilder!(draggedTask);
+          } else {
+            if (widget.taskContentBuilder == null) {
+              return taskWidgets;
+            }
+
+            taskWidget = _DefaultTaskBar(
+              task: draggedTask,
+              vm: vm,
+              theme: theme,
+              content: widget.taskContentBuilder!(draggedTask),
+            );
+          }
+
+          taskWidgets.add(
+            Positioned(
+              left: startX,
+              top: rowTop + (draggedTask.stackIndex * vm.rowHeight) + vm.translateY,
+              width: width,
+              height: vm.rowHeight,
+              child: taskWidget,
+            ),
+          );
+        }
+      }
+    }
+
     return taskWidgets;
   }
 
@@ -1080,14 +1148,18 @@ List<Widget> _buildFocusedTaskWidgets(
   final focusedTask = tasks.firstWhere((t) => t.id == vm.focusedTaskId, orElse: () => LegacyGanttTask.empty());
   if (focusedTask.id.isEmpty) return [];
 
-  final rowIndex = vm.visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
-  if (rowIndex == -1) return [];
+  final effectiveRowId =
+      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskRowId != null ? vm.ghostTaskRowId! : focusedTask.rowId;
+  final effectiveStart = vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null ? vm.ghostTaskStart! : focusedTask.start;
+  final effectiveEnd = vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null ? vm.ghostTaskEnd! : focusedTask.end;
+  final effectiveRowIndex = vm.visibleRows.indexWhere((r) => r.id == effectiveRowId);
+  if (effectiveRowIndex == -1) return [];
 
-  final rowTop = vm.getRowVerticalOffset(rowIndex);
+  final rowTop = vm.getRowVerticalOffset(effectiveRowIndex);
   if (rowTop == null) return [];
 
-  final startX = vm.totalScale(focusedTask.start);
-  final endX = vm.totalScale(focusedTask.end);
+  final startX = vm.totalScale(effectiveStart);
+  final endX = vm.totalScale(effectiveEnd);
   final width = endX - startX;
   final top = rowTop + (focusedTask.stackIndex * vm.rowHeight) + vm.translateY;
 
