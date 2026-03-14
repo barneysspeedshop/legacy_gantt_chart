@@ -11,7 +11,7 @@ void main() {
       void Function(LegacyGanttTask task, DateTime start, DateTime end, String rowId)? onTaskMove,
       void Function(LegacyGanttTask task, DateTime start, DateTime end)? onTaskUpdate,
     }) {
-      final rows = const [
+      const rows = [
         LegacyGanttRow(id: 'row-1', label: 'Row 1'),
         LegacyGanttRow(id: 'row-2', label: 'Row 2'),
       ];
@@ -55,7 +55,7 @@ void main() {
       vm.onPanStart(
         DragStartDetails(
           globalPosition: Offset.zero,
-          localPosition: Offset(10, 25),
+          localPosition: const Offset(10, 25),
         ),
         overrideTask: draggedTask,
         overridePart: TaskPart.body,
@@ -92,7 +92,7 @@ void main() {
       vm.onPanStart(
         DragStartDetails(
           globalPosition: Offset.zero,
-          localPosition: Offset(10, 25),
+          localPosition: const Offset(10, 25),
         ),
         overrideTask: draggedTask,
         overridePart: TaskPart.body,
