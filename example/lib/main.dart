@@ -100,7 +100,7 @@ class _GanttViewState extends State<GanttView> {
     _uriController = TextEditingController(text: 'https://api.gantt-sync.com');
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController(text: 'patrick');
-    _passwordController = TextEditingController();
+    _passwordController = TextEditingController(text: 'password');
   }
 
   final GanttNaturalLanguageService _nlService = GanttNaturalLanguageService();
