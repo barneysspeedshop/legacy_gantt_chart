@@ -1615,6 +1615,7 @@ class _GanttViewState extends State<GanttView> {
                                               height: chartConstraints
                                                   .maxHeight, // Fix: Constrain height to viewport so internal scroll works
                                               child: LegacyGanttChartWidget(
+                                                enableVerticalTaskDrag: true,
                                                 controller: vm.controller,
                                                 loadingIndicatorType: vm.loadingIndicatorType,
                                                 loadingIndicatorPosition: vm.loadingIndicatorPosition,

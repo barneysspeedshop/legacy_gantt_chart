@@ -1,9 +1,10 @@
-## Unreleased
+## 7.4.0-rc.1
 
-* **FEATURE**: Added optional vertical task dragging between rows.
-    * Introduced `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
-    * Added `onTaskMove(task, newStart, newEnd, newRowId)` for consumers that need to persist row reassignment.
-    * Kept existing `onTaskUpdate` behavior unchanged for time-only moves and resize operations.
+* **FEATURE**: Introduced experimental support for optional vertical reordering of task rows. 
+    * This is an experimental feature and is subject to change in future versions.
+    * Introduced bool `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
+      * When true, enables dragging tasks vertically between rows.
+      * Row changes are reported through `onTaskMove(task, newStart, newEnd, newRowId)`.
 
 ## 7.3.1
 
