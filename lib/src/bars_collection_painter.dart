@@ -50,6 +50,9 @@ class BarsCollectionPainter extends CustomPainter {
   /// The projected end date of the task being dragged.
   final DateTime? ghostTaskEnd;
 
+  /// The projected row ID of the task being dragged.
+  final String? ghostTaskRowId;
+
   /// The temporary task being drawn interactively (e.g. via Draw Tool).
   final LegacyGanttTask? drawingTask;
 
@@ -122,6 +125,7 @@ class BarsCollectionPainter extends CustomPainter {
     this.draggedTaskId,
     this.ghostTaskStart,
     this.ghostTaskEnd,
+    this.ghostTaskRowId,
     this.drawingTask,
     this.remoteGhosts = const {},
     required this.theme,
@@ -597,7 +601,7 @@ class BarsCollectionPainter extends CustomPainter {
         double ghostRowTop = 0;
         bool foundRow = false;
         for (var rowData in visibleRows) {
-          if (rowData.id == originalTask.rowId) {
+          if (rowData.id == (ghostTaskRowId ?? originalTask.rowId)) {
             foundRow = true;
             break;
           }
@@ -1280,6 +1284,7 @@ class BarsCollectionPainter extends CustomPainter {
       oldDelegate.drawingTask != drawingTask ||
       oldDelegate.ghostTaskStart != ghostTaskStart ||
       oldDelegate.ghostTaskEnd != ghostTaskEnd ||
+      oldDelegate.ghostTaskRowId != ghostTaskRowId ||
       oldDelegate.theme != theme ||
       oldDelegate.enableDependencyCreation != enableDependencyCreation ||
       oldDelegate.dependencyDragStartTaskId != dependencyDragStartTaskId ||

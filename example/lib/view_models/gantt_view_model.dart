@@ -30,6 +30,28 @@ enum TimelineAxisFormat {
   custom,
 }
 
+/// Whether a pending row drag-and-drop will place the item *between* rows or
+/// *inside* (i.e. nested under) a target row.
+enum DropIntent { between, inside }
+
+/// Describes where a row-reorder drag is currently targeting.
+class DropTarget {
+  /// The [id] of the row that is being targeted.
+  final String rowId;
+
+  /// Whether the item will be inserted *between* rows or nested *inside* this one.
+  final DropIntent intent;
+
+  const DropTarget(this.rowId, this.intent);
+
+  @override
+  bool operator ==(Object other) =>
+      other is DropTarget && other.rowId == rowId && other.intent == intent;
+
+  @override
+  int get hashCode => Object.hash(rowId, intent);
+}
+
 class GanttViewModel extends ChangeNotifier {
   final LocalGanttRepository _localRepository = LocalGanttRepository();
   bool _useLocalDatabase = false;
@@ -92,6 +114,75 @@ class GanttViewModel extends ChangeNotifier {
 
   /// The height of a single task lane within a row.
   final double rowHeight = 27.0;
+
+  // --- Drop-target state for row reorder drag feedback ---
+  DropTarget? _pendingDropTarget;
+  Timer? _nestIntentTimer;
+  int _pendingNestRowIndex = -1;
+
+  /// The row and intent currently being hovered during a row drag-and-drop.
+  /// Null when no drag is in progress.
+  DropTarget? get pendingDropTarget => _pendingDropTarget;
+
+  /// Called by the UI layer on every pointer-move during a row drag.
+  ///
+  /// - Non-expanded rows immediately show [DropIntent.between] at their sibling level.
+  /// - Expanded rows show [DropIntent.between] immediately, then upgrade to
+  ///   [DropIntent.inside] after the pointer hovers the same expanded row for
+  ///   400 ms — matching the VS Code file-tree drag pattern and preventing the
+  ///   "dancing row" problem caused by SliverReorderableList shifting rows.
+  void updateDropHover(int draggedRowIndex, int hoveredRowIndex) {
+    final flatList = flatGridData;
+    if (hoveredRowIndex < 0 || hoveredRowIndex >= flatList.length) {
+      clearDropTarget();
+      return;
+    }
+    if (draggedRowIndex == hoveredRowIndex) {
+      clearDropTarget();
+      return;
+    }
+
+    final hoveredItem = flatList[hoveredRowIndex];
+    final hoveredId = hoveredItem['id'] as String;
+    final isExpanded = hoveredItem['isExpanded'] == true;
+
+    if (isExpanded) {
+      if (_pendingNestRowIndex != hoveredRowIndex) {
+        // Moved over a new expanded row: show "between" immediately,
+        // schedule an upgrade to "inside" after the hover dwell time.
+        _nestIntentTimer?.cancel();
+        _pendingNestRowIndex = hoveredRowIndex;
+        _pendingDropTarget = DropTarget(hoveredId, DropIntent.between);
+        notifyListeners();
+        _nestIntentTimer = Timer(const Duration(milliseconds: 400), () {
+          if (_pendingNestRowIndex == hoveredRowIndex) {
+            _pendingDropTarget = DropTarget(hoveredId, DropIntent.inside);
+            notifyListeners();
+          }
+        });
+      }
+      // Same expanded row → don't touch intent (let timer handle upgrade)
+    } else {
+      // Non-expanded row: always "between" at its sibling level.
+      _nestIntentTimer?.cancel();
+      _pendingNestRowIndex = -1;
+      final target = DropTarget(hoveredId, DropIntent.between);
+      if (_pendingDropTarget != target) {
+        _pendingDropTarget = target;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Clears the drop-target indicator and cancels any pending nest-intent timer.
+  void clearDropTarget() {
+    _nestIntentTimer?.cancel();
+    _nestIntentTimer = null;
+    _pendingNestRowIndex = -1;
+    if (_pendingDropTarget == null) return;
+    _pendingDropTarget = null;
+    notifyListeners();
+  }
 
   /// The currently selected locale for date and time formatting.
   String _selectedLocale = 'en_US';
@@ -1253,7 +1344,12 @@ class GanttViewModel extends ChangeNotifier {
     return flatList;
   }
 
-  Future<void> reorderResources(int oldIndex, int newIndex) async {
+  Future<void> reorderResources(
+    int oldIndex,
+    int newIndex, {
+    DropIntent dropIntent = DropIntent.between,
+    String? dropTargetRowId,
+  }) async {
     if (!_useLocalDatabase) return;
 
     final flatList = flatGridData;
@@ -1339,25 +1435,25 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      // Heuristic for Parent:
-      // We prioritize UN-NESTING at boundaries to allow users to "drag out" items easily.
-      // 1. If dragging to the very bottom of the list (nextItem == null) -> Become Root.
-      // 2. If dragging immediately before a Root item -> Become Root (un-nest from previous group).
-      bool becomeRoot = false;
-      if (nextItem == null) {
-        becomeRoot = true;
-      } else if (nextItem['parentId'] == null) {
-        becomeRoot = true;
-      }
-
-      if (becomeRoot) {
-        newParentId = null;
-      } else if (prevItem['isExpanded'] == true) {
-        // If previous item is expanded, we become its first child
-        newParentId = prevItem['id'] as String;
+      // Parent resolution driven by the intent that was previewed to the user.
+      // If nesting, we use dropTargetRowId (the actual hovered row) directly
+      // rather than prevItem, since prevItem can be off-by-one when dragging upward.
+      if (dropIntent == DropIntent.inside) {
+        if (dropTargetRowId != null) {
+          newParentId = dropTargetRowId;
+        } else if (prevItem['isExpanded'] == true) {
+          newParentId = prevItem['id'] as String;
+        } else {
+          newParentId = prevItem['parentId'] as String?;
+        }
       } else {
-        // Otherwise we become its sibling (stay nested if prevItem is nested)
-        newParentId = prevItem['parentId'] as String?;
+        // between: sibling of the hovered row (inherits its parentId, enabling un-nesting).
+        if (dropTargetRowId != null) {
+          final targetItem = flatList.firstWhereOrNull((r) => r['id'] == dropTargetRowId);
+          newParentId = targetItem?['parentId'] as String?;
+        } else {
+          newParentId = prevItem['parentId'] as String?;
+        }
       }
 
       // Calculate Sort Order
