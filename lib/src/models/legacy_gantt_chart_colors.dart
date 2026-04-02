@@ -22,4 +22,35 @@ class LegacyGanttChartColors {
     required this.textColor,
     required this.backgroundColor,
   });
+
+  LegacyGanttChartColors copyWith({
+    Color? barColorPrimary,
+    Color? barColorSecondary,
+    Color? textColor,
+    Color? backgroundColor,
+  }) =>
+      LegacyGanttChartColors(
+        barColorPrimary: barColorPrimary ?? this.barColorPrimary,
+        barColorSecondary: barColorSecondary ?? this.barColorSecondary,
+        textColor: textColor ?? this.textColor,
+        backgroundColor: backgroundColor ?? this.backgroundColor,
+      );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is LegacyGanttChartColors &&
+        other.barColorPrimary == barColorPrimary &&
+        other.barColorSecondary == barColorSecondary &&
+        other.textColor == textColor &&
+        other.backgroundColor == backgroundColor;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        barColorPrimary,
+        barColorSecondary,
+        textColor,
+        backgroundColor,
+      );
 }

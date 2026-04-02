@@ -21,6 +21,7 @@ void main() {
       dependencies: [],
       projectTimezoneAbbreviation: 'EST',
       projectTimezoneOffset: const Duration(hours: -5),
+      resizeTooltipDateFormatString: 'MMM d HH:mm',
     );
 
     final time = DateTime.utc(2025, 12, 26, 20, 0);

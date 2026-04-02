@@ -541,17 +541,15 @@ class BarsCollectionPainter extends CustomPainter {
           }
 
           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
-            final bool isInConflict = conflictIndicators.any(
-              (indicator) =>
-                  indicator.rowId == task.rowId &&
-                  indicator.stackIndex == task.stackIndex &&
-                  indicator.start.isBefore(task.end) &&
-                  indicator.end.isAfter(task.start),
-            );
-
-            if (isInConflict) {
-              continue; // Skip drawing text for conflicted tasks
-            }
+            final overlappingConflicts = conflictIndicators
+                .where(
+                  (indicator) =>
+                      indicator.rowId == task.rowId &&
+                      indicator.stackIndex == task.stackIndex &&
+                      indicator.start.isBefore(task.end) &&
+                      indicator.end.isAfter(task.start),
+                )
+                .toList();
 
             final double overallWidth = max(0, taskEndX - taskStartX);
             final textSpan = TextSpan(text: task.name, style: theme.taskTextStyle);
@@ -565,10 +563,41 @@ class BarsCollectionPainter extends CustomPainter {
 
             final textOffset = Offset(taskStartX + 4, barTop + (rowHeight - textPainter.height) / 2);
 
+            // Layer 1: Base text (uses theme color, often black)
             canvas.save();
             canvas.clipRect(Rect.fromLTWH(taskStartX, barTop, overallWidth, rowHeight));
             textPainter.paint(canvas, textOffset);
             canvas.restore();
+
+            // Layer 2: White text over conflict indicators
+            if (overlappingConflicts.isNotEmpty) {
+              final whiteTextStyle = theme.taskTextStyle.copyWith(color: Colors.white);
+              final whiteTextSpan = TextSpan(text: task.name, style: whiteTextStyle);
+              final whiteTextPainter = TextPainter(
+                  text: whiteTextSpan,
+                  textAlign: TextAlign.left,
+                  textDirection: TextDirection.ltr,
+                  maxLines: 1,
+                  ellipsis: '...');
+              whiteTextPainter.layout(minWidth: 0, maxWidth: max(0, overallWidth - 8));
+
+              for (final conflict in overlappingConflicts) {
+                final conflictStartX = max(taskStartX, scale(conflict.start));
+                final conflictEndX = min(taskEndX, scale(conflict.end));
+                final conflictWidth = max(0.0, conflictEndX - conflictStartX);
+
+                if (conflictWidth > 0) {
+                  final indicatorHeight = barHeight * 0.4;
+                  final conflictTop = barTop + barVerticalCenterOffset + barHeight - indicatorHeight;
+
+                  canvas.save();
+                  // Clip to the conflict indicator's area (bottom 40% of the bar in the overlap range)
+                  canvas.clipRect(Rect.fromLTWH(conflictStartX, conflictTop, conflictWidth, indicatorHeight));
+                  whiteTextPainter.paint(canvas, textOffset);
+                  canvas.restore();
+                }
+              }
+            }
           }
         }
       }

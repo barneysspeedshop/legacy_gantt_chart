@@ -77,6 +77,15 @@ class LegacyGanttTheme {
   /// The color of the slack (float) bar.
   final Color slackBarColor;
 
+  /// The background color of the tooltip that appears during drag or resize operations.
+  final Color resizeTooltipBackgroundColor;
+
+  /// The font color of the tooltip that appears during drag or resize operations.
+  final Color resizeTooltipFontColor;
+
+  /// The date format string used in the resize tooltip (e.g., 'MMM d').
+  final String resizeTooltipDateFormat;
+
   LegacyGanttTheme({
     required this.barColorPrimary,
     required this.barColorSecondary,
@@ -101,6 +110,9 @@ class LegacyGanttTheme {
     this.criticalPathColor = const Color.fromRGBO(244, 67, 54, 1.0), // Colors.red
     this.nowLineColor = const Color.fromRGBO(244, 67, 54, 0.8), // Colors.red.withAlpha(0.8)
     this.slackBarColor = const Color.fromRGBO(0, 0, 0, 0.4), // Colors.black.withAlpha(0.4)
+    this.resizeTooltipBackgroundColor = const Color.fromRGBO(97, 97, 97, 0.9), // Colors.grey[700]
+    this.resizeTooltipFontColor = Colors.white,
+    this.resizeTooltipDateFormat = 'MMM d',
   }) : axisTextStyle = axisTextStyle ?? TextStyle(fontSize: 12, color: textColor);
 
   LegacyGanttTheme copyWith({
@@ -127,6 +139,9 @@ class LegacyGanttTheme {
     Color? criticalPathColor,
     Color? nowLineColor,
     Color? slackBarColor,
+    Color? resizeTooltipBackgroundColor,
+    Color? resizeTooltipFontColor,
+    String? resizeTooltipDateFormat,
   }) =>
       LegacyGanttTheme(
         barColorPrimary: barColorPrimary ?? this.barColorPrimary,
@@ -153,6 +168,9 @@ class LegacyGanttTheme {
         criticalPathColor: criticalPathColor ?? this.criticalPathColor,
         nowLineColor: nowLineColor ?? this.nowLineColor,
         slackBarColor: slackBarColor ?? this.slackBarColor,
+        resizeTooltipBackgroundColor: resizeTooltipBackgroundColor ?? this.resizeTooltipBackgroundColor,
+        resizeTooltipFontColor: resizeTooltipFontColor ?? this.resizeTooltipFontColor,
+        resizeTooltipDateFormat: resizeTooltipDateFormat ?? this.resizeTooltipDateFormat,
       );
 
   /// Creates a default theme based on the application's [ThemeData].
@@ -178,5 +196,8 @@ class LegacyGanttTheme {
         criticalPathColor: Colors.red, // Default critical path color
         nowLineColor: theme.brightness == Brightness.dark ? Colors.redAccent : theme.colorScheme.error,
         slackBarColor: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+        resizeTooltipBackgroundColor: theme.colorScheme.primary,
+        resizeTooltipFontColor: theme.colorScheme.onPrimary,
+        resizeTooltipDateFormat: 'MMM d',
       );
 }

@@ -30,27 +30,7 @@ enum TimelineAxisFormat {
   custom,
 }
 
-/// Whether a pending row drag-and-drop will place the item *between* rows or
-/// *inside* (i.e. nested under) a target row.
 enum DropIntent { between, inside }
-
-/// Describes where a row-reorder drag is currently targeting.
-class DropTarget {
-  /// The [id] of the row that is being targeted.
-  final String rowId;
-
-  /// Whether the item will be inserted *between* rows or nested *inside* this one.
-  final DropIntent intent;
-
-  const DropTarget(this.rowId, this.intent);
-
-  @override
-  bool operator ==(Object other) =>
-      other is DropTarget && other.rowId == rowId && other.intent == intent;
-
-  @override
-  int get hashCode => Object.hash(rowId, intent);
-}
 
 class GanttViewModel extends ChangeNotifier {
   final LocalGanttRepository _localRepository = LocalGanttRepository();
@@ -115,10 +95,128 @@ class GanttViewModel extends ChangeNotifier {
   /// The height of a single task lane within a row.
   final double rowHeight = 27.0;
 
-  // --- Drop-target state for row reorder drag feedback ---
-  DropTarget? _pendingDropTarget;
+  /// The currently selected locale for date and time formatting.
+  String _selectedLocale = 'en_US';
+
+  /// The format for labels on the timeline axis.
+  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth;
+
+  /// A function to format the date in the resize tooltip. This is updated by the view.
+  String Function(DateTime)? _resizeTooltipDateFormat;
+
+  /// The type of progress indicator to show during loading.
+  GanttLoadingIndicatorType _loadingIndicatorType = GanttLoadingIndicatorType.circular;
+
+  /// The position of the linear progress indicator.
+  GanttLoadingIndicatorPosition _loadingIndicatorPosition = GanttLoadingIndicatorPosition.top;
+
+  /// The start date for fetching schedule data.
+  DateTime _startDate = DateTime.now();
+
+  /// Default start and end times used when creating new tasks.
+  final TimeOfDay _defaultStartTime = const TimeOfDay(hour: 9, minute: 0);
+  final TimeOfDay _defaultEndTime = const TimeOfDay(hour: 17, minute: 0);
+
+  /// The number of days to fetch data for.
+  int _range = 14; // Default range for data fetching
+
+  /// The number of "persons" (parent rows) to generate in the sample data.
+  int _personCount = 10;
+
+  /// The number of "jobs" (child rows) to generate in the sample data.
+  int _jobCount = 16;
+
+  /// The start and end dates of the entire dataset.
+  DateTime? _totalStartDate;
+  DateTime? _totalEndDate;
+
+  /// The start and end dates of the currently visible window in the Gantt chart.
+  DateTime? _visibleStartDate;
+  DateTime? _visibleEndDate;
+
+  /// Padding added to the total date range to provide scrollable space at the edges of the timeline.
+  final Duration _ganttStartPadding = const Duration(days: 7);
+  final Duration _ganttEndPadding = const Duration(days: 7);
+
+  bool get showResourceHistogram => _showResourceHistogram;
+  void setShowResourceHistogram(bool value) {
+    if (_showResourceHistogram == value) return;
+    _showResourceHistogram = value;
+    notifyListeners();
+  }
+
+  bool get rollUpMilestones => _rollUpMilestones;
+  void setRollUpMilestones(bool value) {
+    if (_rollUpMilestones == value) return;
+    _rollUpMilestones = value;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setSyncClient(GanttSyncClient client) {
+    _syncClient = client;
+  }
+
+  bool get enableWorkCalendar => _enableWorkCalendar;
+  void setEnableWorkCalendar(bool value) {
+    if (_enableWorkCalendar == value) return;
+    _enableWorkCalendar = value;
+
+    if (_allGanttTasks.isNotEmpty) {
+      final updatedTasks = _allGanttTasks.map((t) => t.copyWith(usesWorkCalendar: value)).toList();
+      _allGanttTasks = updatedTasks;
+      _localRepository.insertTasks(updatedTasks); // Batch update local DB
+
+      _processLocalData();
+    }
+
+    notifyListeners();
+  }
+
+  WorkCalendar? get workCalendar => _enableWorkCalendar
+      ? WorkCalendar(
+          weekendDays: const {DateTime.saturday, DateTime.sunday},
+          holidays: {DateTime(DateTime.now().year, 12, 25)}, // Christmas for current year
+        )
+      : null;
+  /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
+  /// and to manage the horizontal scroll of the chart.
+  final ScrollController _gridScrollController = ScrollController();
+  final ScrollController _ganttScrollController = ScrollController();
+  final ScrollController _ganttHorizontalScrollController = ScrollController();
+
+  bool _areScrollListenersAttached = false;
+
+  /// The controller for the Gantt chart.
+  late final LegacyGanttController controller;
+
+  /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
+  bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
+
+  bool _isSyncingGridScroll = false;
+  bool _isSyncingGanttScroll = false;
+
+  /// A flag to indicate when data is being fetched.
+  bool _isLoading = true;
+
+  void _setLoading(bool vars) {
+    _isLoading = vars;
+    // ignore: invalid_use_of_protected_member
+    controller.setIsLoading(vars);
+  }
+
+  /// The ID of the task that currently has keyboard focus.
+  String? _focusedTaskId;
+  int _seedVersion = 0;
+  int get seedVersion => _seedVersion;
+  bool _pendingSeedReset = false;
+
+  OverlayEntry? _tooltipOverlay;
+  String? _hoveredTaskId;
+
   Timer? _nestIntentTimer;
   int _pendingNestRowIndex = -1;
+  DropTarget? _pendingDropTarget;
 
   /// The row and intent currently being hovered during a row drag-and-drop.
   /// Null when no drag is in progress.
@@ -183,125 +281,6 @@ class GanttViewModel extends ChangeNotifier {
     _pendingDropTarget = null;
     notifyListeners();
   }
-
-  /// The currently selected locale for date and time formatting.
-  String _selectedLocale = 'en_US';
-
-  /// The format for labels on the timeline axis.
-  TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.dayOfMonth;
-
-  /// A function to format the date in the resize tooltip. This is updated by the view.
-  String Function(DateTime)? _resizeTooltipDateFormat;
-
-  /// The type of progress indicator to show during loading.
-  GanttLoadingIndicatorType _loadingIndicatorType = GanttLoadingIndicatorType.circular;
-
-  /// The position of the linear progress indicator.
-  GanttLoadingIndicatorPosition _loadingIndicatorPosition = GanttLoadingIndicatorPosition.top;
-
-  /// The start date for fetching schedule data.
-  DateTime _startDate = DateTime.now();
-
-  /// Default start and end times used when creating new tasks.
-  final TimeOfDay _defaultStartTime = const TimeOfDay(hour: 9, minute: 0);
-  final TimeOfDay _defaultEndTime = const TimeOfDay(hour: 17, minute: 0);
-
-  /// The number of days to fetch data for.
-  int _range = 14; // Default range for data fetching
-
-  /// The number of "persons" (parent rows) to generate in the sample data.
-  int _personCount = 10;
-
-  /// The number of "jobs" (child rows) to generate in the sample data.
-  int _jobCount = 16;
-
-  /// The start and end dates of the entire dataset.
-  DateTime? _totalStartDate;
-  DateTime? _totalEndDate;
-
-  /// The start and end dates of the currently visible window in the Gantt chart.
-  DateTime? _visibleStartDate;
-  DateTime? _visibleEndDate;
-
-  /// Padding added to the total date range to provide scrollable space at the edges of the timeline.
-  final Duration _ganttStartPadding = const Duration(days: 7);
-  final Duration _ganttEndPadding = const Duration(days: 7);
-
-  /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
-  /// and to manage the horizontal scroll of the chart.
-  final ScrollController _ganttScrollController = ScrollController();
-
-  bool get showResourceHistogram => _showResourceHistogram;
-  void setShowResourceHistogram(bool value) {
-    if (_showResourceHistogram == value) return;
-    _showResourceHistogram = value;
-    notifyListeners();
-  }
-
-  bool get rollUpMilestones => _rollUpMilestones;
-  void setRollUpMilestones(bool value) {
-    if (_rollUpMilestones == value) return;
-    _rollUpMilestones = value;
-    notifyListeners();
-  }
-
-  @visibleForTesting
-  void setSyncClient(GanttSyncClient client) {
-    _syncClient = client;
-  }
-
-  bool get enableWorkCalendar => _enableWorkCalendar;
-  void setEnableWorkCalendar(bool value) {
-    if (_enableWorkCalendar == value) return;
-    _enableWorkCalendar = value;
-
-    if (_allGanttTasks.isNotEmpty) {
-      final updatedTasks = _allGanttTasks.map((t) => t.copyWith(usesWorkCalendar: value)).toList();
-      _allGanttTasks = updatedTasks;
-      _localRepository.insertTasks(updatedTasks); // Batch update local DB
-
-      _processLocalData();
-    }
-
-    notifyListeners();
-  }
-
-  WorkCalendar? get workCalendar => _enableWorkCalendar
-      ? WorkCalendar(
-          weekendDays: const {DateTime.saturday, DateTime.sunday},
-          holidays: {DateTime(DateTime.now().year, 12, 25)}, // Christmas for current year
-        )
-      : null;
-  final ScrollController _gridScrollController = ScrollController();
-  final ScrollController _ganttHorizontalScrollController = ScrollController();
-
-  bool _isSyncingGridScroll = false;
-  bool _isSyncingGanttScroll = false;
-  bool _areScrollListenersAttached = false;
-
-  /// The controller for the Gantt chart.
-  late final LegacyGanttController controller;
-
-  /// A flag to prevent a feedback loop between the timeline scrubber and the horizontal scroll controller.
-  bool _isScrubberUpdating = false; // Prevents feedback loop between scroller and scrubber
-
-  /// A flag to indicate when data is being fetched.
-  bool _isLoading = true;
-
-  void _setLoading(bool vars) {
-    _isLoading = vars;
-    // ignore: invalid_use_of_protected_member
-    controller.setIsLoading(vars);
-  }
-
-  /// The ID of the task that currently has keyboard focus.
-  String? _focusedTaskId;
-  int _seedVersion = 0;
-  int get seedVersion => _seedVersion;
-  bool _pendingSeedReset = false;
-
-  OverlayEntry? _tooltipOverlay;
-  String? _hoveredTaskId;
 
   final GanttScheduleService _scheduleService = GanttScheduleService();
   GanttResponse? get apiResponse => _apiResponse;
@@ -991,7 +970,7 @@ class GanttViewModel extends ChangeNotifier {
         start: milestoneDate,
         end: milestoneDate, // start and end are the same for a milestone
         isMilestone: true,
-        color: Colors.deepPurple, // Give it a distinct color
+        color: null, // Default to theme
         parentId: parentTask?.id,
       );
       tasks.add(milestone);
@@ -1345,19 +1324,27 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> reorderResources(
-    int oldIndex,
-    int newIndex, {
+    String draggedId,
+    String? targetId,
+    bool isAfter, {
     DropIntent dropIntent = DropIntent.between,
     String? dropTargetRowId,
   }) async {
     if (!_useLocalDatabase) return;
 
     final flatList = flatGridData;
-    if (oldIndex < 0 || oldIndex >= flatList.length) return;
+    final oldIndex = flatList.indexWhere((item) => item['id'] == draggedId);
+    if (oldIndex < 0) return;
 
-    // Adjust newIndex if dragging downwards
-    int effectiveNewIndex = newIndex;
-    if (oldIndex < newIndex) {
+    int targetIndex = targetId != null ? flatList.indexWhere((item) => item['id'] == targetId) : -1;
+    int effectiveNewIndex;
+    if (targetId == null) {
+      effectiveNewIndex = flatList.length;
+    } else {
+      effectiveNewIndex = isAfter ? targetIndex + 1 : targetIndex;
+    }
+
+    if (oldIndex < effectiveNewIndex) {
       effectiveNewIndex -= 1;
     }
 
@@ -1367,175 +1354,115 @@ class GanttViewModel extends ChangeNotifier {
     final movedItem = flatList[oldIndex];
     final movedId = movedItem['id'] as String;
 
-    // Determines the new parent and neighbor based on the target position
+    // Simulate removal to find correct neighbors
+    final simulatedList = List<Map<String, dynamic>>.from(flatList);
+    simulatedList.removeAt(oldIndex);
+
+    // Determine target index in simulated list
+    if (effectiveNewIndex > simulatedList.length) effectiveNewIndex = simulatedList.length;
+
+    final prevItem = effectiveNewIndex > 0 ? simulatedList[effectiveNewIndex - 1] : null;
+    final nextItem = effectiveNewIndex < simulatedList.length ? simulatedList[effectiveNewIndex] : null;
+
+    // Prevent dropping a parent into its own descendants
+    if (movedItem['isExpanded'] == true) {
+      bool isDescendant = false;
+      String? currentAncestorId = prevItem?['parentId'] as String?;
+      while (currentAncestorId != null) {
+        if (currentAncestorId == movedId) {
+          isDescendant = true;
+          break;
+        }
+        final parentMap = flatList.firstWhere(
+          (element) => element['id'] == currentAncestorId,
+          orElse: () => {},
+        );
+        if (parentMap.isEmpty) break;
+        currentAncestorId = parentMap['parentId'] as String?;
+      }
+      if (isDescendant) return;
+    }
+
     String? newParentId;
+    // Parent resolution driven by the intent that was previewed to the user.
+    // If nesting, we use dropTargetRowId (the actual hovered row) directly
+    // rather than prevItem, since prevItem can be off-by-one when dragging upward.
+    if (dropIntent == DropIntent.inside) {
+      if (dropTargetRowId != null) {
+        newParentId = dropTargetRowId;
+      } else if (prevItem?['isExpanded'] == true) {
+        newParentId = prevItem?['id'] as String;
+      } else {
+        newParentId = prevItem?['parentId'] as String?;
+      }
+    } else {
+      // between: sibling of the hovered row (inherits its parentId, enabling un-nesting).
+      if (dropTargetRowId != null) {
+        final targetItem = flatList.firstWhereOrNull((r) => r['id'] == dropTargetRowId);
+        newParentId = targetItem?['parentId'] as String?;
+      } else {
+        newParentId = prevItem?['parentId'] as String?;
+      }
+    }
+
+    // Sort order logic
     double? prevSortOrder;
     double? nextSortOrder;
 
-    // Logic:
-    // - If we drop at index 0, we become the very first item (root level).
-    // - If we drop at index i, we are "after" item at i-1.
-    // - We adopt parent logic of item at i-1 unless it is expanded.
+    Future<double> ensureSortOrder(Map<String, dynamic> item, int listIndex) async {
+      if (item['sortOrder'] != null) return item['sortOrder'] as double;
+      final newOrder = listIndex * 10000.0;
+      final resId = item['id'] as String;
+      final resource = _localResources.firstWhereOrNull((r) => r.id == resId);
+      if (resource != null) {
+        await _localRepository.updateResource(resource.copyWith(
+          sortOrder: newOrder,
+        ));
+      }
+      return newOrder;
+    }
 
     if (effectiveNewIndex == 0) {
-      // Placing at the start
-      newParentId = null;
-      // Get sort order of the item that is currently at 0 (now becoming 1)
-      // Note: If we are effectively moving it, we should look at the list logic *after removal*.
-
-      // Better simulation:
-      final simulatedList = List<Map<String, dynamic>>.from(flatList);
-      simulatedList.removeAt(oldIndex);
-      // Determine neighbors in simulated list
-      // Target index is newIndex.
-      final nextItem = simulatedList.isNotEmpty ? simulatedList[0] : null;
-
       if (nextItem != null) {
-        // We go before nextItem
-        nextSortOrder = nextItem['sortOrder'] as double?;
-        prevSortOrder = nextSortOrder != null ? nextSortOrder - 2.0 : 0.0;
+        nextSortOrder = await ensureSortOrder(nextItem, 0);
+        prevSortOrder = nextSortOrder - 1000.0;
       } else {
         prevSortOrder = 0.0;
       }
     } else {
-      // Simulate removal to find correct neighbors
-      final simulatedList = List<Map<String, dynamic>>.from(flatList);
-      simulatedList.removeAt(oldIndex);
-
-      // We are inserting at newIndex in the simulatedList
-      // Check boundaries
-      if (effectiveNewIndex > simulatedList.length) effectiveNewIndex = simulatedList.length;
-
-      final prevItem = simulatedList[effectiveNewIndex - 1];
-      final nextItem = effectiveNewIndex < simulatedList.length ? simulatedList[effectiveNewIndex] : null;
-
-      // Prevent dropping a parent into its own descendants (no-op)
-      // This forces the user to drag *past* the entire block of children to move the parent.
-      if (movedItem['isExpanded'] == true) {
-        bool isDescendant = false;
-        String? currentAncestorId = prevItem['parentId'] as String?;
-        // Walk up the ancestry of prevItem
-        while (currentAncestorId != null) {
-          if (currentAncestorId == movedId) {
-            isDescendant = true;
-            break;
-          }
-          // Find the parent object in the list
-          final parentMap = flatList.firstWhere(
-            (element) => element['id'] == currentAncestorId,
-            orElse: () => {},
-          );
-          if (parentMap.isEmpty) break; // Should not happen in a consistent tree
-          currentAncestorId = parentMap['parentId'] as String?;
-        }
-
-        if (isDescendant) {
-          // Dropped inside own children block. No-op.
-          return;
-        }
+      prevSortOrder = await ensureSortOrder(prevItem!, effectiveNewIndex - 1);
+      if (nextItem != null) {
+        nextSortOrder = await ensureSortOrder(nextItem, effectiveNewIndex);
       }
+    }
 
-      // Parent resolution driven by the intent that was previewed to the user.
-      // If nesting, we use dropTargetRowId (the actual hovered row) directly
-      // rather than prevItem, since prevItem can be off-by-one when dragging upward.
-      if (dropIntent == DropIntent.inside) {
-        if (dropTargetRowId != null) {
-          newParentId = dropTargetRowId;
-        } else if (prevItem['isExpanded'] == true) {
-          newParentId = prevItem['id'] as String;
-        } else {
-          newParentId = prevItem['parentId'] as String?;
-        }
-      } else {
-        // between: sibling of the hovered row (inherits its parentId, enabling un-nesting).
-        if (dropTargetRowId != null) {
-          final targetItem = flatList.firstWhereOrNull((r) => r['id'] == dropTargetRowId);
-          newParentId = targetItem?['parentId'] as String?;
-        } else {
-          newParentId = prevItem['parentId'] as String?;
-        }
-      }
-
-      // Calculate Sort Order
-      // To handle insertion into "Unsorted" (NULL sortOrder) blocks, we must lazily initialize
-      // the sortOrder of neighbors if they are missing.
-
-      // Helper to update neighbor if needed
-      Future<double> ensureSortOrder(Map<String, dynamic> item, int listIndex) async {
-        if (item['sortOrder'] != null) return item['sortOrder'] as double;
-        // Logic: Use Index * large_step to maintain relative order within the unsorted block
-        // while making it smaller than the "NULL=100M" default.
-        final newOrder = listIndex * 10000.0;
-
-        final resId = item['id'] as String;
-        final resource = _localResources.firstWhereOrNull((r) => r.id == resId);
-        if (resource != null) {
-          await _localRepository.updateResource(resource.copyWith(
-            sortOrder: newOrder,
-            lastUpdated: _currentHlc,
-          ));
-        }
-        return newOrder;
-      }
-
-      if (effectiveNewIndex == 0) {
-        // Start of list
-        if (nextItem != null) {
-          nextSortOrder = await ensureSortOrder(nextItem, 0);
-          prevSortOrder = nextSortOrder - 1000.0;
-        } else {
-          // Empty list?
-          prevSortOrder = 0.0;
-          nextSortOrder = null;
-        }
-      } else {
-        // Between items or end
-        final prevIdx = effectiveNewIndex - 1;
-        prevSortOrder = await ensureSortOrder(prevItem, prevIdx);
-
-        if (nextItem != null) {
-          final nextIdx = effectiveNewIndex;
-          nextSortOrder = await ensureSortOrder(nextItem, nextIdx);
-        } else {
-          nextSortOrder = null;
-        }
-      }
-
-      // fallback for sort orders
-      double finalSortOrder;
-      if (nextSortOrder != null) {
-        if (nextSortOrder <= prevSortOrder) {
-          // Should not happen in correctly sorted list, but handle it
-          finalSortOrder = prevSortOrder + 1.0;
-        } else {
-          finalSortOrder = (prevSortOrder + nextSortOrder) / 2.0;
-        }
-      } else {
+    double finalSortOrder;
+    if (nextSortOrder != null) {
+      if (nextSortOrder <= prevSortOrder) {
         finalSortOrder = prevSortOrder + 1.0;
+      } else {
+        finalSortOrder = (prevSortOrder + nextSortOrder) / 2.0;
+      }
+    } else {
+      finalSortOrder = prevSortOrder + 1.0;
+    }
+
+    final resource = _localResources.firstWhereOrNull((r) => r.id == movedId);
+    if (resource != null) {
+      final updatedResource = resource.copyWith(
+        parentId: newParentId,
+        sortOrder: finalSortOrder,
+      );
+
+      final index = _localResources.indexWhere((r) => r.id == movedId);
+      if (index != -1) {
+        _localResources[index] = updatedResource;
+        _localResources.sort((a, b) => (a.sortOrder ?? 0).compareTo(b.sortOrder ?? 0));
       }
 
-      // Update LocalResource
-      final resource = _localResources.firstWhereOrNull((r) => r.id == movedId);
-      if (resource != null) {
-        final updatedResource = LocalResource(
-            id: resource.id,
-            name: resource.name,
-            parentId: newParentId,
-            isExpanded: resource.isExpanded,
-            lastUpdated: Hlc.fromDate(DateTime.now(), 'local-user'),
-            sortOrder: finalSortOrder);
-
-        // Optimistic update
-        final index = _localResources.indexWhere((r) => r.id == movedId);
-        if (index != -1) {
-          _localResources[index] = updatedResource;
-          // Re-sort local resources to reflect change immediately?
-          _localResources.sort((a, b) => (a.sortOrder ?? 0).compareTo(b.sortOrder ?? 0));
-        }
-
-        await _processLocalData(); // Rebuild grid
-        await _localRepository.insertOrUpdateResource(updatedResource);
-      }
+      await _processLocalData();
+      await _localRepository.insertOrUpdateResource(updatedResource);
+      notifyListeners();
     }
   }
 
@@ -1581,58 +1508,54 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
-  /// Attaches the vertical scroll listeners. This should be called after the
-  /// widgets using the controllers have been built.
-  void attachScrollListeners() {
-    if (_areScrollListenersAttached) return;
-    _gridScrollController.addListener(_syncGanttScroll);
-    _ganttScrollController.addListener(_syncGridScroll);
-    _gridScrollController.addListener(_broadcastPresence);
+  /// Adds a new resource as a child of the given parent.
+  Future<void> addResource(String parentId, [String? parentName]) async {
+    if (!_useLocalDatabase) return;
 
-    _areScrollListenersAttached = true;
-  }
+    // Create a new resource as a child
+    final newId = 'res_${DateTime.now().millisecondsSinceEpoch}';
+    final newResource = LocalResource(
+      id: newId,
+      name: 'New Item (under ${parentName ?? parentId})',
+      parentId: parentId,
+      isExpanded: false,
+      sortOrder: (DateTime.now().millisecondsSinceEpoch % 1000000).toDouble(),
+    );
 
-  void _calculateCpm() {
-    if (!_showCriticalPath) {
-      _cpmStats = {};
-      return;
-    }
-    final calculator = CriticalPathCalculator();
-    final result = calculator.calculate(tasks: _ganttTasks, dependencies: _dependencies);
-    _cpmStats = result.taskStats;
-  }
-
-  Map<String, CpmTaskStats> get cpmStats => _cpmStats;
-
-  void setShowCriticalPath(bool value) {
-    if (_showCriticalPath == value) return;
-    _showCriticalPath = value;
-    _calculateCpm();
+    await _localRepository.insertOrUpdateResource(newResource);
+    await _processLocalData();
     notifyListeners();
   }
 
-  void _syncGanttScroll() {
-    if (_isSyncingGanttScroll) return;
-    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
-
-    _isSyncingGridScroll = true;
-    if (_ganttScrollController.offset != _gridScrollController.offset) {
-      _gridScrollController.jumpTo(_ganttScrollController.offset);
+  void setSelectedRowId(String? rowId) {
+    // Selection logic handled via _focusedTaskId if we want it synced
+    final task = _ganttTasks.firstWhereOrNull((t) => t.rowId == rowId);
+    if (task != null) {
+      setFocusedTaskId(task.id);
     }
-    _isSyncingGridScroll = false;
-    _broadcastPresence(); // Broadcast vertical scroll change
+    notifyListeners();
   }
 
-  void _syncGridScroll() {
-    if (_isSyncingGridScroll) return;
-    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
+  Future<void> handleCreateTask(String rowId, DateTime time) async {
+    if (!_createTasksEnabled) return;
+    final endTime = time.add(const Duration(hours: 1));
+    final newTask = LegacyGanttTask(
+      id: 'task_${DateTime.now().millisecondsSinceEpoch}',
+      rowId: rowId,
+      start: time,
+      end: endTime,
+      name: 'New Task',
+    );
+    await updateTask(newTask);
+  }
 
-    _isSyncingGanttScroll = true;
-    if (_gridScrollController.offset != _ganttScrollController.offset) {
-      _ganttScrollController.jumpTo(_gridScrollController.offset);
-    }
-    _isSyncingGanttScroll = false;
-    _broadcastPresence(); // Broadcast vertical scroll change
+  /// Deletes a resource and its associated tasks.
+  Future<void> deleteResource(String id) async {
+    if (!_useLocalDatabase) return;
+
+    await _localRepository.deleteResource(id, _currentHlc);
+    await _processLocalData();
+    notifyListeners();
   }
 
   @override
@@ -1641,13 +1564,8 @@ class GanttViewModel extends ChangeNotifier {
     _tasksSubscription?.cancel();
     _dependenciesSubscription?.cancel();
     _resourcesSubscription?.cancel();
-    if (_syncClient is OfflineGanttSyncClient) {
-      (_syncClient as OfflineGanttSyncClient).dispose();
-    } else if (_syncClient is WebSocketGanttSyncClient) {
-      (_syncClient as WebSocketGanttSyncClient).dispose();
-    }
-    _gridScrollController.removeListener(_syncGanttScroll);
-    _ganttScrollController.removeListener(_syncGridScroll);
+    _gridScrollController.removeListener(_syncGridScroll);
+    _ganttScrollController.removeListener(_syncGanttScroll);
     _gridScrollController.dispose();
     _ganttScrollController.dispose();
     _ganttHorizontalScrollController.removeListener(_onGanttScroll);
@@ -1668,7 +1586,7 @@ class GanttViewModel extends ChangeNotifier {
         debugPrint('Error waiting for seeding during dispose: $e');
       }
     }
-
+ 
     await _tasksSubscription?.cancel();
     await _dependenciesSubscription?.cancel();
     await _resourcesSubscription?.cancel();
@@ -1677,13 +1595,70 @@ class GanttViewModel extends ChangeNotifier {
     } else if (_syncClient is WebSocketGanttSyncClient) {
       await (_syncClient as WebSocketGanttSyncClient).dispose();
     }
-    _gridScrollController.removeListener(_syncGanttScroll);
-    _ganttScrollController.removeListener(_syncGridScroll);
+    _gridScrollController.removeListener(_broadcastPresence);
     _gridScrollController.dispose();
     _ganttScrollController.dispose();
     _ganttHorizontalScrollController.removeListener(_onGanttScroll);
     _ganttHorizontalScrollController.dispose();
     super.dispose();
+  }
+
+  Map<String, CpmTaskStats> get cpmStats => _cpmStats;
+
+  void setShowCriticalPath(bool value) {
+    if (_showCriticalPath == value) return;
+    _showCriticalPath = value;
+    _calculateCpm();
+    notifyListeners();
+  }
+
+  /// Attaches the vertical scroll listeners. This should be called after the
+  /// widgets using the controllers have been built.
+  void attachScrollListeners() {
+    if (_areScrollListenersAttached) return;
+    _gridScrollController.addListener(_syncGridScroll);
+    _ganttScrollController.addListener(_syncGanttScroll);
+    _areScrollListenersAttached = true;
+  }
+
+  void _syncGanttScroll() {
+    if (_isSyncingGanttScroll) return;
+    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
+
+    _isSyncingGridScroll = true;
+    try {
+      if (_ganttScrollController.offset != _gridScrollController.offset) {
+        _gridScrollController.jumpTo(_ganttScrollController.offset);
+      }
+    } finally {
+      _isSyncingGridScroll = false;
+    }
+    _broadcastPresence(); // Broadcast vertical scroll change
+  }
+
+  void _syncGridScroll() {
+    if (_isSyncingGridScroll) return;
+    if (!_ganttScrollController.hasClients || !_gridScrollController.hasClients) return;
+
+    _isSyncingGanttScroll = true;
+    try {
+      if (_gridScrollController.offset != _ganttScrollController.offset) {
+        _ganttScrollController.jumpTo(_gridScrollController.offset);
+      }
+    } finally {
+      _isSyncingGanttScroll = false;
+    }
+    _broadcastPresence(); // Broadcast vertical scroll change
+  }
+
+  void _calculateCpm() {
+    if (!_showCriticalPath) {
+      _cpmStats = {};
+      return;
+    }
+    final calculator = CriticalPathCalculator();
+    final result = calculator.calculate(tasks: _ganttTasks, dependencies: _dependencies);
+    _cpmStats = result.taskStats;
   }
 
   void setGridWidth(double? value) {
@@ -1787,11 +1762,9 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateResizeTooltipDateFormat(String Function(DateTime)? newFormat) {
-    if (_resizeTooltipDateFormat != newFormat) {
-      _resizeTooltipDateFormat = newFormat;
-      notifyListeners();
-    }
+  void updateResizeTooltipDateFormat(String Function(DateTime) format) {
+    _resizeTooltipDateFormat = format;
+    notifyListeners();
   }
 
   /// Sets the currently focused task and notifies listeners.
@@ -1883,7 +1856,7 @@ class GanttViewModel extends ChangeNotifier {
           start: milestoneDate,
           end: milestoneDate,
           isMilestone: true,
-          color: Colors.deepPurple,
+          color: null,
         );
         _ganttTasks.add(milestone);
       }
@@ -1998,8 +1971,7 @@ class GanttViewModel extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (effectiveTotalStartDate != null &&
           _ganttHorizontalScrollController.hasClients &&
-          effectiveTotalEndDate != null &&
-          _ganttHorizontalScrollController.hasClients) {
+          effectiveTotalEndDate != null) {
         final totalDataDuration = effectiveTotalEndDate!.difference(effectiveTotalStartDate!).inMilliseconds;
         if (totalDataDuration <= 0) return;
 
@@ -2031,7 +2003,12 @@ class GanttViewModel extends ChangeNotifier {
   /// It calculates the new visible date window based on the scroll offset and updates
   /// the state, which in turn updates the position of the window on the timeline scrubber.
   void _onGanttScroll() {
-    if (_isScrubberUpdating || effectiveTotalStartDate == null || effectiveTotalEndDate == null) return;
+    if (_isScrubberUpdating ||
+        effectiveTotalStartDate == null ||
+        effectiveTotalEndDate == null ||
+        !_ganttHorizontalScrollController.hasClients) {
+      return;
+    }
 
     final position = _ganttHorizontalScrollController.position;
     final totalGanttWidth = position.maxScrollExtent + position.viewportDimension;
@@ -3014,6 +2991,79 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  Future<void> handleTaskMove(LegacyGanttTask task, DateTime newStart, DateTime newEnd, String newRowId) async {
+    if (_useLocalDatabase) {
+      final updatedTask = task.copyWith(
+        start: newStart,
+        end: newEnd,
+        rowId: newRowId,
+        lastUpdated: _currentHlc,
+      );
+      await _localRepository.insertOrUpdateTask(updatedTask);
+
+      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        _allGanttTasks[index] = updatedTask;
+
+        if (_apiResponse != null) {
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
+              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+        }
+      }
+    }
+
+    if (!_useLocalDatabase) {
+      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
+      if (index != -1) {
+        _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd, rowId: newRowId);
+
+        if (_apiResponse != null) {
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
+              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+        }
+      }
+    }
+  }
+
+  void handleTaskTap(String taskId) {
+    setFocusedTaskId(taskId);
+  }
+
+  void handleTaskDoubleTap(String taskId) {
+    // Navigate or show dialog - handled by UI via listeners if needed
+  }
+
+  void handleEmptySpaceTap(String rowId, DateTime time) {
+    if (_createTasksEnabled) {
+      final newTask = LegacyGanttTask(
+        id: 'new_${DateTime.now().millisecondsSinceEpoch}',
+        rowId: rowId,
+        name: 'New Task',
+        start: time,
+        end: time.add(const Duration(hours: 4)),
+      );
+
+      if (_useLocalDatabase) {
+        _localRepository.insertOrUpdateTask(newTask);
+      }
+
+      _allGanttTasks.add(newTask);
+      _recalculateStackingAndNotify();
+    }
+  }
+
+  void handleDependencyCreated(LegacyGanttTaskDependency dependency) {
+    if (_dependencyCreationEnabled) {
+      _dependencies.add(dependency);
+      if (_useLocalDatabase) {
+        _localRepository.insertOrUpdateDependency(dependency);
+      }
+      _recalculateStackingAndNotify();
+    }
+  }
+
   Future<void> handleBatchTaskUpdate(List<(LegacyGanttTask, DateTime, DateTime)> updates) async {
     debugPrint(
         '${DateTime.now().toIso8601String()} GanttViewModel: handleBatchTaskUpdate received ${updates.length} updates');
@@ -3121,7 +3171,7 @@ class GanttViewModel extends ChangeNotifier {
       name: 'New Task',
       start: start,
       end: end,
-      color: Colors.blue, // Default color
+      color: null, // Default color
       isSummary: false,
       usesWorkCalendar: _enableWorkCalendar,
     );
@@ -3339,7 +3389,7 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// Toggles the expanded/collapsed state of a parent row in the grid.
-  void toggleExpansion(String id) {
+  void toggleExpansion(String id, [bool? isExpanded]) {
     GanttGridData? findItem(List<GanttGridData> items) {
       final stack = [...items];
       while (stack.isNotEmpty) {
@@ -3373,7 +3423,7 @@ class GanttViewModel extends ChangeNotifier {
       if (currentOffset >= predictedNewMaxScroll) {
         _gridScrollController.jumpTo(predictedNewMaxScroll);
         _ganttScrollController.jumpTo(predictedNewMaxScroll);
-        item.isExpanded = !item.isExpanded;
+        item.isExpanded = isExpanded ?? !item.isExpanded;
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
         }
@@ -4325,4 +4375,19 @@ class _EditNameDialogState extends State<_EditNameDialog> {
           TextButton(onPressed: _save, child: const Text('Save')),
         ],
       );
+}
+
+class DropTarget {
+  final String rowId;
+  final DropIntent intent;
+
+  DropTarget(this.rowId, this.intent);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DropTarget && runtimeType == other.runtimeType && rowId == other.rowId && intent == other.intent;
+
+  @override
+  int get hashCode => rowId.hashCode ^ intent.hashCode;
 }

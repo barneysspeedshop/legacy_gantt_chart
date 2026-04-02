@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
@@ -167,6 +168,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// A function to format the date/time shown in the resize/drag tooltip.
   String Function(DateTime)? resizeTooltipDateFormat;
+
+  /// A format string for the date/time shown in the resize/drag tooltip.
+  /// Used if [resizeTooltipDateFormat] is null.
+  String resizeTooltipDateFormatString;
 
   /// A builder for creating a completely custom task bar widget.
   final Widget Function(LegacyGanttTask task)? taskBarBuilder;
@@ -475,6 +480,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.taskGrouper,
     this.onSelectionChanged,
     this.onBulkTaskUpdate,
+    this.resizeTooltipDateFormatString = 'MMM d',
     WorkCalendar? workCalendar,
     bool rollUpMilestones = false,
     bool showSlack = false,
@@ -708,6 +714,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  void updateResizeTooltipDateFormatString(String newFormatString) {
+    if (resizeTooltipDateFormatString != newFormatString) {
+      resizeTooltipDateFormatString = newFormatString;
+      if (!isDisposed) notifyListeners();
+    }
+  }
+
   /// Updates the list of dependencies and notifies listeners to trigger a repaint.
   void updateData(List<LegacyGanttTask> data) {
     if (_dragMode != DragMode.none && data.isEmpty && _tasks.isNotEmpty) {
@@ -880,6 +893,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DateTime? _ghostTaskStart;
   DateTime? _ghostTaskEnd;
   String? _ghostTaskRowId;
+  int? _ghostTaskStackIndex;
   final Map<String, (DateTime, DateTime)> _bulkGhostTasks = {};
 
   /// Detailed ghost task positions during a bulk drag operation.
@@ -1065,6 +1079,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   /// The projected row of the task being dragged.
   String? get ghostTaskRowId => _ghostTaskRowId;
+  int? get ghostTaskStackIndex => _ghostTaskStackIndex;
 
   /// The full date range of the chart, from `totalGridMin` to `totalGridMax`.
   List<DateTime> get totalDomain => _totalDomain;
@@ -1450,16 +1465,48 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final draggedTask = _draggedTask;
     if (draggedTask == null) {
       _ghostTaskRowId = null;
+      _ghostTaskStackIndex = null;
       return;
     }
 
     if (!_canMoveDraggedTaskAcrossRows) {
       _ghostTaskRowId = draggedTask.rowId;
+      _ghostTaskStackIndex = draggedTask.stackIndex;
       return;
     }
 
     final (rowId, _) = _getRowAndTimeAtPosition(localPosition);
     _ghostTaskRowId = rowId ?? _ghostTaskRowId ?? draggedTask.rowId;
+
+    if (_ghostTaskStart != null && _ghostTaskEnd != null) {
+      _ghostTaskStackIndex = _calculateProjectedStackIndex(
+        _ghostTaskRowId!,
+        _ghostTaskStart!,
+        _ghostTaskEnd!,
+        draggedTask.id,
+      );
+    } else {
+      _ghostTaskStackIndex = 0;
+    }
+  }
+
+  int _calculateProjectedStackIndex(String rowId, DateTime start, DateTime end, String draggedTaskId) {
+    final tasksInRow =
+        _tasks.where((t) => t.rowId == rowId && t.id != draggedTaskId && !t.isTimeRangeHighlight).toList();
+    if (tasksInRow.isEmpty) return 0;
+
+    final occupiedIndices = <int>{};
+    for (final task in tasksInRow) {
+      if (task.start.isBefore(end) && task.end.isAfter(start)) {
+        occupiedIndices.add(task.stackIndex);
+      }
+    }
+
+    int index = 0;
+    while (occupiedIndices.contains(index)) {
+      index++;
+    }
+    return index;
   }
 
   void _commitBulkUpdates() {
@@ -2405,7 +2452,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     setTranslateY(clampedTranslateY);
     _isScrollingInternally = true;
-    scrollController?.jumpTo(-clampedTranslateY);
+    if (scrollController != null && scrollController!.hasClients) {
+      scrollController!.jumpTo(-clampedTranslateY);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _isScrollingInternally = false);
   }
 
@@ -2662,22 +2711,18 @@ class LegacyGanttViewModel extends ChangeNotifier {
   String formatDateTimeWithTimezoneForTest(DateTime dateTime) => _formatDateTimeWithTimezone(dateTime);
 
   String _formatDateTimeWithTimezone(DateTime dateTime) {
-    final localTime = dateTime.toLocal();
-    final localStr = resizeTooltipDateFormat != null
-        ? resizeTooltipDateFormat!(localTime)
-        : localTime.toIso8601String().substring(0, 16);
-
-    if (projectTimezoneOffset != null) {
-      final projectTime = dateTime.toUtc().add(projectTimezoneOffset!);
-      final projectStr = resizeTooltipDateFormat != null
-          ? resizeTooltipDateFormat!(projectTime)
-          : projectTime.toIso8601String().substring(0, 16);
-
-      final tzAbbr = projectTimezoneAbbreviation ?? 'Project';
-      return "${localStr.replaceAll(' ', '\u00A0')}\u00A0(Local)\n${projectStr.replaceAll(' ', '\u00A0')}\u00A0($tzAbbr)";
+    if (resizeTooltipDateFormat != null) {
+      return resizeTooltipDateFormat!(dateTime);
     }
 
-    return localStr.replaceAll(' ', '\u00A0');
+    final String localDateTimeString = DateFormat(resizeTooltipDateFormatString).format(dateTime);
+
+    if (projectTimezoneOffset != null && projectTimezoneAbbreviation != null) {
+      final projectTime = dateTime.add(projectTimezoneOffset!);
+      final projectDateTimeString = DateFormat(resizeTooltipDateFormatString).format(projectTime);
+      return '$localDateTimeString (Local) / $projectDateTimeString (${projectTimezoneAbbreviation!})';
+    }
+    return localDateTimeString;
   }
 
   DateTime? _parseDate(dynamic value) {

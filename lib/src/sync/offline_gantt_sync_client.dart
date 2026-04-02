@@ -4,7 +4,6 @@ import 'package:synchronized/synchronized.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'websocket_gantt_sync_client.dart';
-import '../utils/json_isolate.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
   WebSocketGanttSyncClient? _innerClient;
@@ -128,7 +127,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       final count = result.firstOrNull?['COUNT(*)'] as int? ?? result.firstOrNull?.values.first as int? ?? 0;
       _outboundPendingCountController.add(count);
     } catch (e) {
-      print('Error updating pending count: $e');
+      print('OfflineClient: Error updating pending count: $e');
     }
   }
 
@@ -146,11 +145,14 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> _performFlush() async {
-    if (!_isConnected || _innerClient == null) {
-      return;
-    }
+    print('OfflineClient: Starting flush perform...');
+    while (true) {
+      // Re-check conditions at start of each iteration
+      if (!_isConnected || _innerClient == null) {
+        print('OfflineClient: Not connected or no inner client, stopping flush.');
+        break;
+      }
 
-    while (_isConnected && _innerClient != null) {
       if (!_isDbReady) {
         await _dbInitFuture;
       }
@@ -160,81 +162,82 @@ class OfflineGanttSyncClient implements GanttSyncClient {
         rows = await _lock.synchronized(
             () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'));
       } catch (e) {
-        rows = await _lock.synchronized(() => _db.query('SELECT * FROM offline_queue ORDER BY id ASC LIMIT 500'));
+        print('OfflineClient: Error querying queue: $e');
+        break;
       }
 
-      if (rows.isEmpty) break;
-
-      print('Flushing ${rows.length} offline operations...');
+      if (rows.isEmpty) {
+        print('OfflineClient: Queue is empty, breaking flush.');
+        break;
+      }
+      print('OfflineClient: Found ${rows.length} rows to flush.');
 
       final opsToSend = <Operation>[];
       final idsToDelete = <int>[];
 
       for (final row in rows) {
-        if (!_isConnected || _innerClient == null) break;
+        // We don't break mid-batch processing for connectivity, 
+        // but we verify innerClient still exists.
+        if (_innerClient == null) break;
 
         final id = row['id'] as int;
         try {
-          final dataDynamic = await decodeJsonInBackground(row['data'] as String);
-          if (dataDynamic == null) {
-            print('Skipping queued op with null data: $id');
-            idsToDelete.add(id);
-            continue;
-          }
-          final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
+          final type = row['type'] as String;
+          final dataString = row['data'] as String;
+          final data = jsonDecode(dataString) as Map<String, dynamic>;
+          final timestamp = Hlc.parse(row['timestamp'] as String);
+          final actorId = row['actor_id'] as String;
 
-          if (dataMap.containsKey('start')) {
-            final startVal = dataMap['start'];
-            if (startVal is String || startVal is int) {
-              dataMap['start_date'] = startVal;
-              dataMap.remove('start');
-            }
+          // Map start/end to start_date/end_date if present
+          if (data.containsKey('start')) {
+            data['start_date'] = data.remove('start');
           }
-          if (dataMap.containsKey('end')) {
-            final endVal = dataMap['end'];
-            if (endVal is String || endVal is int) {
-              dataMap['end_date'] = endVal;
-              dataMap.remove('end');
-            }
+          if (data.containsKey('end')) {
+            data['end_date'] = data.remove('end');
           }
 
-          final op = Operation(
-            type: row['type'] as String,
-            data: dataMap,
-            timestamp: Hlc.parse(row['timestamp'] as String),
-            actorId: row['actor_id'] as String,
-          );
-          opsToSend.add(op);
+          opsToSend.add(Operation(
+            type: type,
+            data: data,
+            timestamp: timestamp,
+            actorId: actorId,
+          ));
           idsToDelete.add(id);
         } catch (e) {
-          print('Failed to convert queued op id $id: $e');
+          print('OfflineClient: Failed to convert queued op id $id: $e');
           if (e.toString().contains('FormatException') || e.toString().contains('subtype')) {
-            print('Deleting malformed op $id');
+            print('OfflineClient: Deleting malformed op $id');
             idsToDelete.add(id);
           }
         }
       }
 
-      if (opsToSend.isNotEmpty && _innerClient != null && _isConnected) {
+      if (idsToDelete.isNotEmpty) {
+        final placeholder = List.filled(idsToDelete.length, '?').join(',');
         try {
-          print('Flushing batch of ${opsToSend.length} operations...');
-          await _innerClient!.sendOperations(opsToSend);
-
-          if (idsToDelete.isNotEmpty) {
-            final placeholder = List.filled(idsToDelete.length, '?').join(',');
-            await _lock
-                .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+          if (opsToSend.isNotEmpty && _innerClient != null && _isConnected) {
+            print('OfflineClient: Flushing batch of ${opsToSend.length} operations...');
+            await _innerClient!.sendOperations(opsToSend);
           }
+          
+          await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+          print('OfflineClient: Successfully deleted ${idsToDelete.length} operations from queue.');
+          
+          // CRITICAL: Update pending count immediately after delete so listeners see progress
+          _updatePendingCount();
         } catch (e) {
-          print('Error flushing batch: $e');
+          print('OfflineClient: Error during flush batch/delete: $e');
           break;
         }
-      } else if (idsToDelete.isNotEmpty) {
-        final placeholder = List.filled(idsToDelete.length, '?').join(',');
-        await _lock
-            .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+      }
+
+      // If we got exactly 500 rows, there might be more. Otherwise, we are done.
+      if (rows.length < 500) {
+        print('OfflineClient: Processed last batch, breaking.');
+        break;
       }
     }
+    print('OfflineClient: Flush perform finished.');
   }
 
   @override
@@ -303,6 +306,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       await _db.execute('DELETE FROM offline_queue');
       print('OfflineClient: Cleared offline queue.');
     });
+    _updatePendingCount();
   }
 
   @override
@@ -323,88 +327,11 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
 
     if (opsToQueue.isNotEmpty) {
-      if (kIsWeb && opsToQueue.length > 100 && (!_isConnected || _innerClient == null)) {
-        print('OfflineClient: Large batch on Web ($opsToQueue.length ops) and not connected. Waiting up to 2s...');
-        try {
-          await _connectionStateController.stream
-              .firstWhere((isConnected) => isConnected)
-              .timeout(const Duration(seconds: 2));
-          print('OfflineClient: Connected after wait! Proceeding to try direct send.');
-        } catch (_) {
-          print('OfflineClient: Connection wait timed out. Falling back to queue.');
-        }
-      }
-
-      bool sentDirectly = false;
-
-      if (_isConnected && _innerClient != null && _isDbReady) {
-        try {
-          await _lock.synchronized(() async {
-            final countResult = await _db.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0');
-            final count =
-                countResult.firstOrNull?['COUNT(*)'] as int? ?? countResult.firstOrNull?.values.first as int? ?? 0;
-
-            if (count == 0) {
-              print('OfflineClient: Queue is empty, sending ${opsToQueue.length} ops directly bypass DB.');
-              await _innerClient!.sendOperations(opsToQueue);
-              sentDirectly = true;
-            } else if (count < 100) {
-              print('OfflineClient: Queue has $count items (small). Draining and bundling...');
-
-              final rows = await _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC');
-              final idsToDelete = <int>[];
-              final stragglers = <Operation>[];
-
-              for (final row in rows) {
-                final id = row['id'] as int;
-                try {
-                  final dataDynamic = await decodeJsonInBackground(row['data'] as String);
-                  if (dataDynamic != null) {
-                    final Map<String, dynamic> dataMap = Map<String, dynamic>.from(dataDynamic as Map);
-                    if (dataMap.containsKey('start')) {
-                      dataMap['start_date'] = dataMap['start'];
-                      dataMap.remove('start');
-                    }
-                    if (dataMap.containsKey('end')) {
-                      dataMap['end_date'] = dataMap['end'];
-                      dataMap.remove('end');
-                    }
-
-                    stragglers.add(Operation(
-                      type: row['type'] as String,
-                      data: dataMap,
-                      timestamp: Hlc.parse(row['timestamp'] as String),
-                      actorId: row['actor_id'] as String,
-                    ));
-                  }
-                  idsToDelete.add(id);
-                } catch (e) {
-                  print('Error decoding straggler $id: $e');
-                  idsToDelete.add(id);
-                }
-              }
-
-              final combinedBatch = [...stragglers, ...opsToQueue];
-              print('OfflineClient: Sending combined batch of ${combinedBatch.length} (Swallowed $count queued)');
-              await _innerClient!.sendOperations(combinedBatch);
-
-              if (idsToDelete.isNotEmpty) {
-                final placeholder = List.filled(idsToDelete.length, '?').join(',');
-                await _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete);
-              }
-              sentDirectly = true;
-            }
-          });
-        } catch (e) {
-          print('OfflineClient: Direct send failed, falling back to queue. Error: $e');
-          sentDirectly = false;
-        }
-      }
-
-      if (!sentDirectly) {
-        await _queueOperations(opsToQueue);
-        _flushQueue();
-      }
+      // Simplified: Always queue and then flush. 
+      // The _performFlush handles batching automatically.
+      // This avoids complex and race-prone bundling logic here.
+      await _queueOperations(opsToQueue);
+      _flushQueue();
     }
   }
 
@@ -428,53 +355,30 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void> _queueOperations(List<Operation> operations) async {
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing ${operations.length} operations');
-    if (kIsWeb && operations.length > 200) {
-      const chunkSize = 100;
-      for (var i = 0; i < operations.length; i += chunkSize) {
-        final end = (i + chunkSize < operations.length) ? i + chunkSize : operations.length;
-        final chunk = operations.sublist(i, end);
-
-        await _lock.synchronized(() async {
-          final batch = _db.batch();
-          for (final operation in chunk) {
-            batch.execute(
-              'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-              [
-                operation.type,
-                jsonEncode(operation.data),
-                operation.timestamp.toString(),
-                operation.actorId,
-              ],
-            );
-          }
-          await batch.commit();
-        });
-        await Future.delayed(Duration.zero);
+    await _lock.synchronized(() async {
+      final batch = _db.batch();
+      for (final operation in operations) {
+        batch.execute(
+          'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
+          [
+            operation.type,
+            jsonEncode(operation.data),
+            operation.timestamp.toString(),
+            operation.actorId,
+          ],
+        );
       }
-    } else {
-      await _lock.synchronized(() async {
-        final batch = _db.batch();
-        for (final operation in operations) {
-          batch.execute(
-            'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-            [
-              operation.type,
-              jsonEncode(operation.data),
-              operation.timestamp.toString(),
-              operation.actorId,
-            ],
-          );
-        }
-        await batch.commit();
-      });
-    }
+      await batch.commit();
+    });
     _updatePendingCount();
   }
 
   Future<void> dispose() async {
+    print('OfflineClient: Disposing...');
     await _detachInnerClient();
     if (_activeFlushFuture != null) {
       try {
+        print('OfflineClient: Waiting for active flush to finish during dispose...');
         await _activeFlushFuture;
       } catch (e) {
         print('OfflineClient: Error awaiting flush during dispose: $e');
@@ -482,6 +386,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
     await _operationController.close();
     await _connectionStateController.close();
+    print('OfflineClient: Disposal complete.');
   }
 }
 

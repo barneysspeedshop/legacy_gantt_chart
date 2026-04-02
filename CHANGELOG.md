@@ -1,10 +1,12 @@
 ## 7.4.0-rc.1
 
-* **FEATURE**: Introduced experimental support for optional vertical reordering of task rows. 
-    * This is an experimental feature and is subject to change in future versions.
-    * Introduced bool `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
-      * When true, enables dragging tasks vertically between rows.
-      * Row changes are reported through `onTaskMove(task, newStart, newEnd, newRowId)`.
+* **FEATURE**: Introduced experimental support for optional vertical reordering of task rows.
+    * Enabled via `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
+    * Row reassignments are reported through the `onTaskMove(task, newStart, newEnd, newRowId)` callback.
+    * Includes visual "ghost task" feedback and smart stacking logic for target lanes.
+* **ENHANCEMENT**: UI/UX and Theming improvements.
+    * Added `summaryBarColor`, `resizeTooltipBackgroundColor`, `resizeTooltipFontColor`, and `resizeTooltipDateFormat` to `LegacyGanttTheme`.
+    * Implemented high-contrast text color logic for task labels to ensure legibility across all theme presets.
 
 ## 7.3.1
 

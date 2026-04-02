@@ -7,33 +7,31 @@ environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
+  collection: ^1.19.1
+  csv: ^6.0.0
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  file_selector: ^1.0.3
+  google_generative_ai: ^0.4.7
+  http: ^1.6.0
   intl: ^0.20.2
   legacy_context_menu: ^2.1.2
   legacy_gantt_chart:
     path: ../
   legacy_gantt_protocol: ^1.0.6
   legacy_timeline_scrubber: ^2.0.0
-  provider: ^6.1.2
-
-  flutter_localizations:
-    sdk: flutter
-  collection: ^1.19.1
-  csv: ^6.0.0
-  file_selector: ^1.0.3
-  legacy_tree_grid: 0.13.0
-  sqlite_crdt: ^3.0.0
-  uuid: ^4.0.0
-  path_provider: ^2.1.0
-  sqflite_common_ffi: ^2.3.0
+  legacy_tree_grid: 0.14.1
   path: ^1.9.1
+  path_provider: ^2.1.0
+  provider: ^6.1.2
+  sqflite_common_ffi: ^2.3.0
   sqflite_common_ffi_web: ^1.1.0
-  web_socket_channel: ^3.0.3
-  http: ^1.6.0
+  sqlite_crdt: ^3.0.0
   synchronized: ^3.3.0+3
-  google_generative_ai: ^0.4.7
-
+  uuid: ^4.0.0
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:

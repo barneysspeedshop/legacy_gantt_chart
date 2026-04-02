@@ -148,7 +148,7 @@ class _MinimalSyncViewState extends State<MinimalSyncView> {
         start: DateTime.parse(data['start']),
         end: DateTime.parse(data['end']),
         rowId: data['rowId'] ?? 'r1',
-        color: Colors.blue,
+        color: null,
       );
 
   Map<String, dynamic> _taskToData(LegacyGanttTask task) => {

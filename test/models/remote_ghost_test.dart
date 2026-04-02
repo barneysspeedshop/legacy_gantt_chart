@@ -66,5 +66,28 @@ void main() {
       expect(ghost1, isNot(equals(ghost3)));
       expect(ghost1 == ghost3, isFalse);
     });
+
+    test('supports value equality for tasks map', () {
+      final now = DateTime.now();
+      final t1 = DateTime(2023, 1, 1);
+      final t2 = DateTime(2023, 1, 2);
+      
+      final ghost1 = RemoteGhost(
+        userId: 'u1', lastUpdated: now, 
+        tasks: {'task-a': (start: t1, end: t2)}
+      );
+      final ghost2 = RemoteGhost(
+        userId: 'u1', lastUpdated: now, 
+        tasks: {'task-a': (start: t1, end: t2)}
+      );
+      final ghost3 = RemoteGhost(
+        userId: 'u1', lastUpdated: now, 
+        tasks: {'task-b': (start: t1, end: t2)}
+      );
+
+      expect(ghost1, equals(ghost2));
+      expect(ghost1.hashCode, equals(ghost2.hashCode));
+      expect(ghost1, isNot(equals(ghost3)));
+    });
   });
 }

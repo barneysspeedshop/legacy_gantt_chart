@@ -9,11 +9,11 @@ import 'package:collection/collection.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:legacy_tree_grid/legacy_tree_grid.dart';
+import 'dart:ui' as ui;
 import 'package:provider/provider.dart';
 import 'package:legacy_context_menu/legacy_context_menu.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 import 'ui/widgets/dashboard_header.dart';
-import 'ui/widgets/custom_header_painter.dart';
 import 'ui/widgets/dependency_dialog.dart';
 import 'view_models/gantt_view_model.dart';
 import 'ui/dialogs/create_task_dialog.dart';
@@ -80,19 +80,23 @@ class _GanttViewState extends State<GanttView> {
   late final GanttViewModel _viewModel;
   bool _isPanelVisible = true;
   TimelineAxisFormat _selectedAxisFormat = TimelineAxisFormat.auto;
+
+  /// The locale used for internationalization in the chart.
   String _selectedLocale = 'en_US';
   bool _showCursors = true;
   bool _showNowLine = false;
   bool _showSlack = false;
-  Timer? _bulkUpdateTimer;
-  int _bulkUpdateCount = 0;
   OverlayEntry? _tooltipOverlay;
+  int _bulkUpdateCount = 0;
+  Timer? _bulkUpdateTimer;
 
   // --- Row drag-and-drop state for drop-zone feedback ---
   final GlobalKey _gridContainerKey = GlobalKey();
   bool _isDraggingRow = false;
   int _draggedRowIndex = -1;
-  DropTarget? _lastDropTarget;
+  // DropTarget state is now handled entirely within the ViewModel
+
+  // --- Grid sorting and expansion state ---
 
   late final TextEditingController _uriController;
   late final TextEditingController _tenantIdController;
@@ -136,19 +140,24 @@ class _GanttViewState extends State<GanttView> {
         return baseTheme.copyWith(
           barColorPrimary: Colors.green.shade800,
           barColorSecondary: Colors.green.shade600,
+          summaryBarColor: Colors.brown.withValues(alpha: 0.6),
           containedDependencyBackgroundColor: Colors.brown.withValues(alpha: 0.2),
           dependencyLineColor: Colors.brown.shade800,
           timeRangeHighlightColor: Colors.yellow.withValues(alpha: 0.1),
           backgroundColor: isDarkMode ? const Color(0xFF2d2c2a) : const Color(0xFFf5f3f0),
           emptySpaceHighlightColor: Colors.green.withValues(alpha: 0.1),
           emptySpaceAddIconColor: Colors.green.shade600,
-          taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white),
+          taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w500),
           nowLineColor: Colors.yellowAccent,
+          resizeTooltipBackgroundColor: Colors.brown.shade800,
+          resizeTooltipFontColor: Colors.white,
+          resizeTooltipDateFormat: 'MMM d',
         );
       case ThemePreset.midnight:
         return baseTheme.copyWith(
           barColorPrimary: Colors.indigo.shade700,
           barColorSecondary: Colors.indigo.shade500,
+          summaryBarColor: Colors.blueGrey.shade900.withValues(alpha: 0.8),
           containedDependencyBackgroundColor: Colors.purple.withValues(alpha: 0.2),
           dependencyLineColor: Colors.purple.shade200,
           timeRangeHighlightColor: Colors.blueGrey.withValues(alpha: 0.2),
@@ -156,13 +165,17 @@ class _GanttViewState extends State<GanttView> {
           emptySpaceHighlightColor: Colors.indigo.withValues(alpha: 0.1),
           emptySpaceAddIconColor: Colors.indigo.shade200,
           textColor: isDarkMode ? Colors.white70 : Colors.black87,
-          taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white),
+          taskTextStyle: baseTheme.taskTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w500),
           nowLineColor: Colors.yellowAccent,
+          resizeTooltipBackgroundColor: Colors.deepPurple.shade900,
+          resizeTooltipFontColor: Colors.white,
+          resizeTooltipDateFormat: 'MMM d',
         );
       case ThemePreset.standard:
         return baseTheme.copyWith(
           barColorPrimary: Colors.blue.shade700,
           barColorSecondary: Colors.blue[600],
+          summaryBarColor: const Color(0xFF333333).withValues(alpha: 0.7),
           containedDependencyBackgroundColor: Colors.green.withValues(alpha: 0.15),
           dependencyLineColor: Colors.red.shade700,
           timeRangeHighlightColor: isDarkMode ? Colors.grey[850] : Colors.grey[200],
@@ -171,8 +184,11 @@ class _GanttViewState extends State<GanttView> {
           nowLineColor: Colors.yellowAccent,
           taskTextStyle: baseTheme.taskTextStyle.copyWith(
             fontWeight: FontWeight.bold,
-            color: Colors.white, // Ensure good contrast on blue bars
+            color: Colors.white, // Ensure white text for high contrast on blue bars
           ),
+          resizeTooltipBackgroundColor: Colors.purple.shade700,
+          resizeTooltipFontColor: Colors.white,
+          resizeTooltipDateFormat: 'MMM d',
         );
     }
   }
@@ -194,30 +210,6 @@ class _GanttViewState extends State<GanttView> {
     _showSnackbar('Cleared all dependencies for ${task.name}');
   }
 
-  /// A handler that demonstrates how to programmatically change the visible
-  /// window of the Gantt chart to focus on a specific task.
-  void _handleSnapToTask(LegacyGanttTask task) {
-    var taskDuration = task.end.difference(task.start);
-    Duration newWindowDuration;
-
-    // If the task is a milestone (zero duration), set a default window duration.
-    if (taskDuration == Duration.zero) {
-      newWindowDuration = const Duration(days: 1);
-      taskDuration = newWindowDuration; // Use this for centering calculation
-    } else {
-      // For regular tasks, make the new window 3 times the duration for context.
-      newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
-    }
-
-    // Center the window on the task.
-    final newStart = task.start
-        .subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));
-    final newEnd = newStart.add(newWindowDuration);
-
-    _viewModel.onScrubberWindowChanged(newStart, newEnd);
-    _showSnackbar('Snapped to task: ${task.name}');
-  }
-
   /// Shows a dialog that lists all dependencies for a given task and allows the user to remove one.
   Future<void> _showDependencyRemover(BuildContext context, LegacyGanttTask task) async {
     final dependencies = _viewModel.getDependenciesForTask(task);
@@ -236,6 +228,32 @@ class _GanttViewState extends State<GanttView> {
       _viewModel.removeDependency(dependencyToRemove);
       _showSnackbar('Removed dependency');
     }
+  }
+
+  /// A handler that demonstrates how to programmatically change the visible
+  /// window of the Gantt chart to focus on a specific task.
+  void _handleSnapToTask(LegacyGanttTask task) {
+    var taskDuration = task.end.difference(task.start);
+    Duration newWindowDuration;
+
+    // A milestone has zero duration or is explicitly marked as a milestone.
+    // For these, we show a 1-day window for a "clean" focused view.
+    if (task.isMilestone || taskDuration == Duration.zero) {
+      newWindowDuration = const Duration(days: 1);
+      taskDuration = Duration.zero;
+    } else {
+      // For standard tasks, we scale the window to 3x the task's duration
+      // to provide sufficient context (before and after) during the snap.
+      newWindowDuration = Duration(milliseconds: taskDuration.inMilliseconds * 3);
+    }
+
+    // Center the new window on the task's range.
+    final newStart = task.start
+        .subtract(Duration(milliseconds: (newWindowDuration.inMilliseconds - taskDuration.inMilliseconds) ~/ 2));
+    final newEnd = newStart.add(newWindowDuration);
+
+    _viewModel.onScrubberWindowChanged(newStart, newEnd);
+    _showSnackbar('Snapped to: ${task.name}');
   }
 
   void _showSnackbar(String message) => ScaffoldMessenger.of(context).showSnackBar(
@@ -459,7 +477,6 @@ class _GanttViewState extends State<GanttView> {
     // Note: repeatedly showing snackbars is bad UX. Better to show a dialog or ONE snackbar.
     // Ideally we use a ProgressDialog. For now, we'll wait for completion and show status.
     // Or we can show a "Importing..." message.
-
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Importing in progress...'), duration: Duration(days: 1)),
@@ -469,7 +486,6 @@ class _GanttViewState extends State<GanttView> {
       await for (final message in receivePort) {
         if (message['type'] == 'chunk') {
           final data = message['data'] as ({List<LegacyGanttTask> tasks, List<LocalResource> resources});
-          final tasks = data.tasks;
           final resources = data.resources;
 
           if (resources.isNotEmpty) {
@@ -477,13 +493,11 @@ class _GanttViewState extends State<GanttView> {
             importedResourceIds.addAll(resources.map((r) => r.id));
             totalResources += resources.length;
           }
-          if (tasks.isNotEmpty) {
-            _viewModel.addTasks(tasks);
-            importedTaskIds.addAll(tasks.map((t) => t.id));
-            totalTasks += tasks.length;
+          if (data.tasks.isNotEmpty) {
+            _viewModel.addTasks(data.tasks);
+            importedTaskIds.addAll(data.tasks.map((t) => t.id));
+            totalTasks += data.tasks.length;
           }
-
-          // Optional: Update progress indicator
         } else if (message['type'] == 'done') {
           break;
         } else if (message['type'] == 'error') {
@@ -496,52 +510,38 @@ class _GanttViewState extends State<GanttView> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Import complete: $totalTasks tasks, $totalResources resources.')),
       );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-      // Rollback Prompt
-      if (importedTaskIds.isNotEmpty || importedResourceIds.isNotEmpty) {
-        final shouldRollback = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Import Failed'),
-            content: Text(
-                'Error: $e\n\nPartial import: $totalTasks tasks, $totalResources resources.\nDo you want to rollback (undo) these changes?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Keep Partial'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Rollback'),
-              ),
-            ],
-          ),
-        );
-
-        if (!mounted) return;
-
-        if (shouldRollback == true) {
-          _rollbackImport(importedTaskIds, importedResourceIds);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Import rolled back.')),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
-        );
-      }
     } finally {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        // Rollback Prompt
+        if (importedTaskIds.isNotEmpty || importedResourceIds.isNotEmpty) {
+          final shouldRollback = await showDialog<bool>(
+            context: context,
+            builder: (context) => ImportRollbackDialog(
+              taskCount: importedTaskIds.length,
+              resourceCount: importedResourceIds.length,
+            ),
+          );
+
+          if (shouldRollback == true && mounted) {
+            await _rollbackImport(importedTaskIds.toList(), importedResourceIds.toList());
+          }
+        }
+      }
       receivePort.close();
     }
   }
 
-  void _rollbackImport(Set<String> taskIds, Set<String> resourceIds) {
-    // 1. Delete new resources (which also deletes their child tasks)
-    resourceIds.forEach(_viewModel.deleteRow);
+  /// Reverts an import by removing all added tasks and resources.
+  Future<void> _rollbackImport(List<String> taskIds, List<String> resourceIds) async {
+    _showSnackbar('Rolling back import...');
+
+    // 1. Delete new resources first (cascades to their tasks in some DBs,
+    // but we handle explicit cleanup below for safety).
+    for (final resId in resourceIds) {
+      await _viewModel.deleteResource(resId);
+    }
 
     // 2. Delete remaining new tasks (e.g. those added to existing resources)
     // We check availability because deleteRow might have already removed some.
@@ -551,6 +551,8 @@ class _GanttViewState extends State<GanttView> {
         _viewModel.handleDeleteTask(task);
       }
     }
+
+    _showSnackbar('Rollback complete');
   }
 
   // --- User Presence UI ---
@@ -631,12 +633,12 @@ class _GanttViewState extends State<GanttView> {
       case TimelineAxisFormat.dayOfMonth:
         return (date, interval) => DateFormat('d', _selectedLocale).format(date);
       case TimelineAxisFormat.dayAndMonth:
-        return (date, interval) => DateFormat.MMMd(_selectedLocale).format(date);
+        return (date, interval) => DateFormat('d MMM', _selectedLocale).format(date);
       case TimelineAxisFormat.monthAndYear:
-        return (date, interval) => DateFormat.yMMM(_selectedLocale).format(date);
+        return (date, interval) => DateFormat('MMM yyyy', _selectedLocale).format(date);
       case TimelineAxisFormat.dayOfWeek:
-        return (date, interval) => DateFormat.E(_selectedLocale).format(date);
-      case TimelineAxisFormat.custom:
+        return (date, interval) => DateFormat('E', _selectedLocale).format(date);
+      default:
         return null;
     }
   }
@@ -653,12 +655,12 @@ class _GanttViewState extends State<GanttView> {
           List<DateTime> totalDomain, LegacyGanttTheme theme, double totalContentWidth) =>
       CustomPaint(
         size: Size(totalContentWidth, 54.0),
-        painter: CustomHeaderPainter(
-          scale: scale,
+        painter: _CustomHeaderPainter(
           visibleDomain: visibleDomain,
           totalDomain: totalDomain,
+          scale: scale,
           theme: theme,
-          selectedLocale: _selectedLocale,
+          locale: _selectedLocale,
         ),
       );
 
@@ -671,477 +673,469 @@ class _GanttViewState extends State<GanttView> {
       // Always return a full date and time format, honoring the selected locale.
       (date) => DateFormat.yMd(_selectedLocale).add_jm().format(date);
 
-  /// Builds the control panel on the left side of the screen.
-  Widget _buildControlPanel(BuildContext context, GanttViewModel vm) => Container(
-        width: vm.controlPanelWidth ?? 350,
-        color: Theme.of(context).cardColor,
-        child: ListView(
-          padding: const EdgeInsets.all(12.0),
-          children: [
-            Row(
+  Widget _buildControlPanel(BuildContext context, GanttViewModel vm) {
+    final ganttTheme = _buildGanttTheme();
+    return Container(
+      width: vm.controlPanelWidth ?? 350,
+      color: Theme.of(context).cardColor,
+      child: ListView(
+        padding: const EdgeInsets.all(12.0),
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text('Controls', style: Theme.of(context).textTheme.titleLarge)),
+              IconButton(
+                icon: const Icon(Icons.data_object),
+                tooltip: 'Export Tasks to JSON',
+                onPressed: () => _showJsonExportDialog(vm),
+              ),
+              IconButton(
+                icon: const Icon(Icons.upload_file),
+                tooltip: 'Import Tasks from CSV',
+                onPressed: _handleCsvImport,
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          GanttAssistantWidget(service: _nlService, viewModel: vm),
+          const Divider(height: 24),
+          Text('Server Sync', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          if (vm.isSyncConnected)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ganttTheme.barColorSecondary.withValues(alpha: 0.1),
+                border: Border.all(color: ganttTheme.barColorSecondary),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle, color: ganttTheme.barColorSecondary, size: 16),
+                      const SizedBox(width: 8),
+                      Text('Connected',
+                          style: TextStyle(color: ganttTheme.barColorSecondary, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  StreamBuilder<int>(
+                    stream: vm.outboundPendingCount,
+                    builder: (context, snapshot) {
+                      final count = snapshot.data ?? 0;
+                      if (count == 0) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.upload_file, size: 16, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Text('Pending Outbound: $count',
+                                style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  StreamBuilder<SyncProgress>(
+                    stream: vm.inboundProgress,
+                    builder: (context, snapshot) {
+                      final progress = snapshot.data;
+                      if (progress == null ||
+                          progress.total == 0 ||
+                          (progress.processed >= progress.total && progress.total > 0)) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text('Syncing: ${progress.processed} / ${progress.total}',
+                                style: TextStyle(fontSize: 12, color: ganttTheme.barColorPrimary)),
+                            const SizedBox(height: 4),
+                            LinearProgressIndicator(
+                              value: progress.percentage,
+                              color: ganttTheme.barColorPrimary,
+                              backgroundColor: ganttTheme.barColorPrimary.withValues(alpha: 0.1),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                    onPressed: () => vm.disconnectSync(),
+                    child: const Text('Disconnect'),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ganttTheme.resizeTooltipBackgroundColor,
+                      foregroundColor: ganttTheme.resizeTooltipFontColor,
+                    ),
+                    onPressed: () {
+                      vm.optimizeSchedule();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Optimization request sent')),
+                      );
+                    },
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Optimize Schedule'),
+                  ),
+                ],
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: Text('Controls', style: Theme.of(context).textTheme.titleLarge)),
-                IconButton(
-                  icon: const Icon(Icons.data_object),
-                  tooltip: 'Export Tasks to JSON',
-                  onPressed: () => _showJsonExportDialog(vm),
+                TextField(
+                  controller: _uriController,
+                  decoration: const InputDecoration(labelText: 'Server URI', isDense: true),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.upload_file),
-                  tooltip: 'Import Tasks from CSV',
-                  onPressed: _handleCsvImport,
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _tenantIdController,
+                  decoration: const InputDecoration(labelText: 'Tenant ID', isDense: true),
                 ),
-              ],
-            ),
-
-            const Divider(height: 24),
-            GanttAssistantWidget(service: _nlService, viewModel: vm),
-            const Divider(height: 24),
-            Text('Server Sync', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (vm.isSyncConnected)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  border: Border.all(color: Colors.green),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.check_circle, color: Colors.green, size: 16),
-                        SizedBox(width: 8),
-                        Text('Connected', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    StreamBuilder<int>(
-                      stream: vm.outboundPendingCount,
-                      builder: (context, snapshot) {
-                        final count = snapshot.data ?? 0;
-                        if (count == 0) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.upload_file, size: 16, color: Colors.orange),
-                              const SizedBox(width: 8),
-                              Text('Pending Outbound: $count',
-                                  style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    StreamBuilder<SyncProgress>(
-                      stream: vm.inboundProgress,
-                      builder: (context, snapshot) {
-                        final progress = snapshot.data;
-                        // Only show if we have a total and we are not done
-                        if (progress == null ||
-                            progress.total == 0 ||
-                            (progress.processed >= progress.total && progress.total > 0)) {
-                          // Keep visible shortly if done? No, standard behavior is hide.
-                          return const SizedBox.shrink();
-                        }
-
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text('Syncing: ${progress.processed} / ${progress.total}',
-                                  style: const TextStyle(fontSize: 12, color: Colors.blue)),
-                              const SizedBox(height: 4),
-                              LinearProgressIndicator(value: progress.percentage),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                      onPressed: () => vm.disconnectSync(),
-                      child: const Text('Disconnect'),
-                    ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.purple.shade700,
-                        foregroundColor: Colors.white,
+                    Expanded(
+                      child: TextField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(labelText: 'User', isDense: true),
                       ),
-                      onPressed: () {
-                        vm.optimizeSchedule();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Optimization request sent')),
-                        );
-                      },
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Optimize Schedule'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _passwordController,
+                        decoration: const InputDecoration(labelText: 'Pass', isDense: true),
+                        obscureText: true,
+                      ),
                     ),
                   ],
                 ),
-              )
-            else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    controller: _uriController,
-                    decoration: const InputDecoration(labelText: 'Server URI', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _tenantIdController,
-                    decoration: const InputDecoration(labelText: 'Tenant ID', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _usernameController,
-                          decoration: const InputDecoration(labelText: 'User', isDense: true),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _passwordController,
-                          decoration: const InputDecoration(labelText: 'Pass', isDense: true),
-                          obscureText: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () async {
-                      try {
-                        await vm.connectSync(
-                          uri: _uriController.text,
-                          tenantId: _tenantIdController.text,
-                          username: _usernameController.text,
-                          password: _passwordController.text,
-                        );
-                        _showSnackbar('Connected to Sync Server');
-                      } catch (e) {
-                        _showSnackbar('Connection Failed: $e');
-                      }
-                    },
-                    child: const Text('Connect'),
-                  ),
-                ],
-              ),
-            const Divider(height: 24),
-            DashboardHeader(
-              selectedDate: vm.startDate,
-              selectedRange: vm.range,
-              onSelectDate: vm.onSelectDate,
-              onRangeChange: vm.onRangeChange,
-            ),
-            const Divider(height: 24),
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Center(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Re-seed Local Data'),
-                  onPressed: () => vm.seedLocalDatabase(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Expanded(child: Text('Persons:')),
-                DropdownButton<int>(
-                  value: vm.personCount,
-                  onChanged: (value) {
-                    if (value != null) vm.setPersonCount(value);
+                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await vm.connectSync(
+                        uri: _uriController.text,
+                        tenantId: _tenantIdController.text,
+                        username: _usernameController.text,
+                        password: _passwordController.text,
+                      );
+                      _showSnackbar('Connected to Sync Server');
+                    } catch (e) {
+                      _showSnackbar('Connection Failed: $e');
+                    }
                   },
-                  items: List.generate(101, (i) => i)
-                      .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
-                      .toList(),
+                  child: const Text('Connect'),
                 ),
               ],
             ),
-            Row(
-              children: [
-                const Expanded(child: Text('Jobs:')),
-                DropdownButton<int>(
-                  value: vm.jobCount,
-                  onChanged: (value) {
-                    if (value != null) vm.setJobCount(value);
-                  },
-                  items: List.generate(101, (i) => i)
-                      .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
-                      .toList(),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Text('Theme', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SegmentedButton<ThemePreset>(
-              style: SegmentedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          const Divider(height: 24),
+          DashboardHeader(
+            selectedDate: vm.startDate,
+            selectedRange: vm.range,
+            onSelectDate: vm.onSelectDate,
+            onRangeChange: vm.onRangeChange,
+          ),
+          const Divider(height: 24),
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Center(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.refresh),
+                label: const Text('Re-seed Local Data'),
+                onPressed: () => vm.seedLocalDatabase(),
               ),
-              segments: const [
-                ButtonSegment(value: ThemePreset.standard, icon: Icon(Icons.palette)),
-                ButtonSegment(value: ThemePreset.forest, icon: Icon(Icons.park)),
-                ButtonSegment(value: ThemePreset.midnight, icon: Icon(Icons.nightlight_round)),
-              ],
-              selected: {vm.selectedTheme},
-              onSelectionChanged: (newSelection) => vm.setSelectedTheme(newSelection.first),
             ),
-            const Divider(height: 24),
-            Text('Features', style: Theme.of(context).textTheme.titleMedium),
-            // These switches demonstrate how to toggle the interactive features
-            // of the Gantt chart by changing the boolean properties on the widget.
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Drag & Drop'),
-                Switch(
-                  value: vm.dragAndDropEnabled,
-                  onChanged: vm.setDragAndDropEnabled,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Resize'),
-                Switch(
-                  value: vm.resizeEnabled,
-                  onChanged: vm.setResizeEnabled,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Create Tasks'),
-                Switch(
-                  value: vm.createTasksEnabled,
-                  onChanged: vm.setCreateTasksEnabled,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Create Dependencies'),
-                Switch(
-                  value: vm.dependencyCreationEnabled,
-                  onChanged: vm.setDependencyCreationEnabled,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Conflicts'),
-                Switch(
-                  value: vm.showConflicts,
-                  onChanged: vm.setShowConflicts,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Dependencies'),
-                Switch(
-                  value: vm.showDependencies,
-                  onChanged: vm.setShowDependencies,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Critical Path'),
-                Switch(
-                  value: vm.showCriticalPath,
-                  onChanged: vm.setShowCriticalPath,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Slack'),
-                Switch(
-                  value: vm.showCriticalPath && _showSlack,
-                  onChanged: vm.showCriticalPath ? (val) => setState(() => _showSlack = val) : null,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Cursors'),
-                Switch(
-                  value: _showCursors,
-                  onChanged: (val) => setState(() => _showCursors = val),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Now Line'),
-                Switch(
-                  value: _showNowLine,
-                  onChanged: (val) => setState(() => _showNowLine = val),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Empty Parents'),
-                Switch(
-                  value: vm.showEmptyParentRows,
-                  onChanged: (value) => vm.setShowEmptyParentRows(value),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Show Resource Histogram'),
-                Switch(
-                  value: vm.showResourceHistogram,
-                  onChanged: (value) => vm.setShowResourceHistogram(value),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Enable Work Calendar'),
-                Switch(
-                  value: vm.enableWorkCalendar,
-                  onChanged: (value) => vm.setEnableWorkCalendar(value),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Roll Up Milestones'),
-                Switch(
-                  value: vm.rollUpMilestones,
-                  onChanged: (value) => vm.setRollUpMilestones(value),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
-            // This dropdown demonstrates how to control the width of the resize handles on tasks.
-            Row(
-              children: [
-                const Expanded(child: Text('Resize Handle Width:')),
-                DropdownButton<double>(
-                  value: vm.resizeHandleWidth,
-                  onChanged: (value) => vm.setResizeHandleWidth(value!),
-                  items: [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0]
-                      .map((size) => DropdownMenuItem(value: size, child: Text(size.toStringAsFixed(0))))
-                      .toList(),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Text('Loading Indicator', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SegmentedButton<GanttLoadingIndicatorType>(
-              segments: const [
-                ButtonSegment(value: GanttLoadingIndicatorType.circular, label: Text('Circular')),
-                ButtonSegment(value: GanttLoadingIndicatorType.linear, label: Text('Linear')),
-              ],
-              selected: {vm.loadingIndicatorType},
-              onSelectionChanged: (newSelection) => vm.setLoadingIndicatorType(newSelection.first),
-            ),
-            if (vm.loadingIndicatorType == GanttLoadingIndicatorType.linear) ...[
-              const SizedBox(height: 8),
-              SegmentedButton<GanttLoadingIndicatorPosition>(
-                segments: const [
-                  ButtonSegment(
-                    value: GanttLoadingIndicatorPosition.top,
-                    label: Text('Top'),
-                  ),
-                  ButtonSegment(
-                    value: GanttLoadingIndicatorPosition.bottom,
-                    label: Text('Bottom'),
-                  ),
-                ],
-                selected: {vm.loadingIndicatorPosition},
-                onSelectionChanged: (newSelection) => vm.setLoadingIndicatorPosition(newSelection.first),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(child: Text('Persons:')),
+              DropdownButton<int>(
+                value: vm.personCount,
+                onChanged: (value) {
+                  if (value != null) vm.setPersonCount(value);
+                },
+                items: List.generate(101, (i) => i)
+                    .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
+                    .toList(),
               ),
             ],
-            const Divider(height: 24),
-            Text('Timeline Label Format', style: Theme.of(context).textTheme.titleMedium),
-            // This segmented button controls which label format is used for the timeline,
-            // demonstrating the `timelineAxisLabelBuilder` and `timelineAxisHeaderBuilder` properties.
-            const SizedBox(height: 8),
-            SegmentedButton<TimelineAxisFormat>(
-              multiSelectionEnabled: false,
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+          ),
+          Row(
+            children: [
+              const Expanded(child: Text('Jobs:')),
+              DropdownButton<int>(
+                value: vm.jobCount,
+                onChanged: (value) {
+                  if (value != null) vm.setJobCount(value);
+                },
+                items: List.generate(101, (i) => i)
+                    .map((count) => DropdownMenuItem(value: count, child: Text(count.toString())))
+                    .toList(),
               ),
-              segments: const [
-                ButtonSegment(value: TimelineAxisFormat.auto, label: Text('Auto')),
-                ButtonSegment(value: TimelineAxisFormat.dayOfMonth, label: Text('Day')),
-                ButtonSegment(value: TimelineAxisFormat.dayAndMonth, label: Text('Month')),
-                ButtonSegment(value: TimelineAxisFormat.monthAndYear, label: Text('Year')),
-                ButtonSegment(value: TimelineAxisFormat.dayOfWeek, label: Text('Weekday')),
-                ButtonSegment(value: TimelineAxisFormat.custom, label: Text('Custom')),
-              ],
-              selected: {_selectedAxisFormat},
-              onSelectionChanged: (newSelection) => setState(() => _selectedAxisFormat = newSelection.first),
+            ],
+          ),
+          const Divider(height: 24),
+          Text('Theme', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<ThemePreset>(
+            style: SegmentedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             ),
-            const Divider(height: 24),
-            Text('Locale', style: Theme.of(context).textTheme.titleMedium),
-            // This demonstrates how changing the locale affects date formatting
-            // throughout the chart, powered by the `intl` package.
-            const SizedBox(height: 8),
-            SegmentedButton<String>(
-              multiSelectionEnabled: false,
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+            segments: const [
+              ButtonSegment(value: ThemePreset.standard, icon: Icon(Icons.palette)),
+              ButtonSegment(value: ThemePreset.forest, icon: Icon(Icons.park)),
+              ButtonSegment(value: ThemePreset.midnight, icon: Icon(Icons.nightlight_round)),
+            ],
+            selected: {vm.selectedTheme},
+            onSelectionChanged: (newSelection) => vm.setSelectedTheme(newSelection.first),
+          ),
+          const Divider(height: 24),
+          Text('Features', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Drag & Drop'),
+              Switch(
+                value: vm.dragAndDropEnabled,
+                onChanged: vm.setDragAndDropEnabled,
               ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Resize'),
+              Switch(
+                value: vm.resizeEnabled,
+                onChanged: vm.setResizeEnabled,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Create Tasks'),
+              Switch(
+                value: vm.createTasksEnabled,
+                onChanged: vm.setCreateTasksEnabled,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Create Dependencies'),
+              Switch(
+                value: vm.dependencyCreationEnabled,
+                onChanged: vm.setDependencyCreationEnabled,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Conflicts'),
+              Switch(
+                value: vm.showConflicts,
+                onChanged: vm.setShowConflicts,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Dependencies'),
+              Switch(
+                value: vm.showDependencies,
+                onChanged: vm.setShowDependencies,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Critical Path'),
+              Switch(
+                value: vm.showCriticalPath,
+                onChanged: vm.setShowCriticalPath,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Slack'),
+              Switch(
+                value: vm.showCriticalPath && _showSlack,
+                onChanged: vm.showCriticalPath ? (val) => setState(() => _showSlack = val) : null,
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Cursors'),
+              Switch(
+                value: _showCursors,
+                onChanged: (val) => setState(() => _showCursors = val),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Now Line'),
+              Switch(
+                value: _showNowLine,
+                onChanged: (val) => setState(() => _showNowLine = val),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Empty Parents'),
+              Switch(
+                value: vm.showEmptyParentRows,
+                onChanged: (value) => vm.setShowEmptyParentRows(value),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Show Resource Histogram'),
+              Switch(
+                value: vm.showResourceHistogram,
+                onChanged: (value) => vm.setShowResourceHistogram(value),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Enable Work Calendar'),
+              Switch(
+                value: vm.enableWorkCalendar,
+                onChanged: (value) => vm.setEnableWorkCalendar(value),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Roll Up Milestones'),
+              Switch(
+                value: vm.rollUpMilestones,
+                onChanged: (value) => vm.setRollUpMilestones(value),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Text('Drag Handle Options', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              const Expanded(child: Text('Resize Handle Width:')),
+              DropdownButton<double>(
+                value: vm.resizeHandleWidth,
+                onChanged: (value) => vm.setResizeHandleWidth(value!),
+                items: [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0]
+                    .map((size) => DropdownMenuItem(value: size, child: Text(size.toStringAsFixed(0))))
+                    .toList(),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Text('Loading Indicator', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<GanttLoadingIndicatorType>(
+            segments: const [
+              ButtonSegment(value: GanttLoadingIndicatorType.circular, label: Text('Circular')),
+              ButtonSegment(value: GanttLoadingIndicatorType.linear, label: Text('Linear')),
+            ],
+            selected: {vm.loadingIndicatorType},
+            onSelectionChanged: (newSelection) => vm.setLoadingIndicatorType(newSelection.first),
+          ),
+          if (vm.loadingIndicatorType == GanttLoadingIndicatorType.linear) ...[
+            const SizedBox(height: 8),
+            SegmentedButton<GanttLoadingIndicatorPosition>(
               segments: const [
-                ButtonSegment(value: 'en_US', label: Text('EN')),
-                ButtonSegment(value: 'fr_FR', label: Text('FR')),
-                ButtonSegment(value: 'de_DE', label: Text('DE')),
-                ButtonSegment(value: 'ja_JP', label: Text('JA')),
+                ButtonSegment(
+                  value: GanttLoadingIndicatorPosition.top,
+                  label: Text('Top'),
+                ),
+                ButtonSegment(
+                  value: GanttLoadingIndicatorPosition.bottom,
+                  label: Text('Bottom'),
+                ),
               ],
-              selected: {_selectedLocale},
-              onSelectionChanged: (newSelection) {
-                setState(() => _selectedLocale = newSelection.first);
-                vm.setSelectedLocale(newSelection.first);
-              },
+              selected: {vm.loadingIndicatorPosition},
+              onSelectionChanged: (newSelection) => vm.setLoadingIndicatorPosition(newSelection.first),
             ),
           ],
-        ),
-      );
+          const Divider(height: 24),
+          Text('Timeline Label Format', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<TimelineAxisFormat>(
+            multiSelectionEnabled: false,
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+            ),
+            segments: const [
+              ButtonSegment(value: TimelineAxisFormat.auto, label: Text('Auto')),
+              ButtonSegment(value: TimelineAxisFormat.dayOfMonth, label: Text('Day')),
+              ButtonSegment(value: TimelineAxisFormat.dayAndMonth, label: Text('Month')),
+              ButtonSegment(value: TimelineAxisFormat.monthAndYear, label: Text('Year')),
+              ButtonSegment(value: TimelineAxisFormat.dayOfWeek, label: Text('Weekday')),
+              ButtonSegment(value: TimelineAxisFormat.custom, label: Text('Custom')),
+            ],
+            selected: {_selectedAxisFormat},
+            onSelectionChanged: (newSelection) => setState(() => _selectedAxisFormat = newSelection.first),
+          ),
+          const Divider(height: 24),
+          Text('Locale', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            multiSelectionEnabled: false,
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+            ),
+            segments: const [
+              ButtonSegment(value: 'en_US', label: Text('EN')),
+              ButtonSegment(value: 'fr_FR', label: Text('FR')),
+              ButtonSegment(value: 'de_DE', label: Text('DE')),
+              ButtonSegment(value: 'ja_JP', label: Text('JA')),
+            ],
+            selected: {_selectedLocale},
+            onSelectionChanged: (newSelection) {
+              setState(() => _selectedLocale = newSelection.first);
+              vm.setSelectedLocale(newSelection.first);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
-  /// Shows a dialog with the current Gantt data exported as a JSON string.
-  /// This demonstrates how you might extract the data from the chart for saving or sharing.
   void _showJsonExportDialog(GanttViewModel vm) {
-    // This function builds the JSON structure from the original API response data.
-    // We now use the live data from the view model.
     if (vm.data.isEmpty) {
-      // Handle case where data hasn't been loaded yet.
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
@@ -1162,8 +1156,6 @@ class _GanttViewState extends State<GanttView> {
     final exportData = vm.exportToJson();
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(
-      // Instead of converting internal GanttTask objects,
-      // we now convert the original API response data structure.
       exportData,
     );
 
@@ -1199,793 +1191,878 @@ class _GanttViewState extends State<GanttView> {
     );
   }
 
-  // The root of the application uses a ChangeNotifierProvider to make the
-  // GanttViewModel available to the entire widget tree below it. This allows
-  // any widget to listen to changes in the view model and rebuild accordingly.
-  final GlobalKey<UnifiedDataGridState> _gridKey = GlobalKey<UnifiedDataGridState>();
-
   @override
   Widget build(BuildContext context) => ChangeNotifierProvider.value(
-      value: _viewModel,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Legacy Gantt Chart Example'),
-          leading: IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Toggle Controls',
-            onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
-          ),
-          actions: [
-            Consumer<GanttViewModel>(
-              builder: (context, vm, child) =>
-                  Row(mainAxisSize: MainAxisSize.min, children: _buildUserChips(context, vm)),
+        value: _viewModel,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Legacy Gantt Chart Example'),
+            leading: IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: 'Toggle Controls',
+              onPressed: () => setState(() => _isPanelVisible = !_isPanelVisible),
             ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: SafeArea(
-          child: Consumer<GanttViewModel>(
-            builder: (context, vm, child) {
-              final ganttTheme = _buildGanttTheme();
-              // Update the format after the current frame is built to avoid calling notifyListeners during build.
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
-                // Attach scroll listeners after the first frame is built to ensure
-                // the controllers are attached to their respective scroll views.
-                // This prevents the "ScrollController not attached" error.
-                vm.attachScrollListeners();
-              });
+            actions: [
+              Consumer<GanttViewModel>(
+                builder: (context, vm, child) =>
+                    Row(mainAxisSize: MainAxisSize.min, children: _buildUserChips(context, vm)),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: SafeArea(
+            child: Consumer<GanttViewModel>(
+              builder: (context, vm, child) {
+                final ganttTheme = _buildGanttTheme();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  vm.updateResizeTooltipDateFormat(_getResizeTooltipDateFormat());
+                  vm.attachScrollListeners();
+                });
 
-              return Row(
-                children: [
-                  if (_isPanelVisible)
-                    SizedBox(
-                      width: vm.controlPanelWidth ?? 350,
-                      child: _buildControlPanel(context, vm),
-                    ),
-                  if (_isPanelVisible)
-                    GestureDetector(
-                      onHorizontalDragUpdate: (details) {
-                        final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
-                        vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
-                      },
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.resizeLeftRight,
-                        child: VerticalDivider(
-                          width: 8,
-                          thickness: 8,
-                          color: Theme.of(context).dividerColor,
+                return Row(
+                  children: [
+                    if (_isPanelVisible)
+                      SizedBox(
+                        width: vm.controlPanelWidth ?? 350,
+                        child: _buildControlPanel(context, vm),
+                      ),
+                    if (_isPanelVisible)
+                      GestureDetector(
+                        onHorizontalDragUpdate: (details) {
+                          final newWidth = (vm.controlPanelWidth ?? 350) + details.delta.dx;
+                          vm.setControlPanelWidth(newWidth.clamp(150.0, 400.0));
+                        },
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeLeftRight,
+                          child: VerticalDivider(
+                            width: 8,
+                            thickness: 8,
+                            color: Theme.of(context).dividerColor,
+                          ),
                         ),
                       ),
-                    ),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (vm.gridWidth == null || vm.gridWidth! < 50.0) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            double initialWidth = constraints.maxWidth * 0.4;
-                            if (initialWidth < 200) initialWidth = 200;
-                            // Ensure we don't exceed the max width, but keep it substantial
-                            if (initialWidth > constraints.maxWidth) initialWidth = constraints.maxWidth;
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (vm.gridWidth == null || vm.gridWidth! < 50.0) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              double initialWidth = constraints.maxWidth * 0.41;
+                              if (initialWidth < 200) initialWidth = 200;
+                              if (initialWidth > constraints.maxWidth) initialWidth = constraints.maxWidth;
+                              if (initialWidth <= 0) initialWidth = 300;
+                              vm.setGridWidth(initialWidth);
+                            });
+                          }
 
-                            // Last resort fallback
-                            if (initialWidth <= 0) initialWidth = 300;
-
-                            vm.setGridWidth(initialWidth);
-                          });
-                        }
-
-                        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                          LegacyGanttToolbar(
-                            controller: vm.controller,
-                            theme: ganttTheme,
-                          ),
-                          Expanded(
-                              child: Row(
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Gantt Grid (Left Side)
-                              // This is a custom widget for this example app that shows a data grid.
-                              // It is synchronized with the Gantt chart via a shared ScrollController.
-                              // This is a common pattern for building a complete Gantt chart UI.
-                              SizedBox(
-                                width: vm.gridWidth ?? constraints.maxWidth * 0.41,
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      // Wrap the grid in a Listener to track pointer
-                                      // position mid-drag and compute the live drop target.
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) => Listener(
-                                          key: _gridContainerKey,
-                                          onPointerDown: (event) {
-                                            // We don't know which row started dragging yet;
-                                            // defer to onPointerMove to detect motion.
-                                            _isDraggingRow = false;
-                                            _draggedRowIndex = -1;
-                                          },
-                                          onPointerMove: (event) {
-                                            // Resolve pointer Y relative to the grid container.
-                                            final renderBox =
-                                                _gridContainerKey.currentContext?.findRenderObject() as RenderBox?;
-                                            if (renderBox == null) return;
-                                            final localPos = renderBox.globalToLocal(event.position);
-
-                                            final flat = vm.flatGridData;
-                                            if (flat.isEmpty) return;
-
-                                            // Derive the header height from the selected axis format.
-                                            final headerH =
-                                                _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
-
-                                            // Walk rows to find which one the pointer is over,
-                                            // accounting for variable row heights.
-                                            double cumulativeY = headerH;
-                                            int hoveredIndex = -1;
-                                            for (int i = 0; i < flat.length; i++) {
-                                              final rowId = flat[i]['id'] as String;
-                                              final rowH = (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
-                                              if (localPos.dy < cumulativeY + rowH) {
-                                                hoveredIndex = i;
-                                                break;
-                                              }
-                                              cumulativeY += rowH;
-                                            }
-                                            if (hoveredIndex < 0) hoveredIndex = flat.length - 1;
-
-                                            // Track which row started the drag.
-                                            if (!_isDraggingRow) {
-                                              _isDraggingRow = true;
-                                              _draggedRowIndex = hoveredIndex;
-                                            }
-
-                                            // Delegate drop-target + intent to the ViewModel
-                                            // (which debounces "inside" to prevent dancing).
-                                            vm.updateDropHover(_draggedRowIndex, hoveredIndex);
-                                            _lastDropTarget = vm.pendingDropTarget;
-                                          },
-                                          onPointerUp: (_) {
-                                            _isDraggingRow = false;
-                                            _draggedRowIndex = -1;
-                                            // Clear visual feedback immediately on release,
-                                            // but keep _lastDropTarget for the reorder call.
-                                            vm.clearDropTarget();
-                                          },
-                                          onPointerCancel: (_) {
-                                            _isDraggingRow = false;
-                                            _draggedRowIndex = -1;
-                                            _lastDropTarget = null;
-                                            vm.clearDropTarget();
-                                          },
-                                          child: UnifiedDataGrid<Map<String, dynamic>>(
-                                            // Use a key that changes when data reloads to force a grid refresh.
-                                            allowSorting: false,
-                                            // Combine seedVersion (for full resets) with expansionSignature (for remote/local toggles).
-                                            // This ensures the grid is recreated, respecting the new initialExpandedRowIds.
-                                            key: ValueKey('local_grid_${vm.seedVersion}'),
-                                            mode: DataGridMode.client,
-                                            clientData: vm.flatGridData,
-                                            toMap: (item) => item,
-                                            rowIdKey: 'id',
-                                            isTree: true,
-                                            parentIdKey: 'parentId',
-                                            isExpandedKey: 'isExpanded',
-                                            rowHeightBuilder: (data) {
-                                              final rowId = data['id'] as String;
-                                              return (vm.rowMaxStackDepth[rowId] ?? 1) * vm.rowHeight;
-                                            },
-                                            onRowToggle: (rowId, _) => vm.toggleExpansion(rowId),
-                                            initialExpandedRowIds:
-                                                vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
-                                            scrollController: vm.gridScrollController,
-                                            headerHeight:
-                                                _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                            showFooter: false,
-                                            allowFiltering: false, // Filtering can be enabled if desired.
-                                            selectedRowId: vm.selectedRowId,
-                                            onReorder: (oldIndex, newIndex) {
-                                              final intent = _lastDropTarget?.intent ?? DropIntent.between;
-                                              final targetRowId = _lastDropTarget?.rowId;
-                                              _lastDropTarget = null;
-                                              vm.clearDropTarget();
-                                              vm.reorderResources(
-                                                oldIndex,
-                                                newIndex,
-                                                dropIntent: intent,
-                                                dropTargetRowId: targetRowId,
-                                              );
-                                            },
-
-                                            columnDefs: [
-                                              DataColumnDef(
-                                                id: 'drag',
-                                                caption: '',
-                                                width: 40,
-                                                minWidth: 40,
-                                                isDragHandle: true,
-                                                cellBuilder: (context, data) {
-                                                  final rowId = data['id'] as String;
-                                                  final rowName = (data['name'] as String?) ?? rowId;
-                                                  final dropTarget = vm.pendingDropTarget;
-                                                  final isTargeted = dropTarget != null && dropTarget.rowId == rowId;
-                                                  final isNesting =
-                                                      isTargeted && dropTarget.intent == DropIntent.inside;
-                                                  final isBetween =
-                                                      isTargeted && dropTarget.intent == DropIntent.between;
-
-                                                  // Pick tooltip message based on intent.
-                                                  String tooltipMsg;
-                                                  if (isNesting) {
-                                                    tooltipMsg = 'Nest inside "$rowName"';
-                                                  } else if (isBetween) {
-                                                    tooltipMsg = 'Move after "$rowName"';
-                                                  } else {
-                                                    tooltipMsg = 'Drag to reorder';
-                                                  }
-
-                                                  final Color? highlightColor = isNesting
-                                                      ? Colors.blue.withValues(alpha: 0.15)
-                                                      : null; // Between uses a border, not bg
-
-                                                  Widget icon = Tooltip(
-                                                    message: tooltipMsg,
-                                                    waitDuration: const Duration(milliseconds: 400),
-                                                    child: Icon(
-                                                      Icons.drag_indicator,
-                                                      color: isTargeted ? Colors.blue : Colors.grey,
-                                                      size: 20,
-                                                    ),
-                                                  );
-
-                                                  // Wrap in a Container that applies the visual decoration.
-                                                  return Container(
-                                                    decoration: BoxDecoration(
-                                                      color: highlightColor,
-                                                      border: isBetween
-                                                          ? const Border(
-                                                              bottom: BorderSide(color: Colors.blue, width: 2))
-                                                          : null,
-                                                    ),
-                                                    child: Center(child: icon),
-                                                  );
-                                                },
-                                              ),
-                                              DataColumnDef(
-                                                id: 'name',
-                                                caption: 'Name',
-                                                // Use flex to make the name column fill available space.
-                                                flex: 1,
-                                                isNameColumn: true,
-                                                minWidth: 150,
-                                              ),
-                                              DataColumnDef(
-                                                id: 'completion',
-                                                caption: 'Completed %',
-                                                width: 100,
-                                                minWidth: 100,
-                                                cellBuilder: (context, data) {
-                                                  final double? completion = data['completion'];
-                                                  if (completion == null) return const SizedBox.shrink();
-                                                  final percentage = (completion * 100).clamp(0, 100);
-                                                  final percentageText = '${percentage.toStringAsFixed(0)}%';
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
-                                                    child: Stack(
-                                                      alignment: Alignment.center,
-                                                      children: [
-                                                        LinearProgressIndicator(
-                                                          value: completion,
-                                                          backgroundColor: Colors.grey.shade300,
-                                                          color: Colors.blue,
-                                                          minHeight: 20,
-                                                        ),
-                                                        Text(
-                                                          percentageText,
-                                                          style: TextStyle(
-                                                            color: percentage > 50 ? Colors.white : Colors.black,
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                              DataColumnDef(
-                                                id: 'actions',
-                                                caption: '',
-                                                width: 56,
-                                                minWidth: 56,
-                                                cellBuilder: (context, data) {
-                                                  final bool isParent = data['parentId'] == null;
-                                                  final String rowId = data['id'];
-                                                  if (isParent) {
-                                                    return PopupMenuButton<String>(
-                                                      padding: EdgeInsets.zero,
-                                                      icon: const Icon(Icons.more_vert, size: 16),
-                                                      tooltip: 'Options',
-                                                      onSelected: (value) {
-                                                        if (value == 'add_line_item') {
-                                                          vm.addLineItem(context, rowId);
-                                                        } else if (value == 'delete_row') {
-                                                          vm.deleteRow(rowId);
-                                                        } else if (value == 'edit_task') {
-                                                          vm.editParentTask(context, rowId);
-                                                        } else if (value == 'edit_dependent_tasks') {
-                                                          vm.editDependentTasks(context, rowId);
-                                                        }
-                                                      },
-                                                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                                        const PopupMenuItem<String>(
-                                                            value: 'add_line_item', child: Text('Add Line Item')),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'edit_task', child: Text('Edit Task')),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'edit_dependent_tasks',
-                                                            child: Text('Edit Dependent Tasks')),
-                                                        const PopupMenuDivider(),
-                                                        const PopupMenuItem<String>(
-                                                            value: 'delete_row', child: Text('Delete Row')),
-                                                      ],
-                                                    );
-                                                  } else {
-                                                    return IconButton(
-                                                      icon: const Icon(Icons.delete_outline, size: 18),
-                                                      tooltip: 'Delete Row',
-                                                      onPressed: () => vm.deleteRow(rowId),
-                                                    );
-                                                  }
-                                                },
-                                              ),
-                                            ],
-                                            // Replicate the header buttons from the old GanttGrid.
-                                            headerTrailingWidgets: [
-                                              (context) => PopupMenuButton<String>(
-                                                    padding: const EdgeInsets.only(right: 16.0),
-                                                    icon: const Icon(Icons.more_vert, size: 16),
-                                                    tooltip: 'More Options',
-                                                    onSelected: (value) {
-                                                      if (value == 'add_contact') {
-                                                        vm.addContact(context);
-                                                      } else if (value == 'edit_all_parents') {
-                                                        vm.editAllParentTasks(context);
-                                                      }
-                                                    },
-                                                    itemBuilder: (context) => <PopupMenuEntry<String>>[
-                                                      const PopupMenuItem<String>(
-                                                        value: 'add_contact',
-                                                        child: ListTile(
-                                                            leading: Icon(Icons.person_add),
-                                                            title: Text('Add Contact')),
-                                                      ),
-                                                      const PopupMenuItem<String>(
-                                                        value: 'edit_all_parents',
-                                                        child: ListTile(
-                                                            leading: Icon(Icons.edit),
-                                                            title: Text('Edit All Parent Tasks')),
-                                                      ),
-                                                    ],
-                                                  )
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ), // This SizedBox balances the height of the timeline scrubber on the right.
-                                    const SizedBox(height: 40),
-                                  ],
-                                ),
+                              LegacyGanttToolbar(
+                                controller: vm.controller,
+                                theme: ganttTheme,
                               ),
-                              // Draggable Divider
-                              GestureDetector(
-                                onHorizontalDragUpdate: (details) {
-                                  final newWidth = (vm.gridWidth ?? 0) + details.delta.dx;
-                                  vm.setGridWidth(newWidth.clamp(150.0, constraints.maxWidth - 150.0));
-                                },
-                                child: MouseRegion(
-                                  cursor: SystemMouseCursors.resizeLeftRight,
-                                  child: VerticalDivider(
-                                    width: 8,
-                                    thickness: 8,
-                                    color: Theme.of(context).dividerColor,
-                                  ),
-                                ),
-                              ),
-                              // Gantt Chart (Right Side)
                               Expanded(
-                                child: Column(
+                                child: Row(
                                   children: [
-                                    Expanded(
-                                      child: LayoutBuilder(
-                                        builder: (context, chartConstraints) {
-                                          final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
+                                    // Gantt Grid (Left Side)
+                                    // This is a custom widget for this example app that shows a data grid.
+                                    // It is synchronized with the Gantt chart via a shared ScrollController.
+                                    // This is a common pattern for building a complete Gantt chart UI.
+                                    SizedBox(
+                                      width: vm.gridWidth ?? constraints.maxWidth * 0.41,
+                                      child: Column(
+                                        children: [
+                                          Expanded(
+                                            child: LayoutBuilder(
+                                              builder: (context, gridConstraints) => Listener(
+                                                key: _gridContainerKey,
+                                                onPointerDown: (event) {
+                                                  _isDraggingRow = false;
+                                                  _draggedRowIndex = -1;
+                                                },
+                                                onPointerMove: (event) {
+                                                  final renderBox = _gridContainerKey.currentContext?.findRenderObject()
+                                                      as RenderBox?;
+                                                  if (renderBox == null) return;
+                                                  final localPos = renderBox.globalToLocal(event.position);
 
-                                          // Notify VM of the width so it can adjust scroll offset if needed (maintain visible date)
-                                          vm.maintainScrollOffsetForWidth(ganttWidth);
+                                                  final flat = vm.flatGridData;
+                                                  if (flat.isEmpty) return;
 
-                                          // The axis height is adjusted based on whether we are using the
-                                          // default single-line header or the custom two-line header.
-                                          final double axisHeight =
-                                              _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
+                                                  final headerH =
+                                                      _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
 
-                                          return SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            controller: vm.ganttHorizontalScrollController,
-                                            child: SizedBox(
-                                              width: ganttWidth,
-                                              height: chartConstraints
-                                                  .maxHeight, // Fix: Constrain height to viewport so internal scroll works
-                                              child: LegacyGanttChartWidget(
-                                                enableVerticalTaskDrag: true,
-                                                controller: vm.controller,
-                                                loadingIndicatorType: vm.loadingIndicatorType,
-                                                loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                                syncClient: vm.syncClient,
-                                                showCursors: _showCursors,
-                                                showCriticalPath: vm.showCriticalPath,
-                                                showResourceHistogram: vm.showResourceHistogram,
-                                                workCalendar: vm.workCalendar,
-                                                onTaskSecondaryTap: (task, position) =>
-                                                    _showTaskContextMenu(context, task, position),
-                                                onTaskLongPress: (task, position) =>
-                                                    _showTaskContextMenu(context, task, position),
-                                                onTaskHover: (task, globalPosition) {
-                                                  // Show tooltip overlay
-                                                  if (task == null) {
-                                                    _tooltipOverlay?.remove();
-                                                    _tooltipOverlay = null;
-                                                    return;
-                                                  }
-
-                                                  // Format content
-                                                  final sb = StringBuffer();
-                                                  sb.writeln(task.name);
-                                                  sb.writeln('Start: ${task.start.toString().substring(0, 16)}');
-                                                  sb.writeln('End: ${task.end.toString().substring(0, 16)}');
-
-                                                  if (vm.showCriticalPath) {
-                                                    final stats = vm.cpmStats[task.id];
-                                                    if (stats != null) {
-                                                      sb.writeln('');
-                                                      sb.writeln('Critical: ${stats.float <= 0 ? "YES" : "NO"}');
-                                                      sb.writeln(
-                                                          'Float: ${Duration(minutes: stats.float).inDays} days');
-
-                                                      if (vm.totalStartDate != null) {
-                                                        final esDate =
-                                                            vm.totalStartDate!.add(Duration(minutes: stats.earlyStart));
-                                                        final lfDate =
-                                                            vm.totalStartDate!.add(Duration(minutes: stats.lateFinish));
-                                                        final dateFormat = DateFormat('MM/dd HH:mm');
-                                                        sb.writeln('Early Start: ${dateFormat.format(esDate)}');
-                                                        sb.writeln('Late Finish: ${dateFormat.format(lfDate)}');
-                                                      }
+                                                  double cumulativeY = headerH;
+                                                  int hoveredIndex = -1;
+                                                  for (int i = 0; i < flat.length; i++) {
+                                                    final rowId = flat[i]['id'] as String;
+                                                    final rowH =
+                                                        (vm.rowMaxStackDepth[rowId] ?? 1).toDouble() * vm.rowHeight;
+                                                    if (localPos.dy < cumulativeY + rowH) {
+                                                      hoveredIndex = i;
+                                                      break;
                                                     }
+                                                    cumulativeY += rowH;
+                                                  }
+                                                  if (hoveredIndex < 0) hoveredIndex = flat.length - 1;
+
+                                                  if (!_isDraggingRow) {
+                                                    _isDraggingRow = true;
+                                                    _draggedRowIndex = hoveredIndex;
                                                   }
 
-                                                  if (_tooltipOverlay == null) {
-                                                    _tooltipOverlay = OverlayEntry(
-                                                        builder: (context) => Positioned(
-                                                              left: globalPosition.dx + 10,
-                                                              top: globalPosition.dy + 10,
-                                                              child: Material(
-                                                                elevation: 4,
-                                                                color: Colors.black87,
-                                                                borderRadius: BorderRadius.circular(4),
-                                                                child: Padding(
-                                                                  padding: const EdgeInsets.all(8.0),
-                                                                  child: Text(
-                                                                    sb.toString().trim(),
-                                                                    style: const TextStyle(
-                                                                        color: Colors.white, fontSize: 12),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ));
-                                                    Overlay.of(context).insert(_tooltipOverlay!);
-                                                  } else {
-                                                    // Rebuild/reposition if needed, but for simplicity we assume
-                                                    // the overlay might need to be removed and re-added or we use a sophisticated tooltip.
-                                                    // For this quick fix, let's just remove and re-add to update position/content
-                                                    _tooltipOverlay?.remove();
-                                                    _tooltipOverlay = OverlayEntry(
-                                                        builder: (context) => Positioned(
-                                                              left: globalPosition.dx + 10,
-                                                              top: globalPosition.dy + 10,
-                                                              child: Material(
-                                                                elevation: 4,
-                                                                color: Colors.black87,
-                                                                borderRadius: BorderRadius.circular(4),
-                                                                child: Padding(
-                                                                  padding: const EdgeInsets.all(8.0),
-                                                                  child: Text(
-                                                                    sb.toString().trim(),
-                                                                    style: const TextStyle(
-                                                                        color: Colors.white, fontSize: 12),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ));
-                                                    Overlay.of(context).insert(_tooltipOverlay!);
-                                                  }
+                                                  vm.updateDropHover(_draggedRowIndex, hoveredIndex);
                                                 },
-
-                                                taskGrouper: (task) => task.rowId,
-                                                // --- Custom Builders ---
-                                                timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
-                                                timelineAxisHeaderBuilder:
-                                                    _selectedAxisFormat == TimelineAxisFormat.custom
-                                                        ? _buildCustomTimelineHeader
-                                                        : null,
-
-                                                // --- Data and Layout ---
-                                                // data: vm.ganttTasks, // Removed: Controlled by vm.controller
-                                                // dependencies: vm.dependencies, // Removed: Controlled by vm.controller
-                                                // conflictIndicators: vm.conflictIndicators, // Removed: Controlled by vm.controller
-                                                visibleRows: vm.visibleGanttRows, // This should be correct
-                                                rowHeight: 27.0,
-                                                rowMaxStackDepth: vm.rowMaxStackDepth,
-                                                // The axis height is adjusted based on whether we are using the
-                                                // default single-line header or the custom two-line header.
-                                                axisHeight: axisHeight,
-
-                                                // --- Scroll Controllers and Syncing ---
-                                                // This is the key to synchronizing the vertical scroll between the
-                                                // left-side grid and the right-side chart. We pass the grid's
-                                                // controller here for the internal view model to drive.
-                                                scrollController: vm.gridScrollController,
-                                                onRowRequestVisible: (rowId) {
-                                                  vm.ensureRowIsVisible(rowId);
-                                                  // Find parent and expand in grid
-                                                  final parent = vm.gridData
-                                                      .firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
-                                                  if (parent != null) {
-                                                    _gridKey.currentState?.setRowExpansion(parent.id, true);
-                                                  }
+                                                onPointerUp: (_) {
+                                                  _isDraggingRow = false;
+                                                  _draggedRowIndex = -1;
+                                                  vm.clearDropTarget();
                                                 },
-                                                focusedTaskId: vm.focusedTaskId,
-                                                onFocusChange: vm.setFocusedTaskId,
-                                                horizontalScrollController: vm.ganttHorizontalScrollController,
-
-                                                // --- Date Range ---
-                                                // These define the currently visible time window.
-                                                // gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(), // Removed: Controlled by vm.controller
-                                                // gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(), // Removed: Controlled by vm.controller
-                                                // These define the total scrollable time range.
-                                                totalGridMin:
-                                                    vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
-                                                totalGridMax:
-                                                    vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
-                                                enableDragAndDrop: vm.dragAndDropEnabled,
-                                                showEmptyRows: vm.showEmptyParentRows,
-                                                rollUpMilestones: vm.rollUpMilestones,
-                                                showNowLine: _showNowLine,
-                                                showSlack: _showSlack && vm.showCriticalPath,
-                                                nowLineDate: DateTime.now(),
-                                                enableResize: vm.resizeEnabled,
-                                                onTaskUpdate: (task, start, end) {
-                                                  vm.handleTaskUpdate(task, start, end);
-                                                  _bulkUpdateCount++;
-                                                  _bulkUpdateTimer?.cancel();
-                                                  _bulkUpdateTimer = Timer(const Duration(milliseconds: 100), () {
-                                                    if (_bulkUpdateCount == 1) {
-                                                      _showSnackbar('Updated ${task.name}');
-                                                    } else {
-                                                      _showSnackbar('Updated $_bulkUpdateCount tasks');
+                                                onPointerCancel: (_) {
+                                                  _isDraggingRow = false;
+                                                  _draggedRowIndex = -1;
+                                                  vm.clearDropTarget();
+                                                },
+                                                child: UnifiedDataGrid<Map<String, dynamic>>(
+                                                  allowSorting: false,
+                                                  key: ValueKey('grid_${vm.seedVersion}'),
+                                                  mode: DataGridMode.client,
+                                                  clientData: vm.flatGridData,
+                                                  toMap: (item) => item,
+                                                  rowIdKey: 'id',
+                                                  isTree: true,
+                                                  parentIdKey: 'parentId',
+                                                  rowHeightBuilder: (data) {
+                                                    final rowId = data['id'] as String;
+                                                    return (vm.rowMaxStackDepth[rowId] ?? 1).toDouble() * vm.rowHeight;
+                                                  },
+                                                  onRowToggle: (rowId, isExpanded) => vm.toggleExpansion(rowId),
+                                                  initialExpandedRowIds:
+                                                      vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
+                                                  isExpandedKey: 'isExpanded',
+                                                  scrollController: vm.gridScrollController,
+                                                  headerHeight:
+                                                      _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                                  showFooter: false,
+                                                  allowFiltering: false,
+                                                  selectedRowId: vm.selectedRowId,
+                                                  onReorder: (draggedId, targetId, isAfter) {
+                                                    final dropTarget = vm.pendingDropTarget;
+                                                    final intent = dropTarget?.intent ?? DropIntent.between;
+                                                    final targetRowId = dropTarget?.rowId;
+                                                    vm.clearDropTarget();
+                                                    vm.reorderResources(
+                                                      draggedId,
+                                                      targetId,
+                                                      isAfter,
+                                                      dropIntent: intent,
+                                                      dropTargetRowId: targetRowId,
+                                                    );
+                                                  },
+                                                  onSelectionChanged: (selectedRowIds) {
+                                                    if (selectedRowIds.isNotEmpty) {
+                                                      vm.setSelectedRowId(selectedRowIds.first);
                                                     }
-                                                    _bulkUpdateCount = 0;
-                                                  });
-                                                },
-                                                onTaskDoubleClick: (task) {
-                                                  _handleSnapToTask(task);
-                                                },
-                                                // This callback is triggered when a user clicks on an empty space,
-                                                // allowing for the creation of new tasks.
-                                                onEmptySpaceClick: (rowId, time) =>
-                                                    vm.handleEmptySpaceClick(context, rowId, time),
-                                                onBulkTaskUpdate: vm.handleBatchTaskUpdate,
-                                                onTaskDrawEnd: vm.handleTaskDrawEnd,
-                                                onPressTask: (task) {
-                                                  vm.setFocusedTaskId(task.id);
-                                                  _showSnackbar('Selected task: ${task.name}');
-                                                },
+                                                  },
+                                                  columnDefs: [
+                                                    DataColumnDef(
+                                                      id: 'drag',
+                                                      caption: '',
+                                                      width: 40,
+                                                      minWidth: 40,
+                                                      isDragHandle: true,
+                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                        final rowName = (record['name'] as String?) ?? rowId;
+                                                        final dropTarget = vm.pendingDropTarget;
+                                                        final isTargeted =
+                                                            dropTarget != null && dropTarget.rowId == rowId;
+                                                        final isNesting =
+                                                            isTargeted && dropTarget.intent == DropIntent.inside;
+                                                        final isBetween =
+                                                            isTargeted && dropTarget.intent == DropIntent.between;
+                                                        final Color? highlightColor = isNesting
+                                                            ? ganttTheme.barColorSecondary.withValues(alpha: 0.15)
+                                                            : null;
 
-                                                onDependencyAdd: (dependency) => vm.addDependencyObject(dependency),
+                                                        String tooltipMsg;
+                                                        if (isNesting) {
+                                                          tooltipMsg = 'Nest inside "$rowName"';
+                                                        } else if (isBetween) {
+                                                          tooltipMsg = 'Move after "$rowName"';
+                                                        } else {
+                                                          tooltipMsg = 'Drag to reorder';
+                                                        }
 
-                                                // --- Theming and Styling ---
-                                                theme: ganttTheme,
-                                                weekendColor: Colors.grey.withValues(alpha: 0.1),
-                                                resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
-                                                resizeTooltipBackgroundColor: Colors.purple,
-                                                resizeHandleWidth: vm.resizeHandleWidth,
-                                                resizeTooltipFontColor: Colors.white,
-                                                focusedTaskResizeHandleWidth: vm.resizeHandleWidth,
+                                                        Widget icon = Tooltip(
+                                                          message: tooltipMsg,
+                                                          waitDuration: const Duration(milliseconds: 400),
+                                                          child: Icon(
+                                                            Icons.drag_indicator,
+                                                            color:
+                                                                isTargeted ? ganttTheme.barColorPrimary : Colors.grey,
+                                                            size: 20,
+                                                          ),
+                                                        );
 
-                                                // --- Custom Task Content ---
-                                                // This builder injects custom content *inside* the default task bar.
-                                                // It's used here to add an icon and a context menu button.
-                                                taskContentBuilder: (task) {
-                                                  if (task.isTimeRangeHighlight) {
-                                                    return const SizedBox.shrink(); // Hide content for highlights
-                                                  }
-                                                  final barColor = task.color ?? ganttTheme.barColorPrimary;
-                                                  final textColor =
-                                                      ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
-                                                          ? Colors.white
-                                                          : Colors.black;
-                                                  final textStyle = ganttTheme.taskTextStyle.copyWith(color: textColor);
-                                                  return LayoutBuilder(builder: (context, constraints) {
-                                                    // Define minimum widths for content visibility.
-                                                    final bool canShowButton = constraints.maxWidth >= 32;
-                                                    final bool canShowText = constraints.maxWidth > 66;
+                                                        return Container(
+                                                          decoration: BoxDecoration(
+                                                            color: highlightColor,
+                                                            border: isBetween
+                                                                ? Border(
+                                                                    bottom: BorderSide(
+                                                                        color: ganttTheme.barColorPrimary, width: 2))
+                                                                : null,
+                                                          ),
+                                                          child: Center(child: icon),
+                                                        );
+                                                      },
+                                                    ),
+                                                    DataColumnDef(
+                                                      id: 'name',
+                                                      caption: 'Name',
+                                                      flex: 1,
+                                                      isNameColumn: true,
+                                                      minWidth: 150,
+                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                        final rowName = (record['name'] as String?) ?? rowId;
+                                                        final dropTarget = vm.pendingDropTarget;
+                                                        final isTargeted =
+                                                            dropTarget != null && dropTarget.rowId == rowId;
+                                                        final isNesting =
+                                                            isTargeted && dropTarget.intent == DropIntent.inside;
+                                                        final isBetween =
+                                                            isTargeted && dropTarget.intent == DropIntent.between;
+                                                        final Color? highlightColor = isNesting
+                                                            ? ganttTheme.barColorPrimary.withValues(alpha: 0.15)
+                                                            : null;
 
-                                                    return Stack(
-                                                      children: [
-                                                        // Task content (icon and name)
-                                                        if (canShowText)
-                                                          Padding(
-                                                            // Pad to the right to avoid overlapping the options button.
-                                                            padding: const EdgeInsets.only(left: 4.0, right: 32.0),
-                                                            child: Row(
+                                                        return Container(
+                                                          decoration: BoxDecoration(
+                                                            color: highlightColor,
+                                                            border: isBetween
+                                                                ? Border(
+                                                                    bottom: BorderSide(
+                                                                        color: ganttTheme.barColorPrimary, width: 2))
+                                                                : null,
+                                                          ),
+                                                          child: Padding(
+                                                            padding: const EdgeInsets.symmetric(
+                                                                horizontal: 8.0, vertical: 4.0),
+                                                            child: Align(
+                                                              alignment: Alignment.centerLeft,
+                                                              child: Text(
+                                                                rowName,
+                                                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                    DataColumnDef(
+                                                      id: 'completion',
+                                                      caption: 'Completed %',
+                                                      width: 100,
+                                                      minWidth: 100,
+                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                        final double? completion = record['completion'];
+                                                        final dropTarget = vm.pendingDropTarget;
+                                                        final isTargeted =
+                                                            dropTarget != null && dropTarget.rowId == rowId;
+                                                        final isNesting =
+                                                            isTargeted && dropTarget.intent == DropIntent.inside;
+                                                        final isBetween =
+                                                            isTargeted && dropTarget.intent == DropIntent.between;
+                                                        final Color? highlightColor = isNesting
+                                                            ? ganttTheme.barColorSecondary.withValues(alpha: 0.15)
+                                                            : null;
+
+                                                        if (completion == null) {
+                                                          return Container(
+                                                            decoration: BoxDecoration(
+                                                              color: highlightColor,
+                                                              border: isBetween
+                                                                  ? Border(
+                                                                      bottom: BorderSide(
+                                                                          color: ganttTheme.barColorPrimary, width: 2))
+                                                                  : null,
+                                                            ),
+                                                            child: const SizedBox.shrink(),
+                                                          );
+                                                        }
+
+                                                        final percentage = (completion * 100).clamp(0, 100);
+                                                        final percentageText = '${percentage.toStringAsFixed(0)}%';
+
+                                                        return Container(
+                                                          decoration: BoxDecoration(
+                                                            color: highlightColor,
+                                                            border: isBetween
+                                                                ? Border(
+                                                                    bottom: BorderSide(
+                                                                        color: ganttTheme.barColorPrimary, width: 2))
+                                                                : null,
+                                                          ),
+                                                          child: Padding(
+                                                            padding: const EdgeInsets.symmetric(
+                                                                horizontal: 8.0, vertical: 2.0),
+                                                            child: Stack(
+                                                              alignment: Alignment.center,
                                                               children: [
-                                                                Icon(
-                                                                  task.isSummary
-                                                                      ? Icons.summarize_outlined
-                                                                      : Icons.task_alt,
-                                                                  color: textColor,
-                                                                  size: 16,
+                                                                LinearProgressIndicator(
+                                                                  value: completion,
+                                                                  backgroundColor: ganttTheme.barColorSecondary
+                                                                      .withValues(alpha: 0.3),
+                                                                  color: ganttTheme.barColorPrimary,
+                                                                  minHeight: 20,
                                                                 ),
-                                                                const SizedBox(width: 4),
-                                                                Expanded(
-                                                                  child: Text(
-                                                                    task.name ?? '',
-                                                                    style: textStyle,
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                    softWrap: false,
+                                                                Text(
+                                                                  percentageText,
+                                                                  style: TextStyle(
+                                                                    color:
+                                                                        percentage > 50 ? Colors.white : Colors.black,
+                                                                    fontSize: 12,
+                                                                    fontWeight: FontWeight.w600,
                                                                   ),
                                                                 ),
                                                               ],
                                                             ),
                                                           ),
+                                                        );
+                                                      },
+                                                    ),
+                                                    DataColumnDef(
+                                                      id: 'actions',
+                                                      caption: '',
+                                                      width: 56,
+                                                      minWidth: 56,
+                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                        final bool isParent = record['parentId'] == null;
+                                                        final dropTarget = vm.pendingDropTarget;
+                                                        final isTargeted =
+                                                            dropTarget != null && dropTarget.rowId == rowId;
+                                                        final isNesting =
+                                                            isTargeted && dropTarget.intent == DropIntent.inside;
+                                                        final isBetween =
+                                                            isTargeted && dropTarget.intent == DropIntent.between;
+                                                        final Color? highlightColor = isNesting
+                                                            ? ganttTheme.barColorPrimary.withValues(alpha: 0.15)
+                                                            : null;
 
-                                                        // Options menu button
-                                                        if (canShowButton)
-                                                          Positioned(
-                                                            right:
-                                                                8, // Inset from the right edge to leave space for resize handle
-                                                            top: 0,
-                                                            bottom: 0,
-                                                            child: Builder(
-                                                              builder: (context) => MouseRegion(
-                                                                cursor: SystemMouseCursors.click,
-                                                                child: GestureDetector(
-                                                                  behavior: HitTestBehavior.opaque,
-                                                                  onPanStart: (_) {}, // Consumes the drag gesture
-                                                                  onPanUpdate: (_) {},
-                                                                  child: IconButton(
-                                                                    padding: EdgeInsets.zero,
-                                                                    icon: Icon(Icons.more_vert,
-                                                                        color: textColor, size: 18),
-                                                                    tooltip: 'Task Options',
-                                                                    onPressed: () {
-                                                                      final RenderBox button =
-                                                                          context.findRenderObject() as RenderBox;
-                                                                      final Offset offset =
-                                                                          button.localToGlobal(Offset.zero);
-                                                                      final tapPosition =
-                                                                          offset.translate(button.size.width, 0);
-                                                                      _showTaskContextMenu(context, task, tapPosition);
-                                                                    },
+                                                        Widget actions;
+                                                        if (isParent) {
+                                                          actions = PopupMenuButton<String>(
+                                                            padding: EdgeInsets.zero,
+                                                            icon: const Icon(Icons.more_vert, size: 16),
+                                                            tooltip: 'Options',
+                                                            onSelected: (val) {
+                                                              if (val == 'add_line_item') {
+                                                                vm.addLineItem(context, rowId);
+                                                              } else if (val == 'delete_row') {
+                                                                vm.deleteResource(rowId);
+                                                              } else if (val == 'edit_task') {
+                                                                vm.editParentTask(context, rowId);
+                                                              } else if (val == 'edit_dependent_tasks') {
+                                                                vm.editDependentTasks(context, rowId);
+                                                              }
+                                                            },
+                                                            itemBuilder: (BuildContext context) =>
+                                                                <PopupMenuEntry<String>>[
+                                                              const PopupMenuItem<String>(
+                                                                  value: 'add_line_item', child: Text('Add Line Item')),
+                                                              const PopupMenuItem<String>(
+                                                                  value: 'edit_task', child: Text('Edit Task')),
+                                                              const PopupMenuItem<String>(
+                                                                  value: 'edit_dependent_tasks',
+                                                                  child: Text('Edit Dependent Tasks')),
+                                                              const PopupMenuDivider(),
+                                                              const PopupMenuItem<String>(
+                                                                  value: 'delete_row', child: Text('Delete Row')),
+                                                            ],
+                                                          );
+                                                        } else {
+                                                          actions = IconButton(
+                                                            icon: const Icon(Icons.delete_outline, size: 18),
+                                                            tooltip: 'Delete Row',
+                                                            onPressed: () => vm.deleteResource(rowId),
+                                                          );
+                                                        }
+
+                                                        return Container(
+                                                          decoration: BoxDecoration(
+                                                            color: highlightColor,
+                                                            border: isBetween
+                                                                ? Border(
+                                                                    bottom: BorderSide(
+                                                                        color: ganttTheme.dependencyLineColor,
+                                                                        width: 2))
+                                                                : null,
+                                                          ),
+                                                          child: Center(child: actions),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
+                                                  headerTrailingWidgets: [
+                                                    (context) => PopupMenuButton<String>(
+                                                          padding: const EdgeInsets.only(right: 16.0),
+                                                          icon: const Icon(Icons.more_vert, size: 16),
+                                                          tooltip: 'More Options',
+                                                          onSelected: (val) {
+                                                            if (val == 'add_contact') {
+                                                              vm.addContact(context);
+                                                            } else if (val == 'edit_all_parents') {
+                                                              vm.editAllParentTasks(context);
+                                                            }
+                                                          },
+                                                          itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                            const PopupMenuItem<String>(
+                                                              value: 'add_contact',
+                                                              child: ListTile(
+                                                                  leading: Icon(Icons.person_add),
+                                                                  title: Text('Add Contact')),
+                                                            ),
+                                                            const PopupMenuItem<String>(
+                                                              value: 'edit_all_parents',
+                                                              child: ListTile(
+                                                                  leading: Icon(Icons.playlist_add_check),
+                                                                  title: Text('Edit All Parents')),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onHorizontalDragUpdate: (details) {
+                                        final newWidth = (vm.gridWidth ?? 300) + details.delta.dx;
+                                        vm.setGridWidth(newWidth.clamp(50.0, constraints.maxWidth - 50.0));
+                                      },
+                                      child: MouseRegion(
+                                        cursor: SystemMouseCursors.resizeLeftRight,
+                                        child: VerticalDivider(
+                                          width: 8,
+                                          thickness: 8,
+                                          color: Theme.of(context).dividerColor,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        children: [
+                                          Expanded(
+                                            child: LayoutBuilder(
+                                              builder: (context, chartConstraints) {
+                                                final ganttWidth = vm.calculateGanttWidth(chartConstraints.maxWidth);
+                                                vm.maintainScrollOffsetForWidth(ganttWidth);
+                                                final axisHeight =
+                                                    _selectedAxisFormat == TimelineAxisFormat.custom ? 56.0 : 28.0;
+                                                final ganttTheme = LegacyGanttTheme.fromTheme(Theme.of(context));
+
+                                                return SingleChildScrollView(
+                                                  scrollDirection: Axis.horizontal,
+                                                  controller: vm.ganttHorizontalScrollController,
+                                                  child: SizedBox(
+                                                    width: ganttWidth,
+                                                    height: chartConstraints.maxHeight,
+                                                    child: LegacyGanttChartWidget(
+                                                      // --- Interaction Controls ---
+                                                      enableVerticalTaskDrag: true,
+                                                      // These properties define which interactive features are enabled.
+                                                      enableDragAndDrop: vm.dragAndDropEnabled,
+                                                      enableResize: vm.resizeEnabled,
+
+                                                      // This callback is triggered when a task is moved to a new row,
+                                                      // or moved to a new time in the same row. We use it to trigger
+                                                      // debounced snackbar feedback and push updates to the VM.
+                                                      onTaskMove: (task, start, end, rowId) {
+                                                        vm.handleTaskMove(task, start, end, rowId);
+                                                        _bulkUpdateCount++;
+                                                        _bulkUpdateTimer?.cancel();
+                                                        _bulkUpdateTimer = Timer(const Duration(milliseconds: 100), () {
+                                                          if (_bulkUpdateCount == 1) {
+                                                            _showSnackbar('Updated ${task.name}');
+                                                          } else {
+                                                            _showSnackbar('Updated $_bulkUpdateCount tasks');
+                                                          }
+                                                          _bulkUpdateCount = 0;
+                                                        });
+                                                      },
+                                                      onTaskUpdate: (task, start, end) {
+                                                        vm.handleTaskUpdate(task, start, end);
+                                                        _bulkUpdateCount++;
+                                                        _bulkUpdateTimer?.cancel();
+                                                        _bulkUpdateTimer = Timer(const Duration(milliseconds: 100), () {
+                                                          if (_bulkUpdateCount == 1) {
+                                                            _showSnackbar('Updated ${task.name}');
+                                                          } else {
+                                                            _showSnackbar('Updated $_bulkUpdateCount tasks');
+                                                          }
+                                                          _bulkUpdateCount = 0;
+                                                        });
+                                                      },
+                                                      controller: vm.controller,
+                                                      loadingIndicatorType: vm.loadingIndicatorType,
+                                                      loadingIndicatorPosition: vm.loadingIndicatorPosition,
+                                                      syncClient: vm.syncClient,
+                                                      onTaskSecondaryTap: (task, position) =>
+                                                          _showTaskContextMenu(context, task, position),
+                                                      onTaskLongPress: (task, position) =>
+                                                          _showTaskContextMenu(context, task, position),
+                                                      theme: ganttTheme,
+                                                      resizeHandleWidth: vm.resizeHandleWidth,
+                                                      focusedTaskResizeHandleWidth: vm.resizeHandleWidth,
+
+                                                      // --- Custom Task Content ---
+                                                      // This builder injects custom content *inside* the default task bar.
+                                                      // It's used here to add an icon and a context menu button.
+                                                      taskContentBuilder: (task) {
+                                                        if (task.isTimeRangeHighlight) {
+                                                          return const SizedBox.shrink(); // Hide content for highlights
+                                                        }
+
+                                                        final barColor = task.color ??
+                                                            (task.isSummary
+                                                                ? ganttTheme.summaryBarColor
+                                                                : ganttTheme.barColorPrimary);
+
+                                                        // Use a local estimation logic so changes here are immediately reflected.
+                                                        final textColor =
+                                                            (ThemeData.estimateBrightnessForColor(barColor) ==
+                                                                    Brightness.dark
+                                                                ? Colors.white
+                                                                : Colors.black);
+
+                                                        final textStyle =
+                                                            ganttTheme.taskTextStyle.copyWith(color: textColor);
+
+                                                        return LayoutBuilder(builder: (context, constraints) {
+                                                          // Define minimum widths for content visibility.
+                                                          final bool canShowButton = constraints.maxWidth >= 32;
+                                                          final bool canShowText = constraints.maxWidth > 66;
+
+                                                          return Stack(
+                                                            children: [
+                                                              // Task content (icon and name)
+                                                              if (canShowText)
+                                                                Padding(
+                                                                  // Pad to the right to avoid overlapping the options button.
+                                                                  padding:
+                                                                      const EdgeInsets.only(left: 4.0, right: 32.0),
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Icon(
+                                                                        task.isTimeRangeHighlight
+                                                                            ? Icons.error_outline
+                                                                            : (task.isSummary
+                                                                                ? Icons.summarize_outlined
+                                                                                : Icons.task_alt),
+                                                                        color: textColor,
+                                                                        size: 16,
+                                                                      ),
+                                                                      const SizedBox(width: 4),
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          task.name ?? '',
+                                                                          style: textStyle,
+                                                                          overflow: TextOverflow.ellipsis,
+                                                                          softWrap: false,
+                                                                        ),
+                                                                      ),
+                                                                    ],
                                                                   ),
+                                                                ),
+
+                                                              // Options menu button
+                                                              if (canShowButton)
+                                                                Positioned(
+                                                                  right:
+                                                                      8, // Inset from the right edge to leave space for resize handle
+                                                                  top: 0,
+                                                                  bottom: 0,
+                                                                  child: Builder(
+                                                                    builder: (context) => MouseRegion(
+                                                                      cursor: SystemMouseCursors.click,
+                                                                      child: GestureDetector(
+                                                                        behavior: HitTestBehavior.opaque,
+                                                                        onPanStart: (_) {}, // Consumes the drag gesture
+                                                                        onPanUpdate: (_) {},
+                                                                        child: IconButton(
+                                                                          padding: EdgeInsets.zero,
+                                                                          icon: Icon(Icons.more_vert,
+                                                                              color: textColor, size: 18),
+                                                                          tooltip: 'Task Options',
+                                                                          onPressed: () {
+                                                                            final RenderBox button =
+                                                                                context.findRenderObject() as RenderBox;
+                                                                            final Offset offset =
+                                                                                button.localToGlobal(Offset.zero);
+                                                                            final tapPosition =
+                                                                                offset.translate(button.size.width, 0);
+                                                                            _showTaskContextMenu(
+                                                                                context, task, tapPosition);
+                                                                          },
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                            ],
+                                                          );
+                                                        });
+                                                      },
+
+                                                      // --- Floating Resize Handles ---
+                                                      // This builder overrides the default resize handles with custom UI (chevrons).
+                                                      focusedTaskResizeHandleBuilder:
+                                                          (task, part, internalVm, handleWidth) {
+                                                        final barColor = task.color ??
+                                                            (task.isSummary
+                                                                ? ganttTheme.summaryBarColor
+                                                                : ganttTheme.barColorPrimary);
+                                                        final handleColor = task.isTimeRangeHighlight
+                                                            ? (ThemeData.estimateBrightnessForColor(barColor) ==
+                                                                    Brightness.dark
+                                                                ? Colors.white
+                                                                : Colors.black)
+                                                            : (ThemeData.estimateBrightnessForColor(barColor) ==
+                                                                    Brightness.dark
+                                                                ? Colors.white
+                                                                : Colors.black);
+                                                        return MouseRegion(
+                                                          cursor: SystemMouseCursors.resizeLeftRight,
+                                                          child: GestureDetector(
+                                                            behavior: HitTestBehavior.opaque,
+                                                            onPanStart: (details) {
+                                                              // Manually trigger the resize logic on the internal view model.
+                                                              // This is necessary because we are overriding the default hit-testing.
+                                                              internalVm.onPanStart(details,
+                                                                  overrideTask: task, overridePart: part);
+                                                            },
+                                                            onPanUpdate: internalVm.onPanUpdate,
+                                                            onPanEnd: internalVm.onPanEnd,
+                                                            child: Container(
+                                                              width: handleWidth,
+                                                              height: vm
+                                                                  .rowHeight, // Ensure container has height for alignment
+                                                              color: Colors.transparent, // Make the gesture area larger
+                                                              child: Center(
+                                                                // Center the icon
+                                                                child: Icon(
+                                                                  part == TaskPart.startHandle
+                                                                      ? Icons.chevron_left
+                                                                      : Icons.chevron_right,
+                                                                  color: handleColor,
+                                                                  size: 16,
                                                                 ),
                                                               ),
                                                             ),
                                                           ),
-                                                      ],
-                                                    );
-                                                  });
-                                                },
-                                                // This is the new builder for the floating resize handles.
-                                                focusedTaskResizeHandleBuilder: (task, part, internalVm, handleWidth) {
-                                                  final icon = part == TaskPart.startHandle
-                                                      ? Icons.chevron_left
-                                                      : Icons.chevron_right;
+                                                        );
+                                                      },
 
-                                                  // Using a GestureDetector to make the handle draggable.
-                                                  // The onPanStart call directly triggers the resize logic
-                                                  // in the view model.
-                                                  return GestureDetector(
-                                                    key: ValueKey(handleWidth), // Pass width for positioning
-                                                    onPanStart: (details) {
-                                                      internalVm.onPanStart(
-                                                        DragStartDetails(
-                                                          sourceTimeStamp: details.sourceTimeStamp,
-                                                          globalPosition: details.globalPosition,
-                                                          localPosition: details.localPosition,
-                                                        ),
-                                                        // We explicitly tell the view model which task and part
-                                                        // is being dragged, bypassing the need for hit-testing.
-                                                        overrideTask: task,
-                                                        overridePart: part,
-                                                      );
-                                                    },
-                                                    onPanUpdate: internalVm.onPanUpdate,
-                                                    onPanEnd: internalVm.onPanEnd,
-                                                    child: Container(
-                                                      width: handleWidth,
-                                                      height: vm.rowHeight, // Ensure container has height for alignment
-                                                      color: Colors.transparent, // Make the gesture area larger
-                                                      child: Center(
-                                                        // Center the icon
-                                                        child: Icon(
-                                                          icon,
-                                                          size: handleWidth,
-                                                          color: ganttTheme.barColorSecondary,
-                                                        ),
-                                                      ),
+                                                      // --- UI Feedback & Documentation ---
+                                                      // Custom OverlayEntry logic for showing detailed floating tooltips
+                                                      // on task hover. Displays task name, start/end times, and CPM stats.
+                                                      onTaskHover: (task, globalPosition) {
+                                                        // Show tooltip overlay
+                                                        if (task == null) {
+                                                          _tooltipOverlay?.remove();
+                                                          _tooltipOverlay = null;
+                                                          return;
+                                                        }
+
+                                                        // Format tooltip content
+                                                        final sb = StringBuffer();
+                                                        sb.writeln(task.name);
+                                                        sb.writeln('Start: ${task.start.toString().substring(0, 16)}');
+                                                        sb.writeln('End: ${task.end.toString().substring(0, 16)}');
+
+                                                        if (vm.showCriticalPath) {
+                                                          final stats = vm.cpmStats[task.id];
+                                                          if (stats != null) {
+                                                            sb.writeln('');
+                                                            sb.writeln('Critical: ${stats.float <= 0 ? "YES" : "NO"}');
+                                                            sb.writeln(
+                                                                'Float: ${Duration(minutes: stats.float.toInt()).inDays} days');
+
+                                                            if (vm.totalStartDate != null) {
+                                                              final esDate = vm.totalStartDate!
+                                                                  .add(Duration(minutes: stats.earlyStart.toInt()));
+                                                              final lfDate = vm.totalStartDate!
+                                                                  .add(Duration(minutes: stats.lateFinish.toInt()));
+                                                              final dateFormat = DateFormat('MM/dd HH:mm');
+                                                              sb.writeln('Early Start: ${dateFormat.format(esDate)}');
+                                                              sb.writeln('Late Finish: ${dateFormat.format(lfDate)}');
+                                                            }
+                                                          }
+                                                        }
+
+                                                        if (_tooltipOverlay == null) {
+                                                          _tooltipOverlay = OverlayEntry(
+                                                              builder: (context) => Positioned(
+                                                                    left: globalPosition.dx + 15,
+                                                                    top: globalPosition.dy + 15,
+                                                                    child: Material(
+                                                                      elevation: 4,
+                                                                      color: ganttTheme.barColorPrimary
+                                                                          .withValues(alpha: 0.9),
+                                                                      borderRadius: BorderRadius.circular(4),
+                                                                      child: Padding(
+                                                                        padding: const EdgeInsets.all(8.0),
+                                                                        child: Text(
+                                                                          sb.toString().trim(),
+                                                                          style: const TextStyle(
+                                                                              color: Colors.white, fontSize: 12),
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ));
+                                                          Overlay.of(context).insert(_tooltipOverlay!);
+                                                        } else {
+                                                          // Reposition and update content by replacing the overlay
+                                                          _tooltipOverlay?.remove();
+                                                          _tooltipOverlay = OverlayEntry(
+                                                              builder: (context) => Positioned(
+                                                                    left: globalPosition.dx + 15,
+                                                                    top: globalPosition.dy + 15,
+                                                                    child: Material(
+                                                                      elevation: 4,
+                                                                      color: ganttTheme.barColorPrimary
+                                                                          .withValues(alpha: 0.9),
+                                                                      borderRadius: BorderRadius.circular(4),
+                                                                      child: Padding(
+                                                                        padding: const EdgeInsets.all(8.0),
+                                                                        child: Text(
+                                                                          sb.toString().trim(),
+                                                                          style: const TextStyle(
+                                                                              color: Colors.white, fontSize: 12),
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ));
+                                                          Overlay.of(context).insert(_tooltipOverlay!);
+                                                        }
+                                                      },
+                                                      onPressTask: (task) => vm.handleTaskTap(task.id),
+                                                      onTaskDoubleClick: _handleSnapToTask,
+                                                      onEmptySpaceClick: (rowId, time) =>
+                                                          vm.handleEmptySpaceTap(rowId, time),
+                                                      onDependencyAdd: (dependency) =>
+                                                          vm.handleDependencyCreated(dependency),
+                                                      // These define the total scrollable time range for the dataset.
+                                                      totalGridMin:
+                                                          vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
+                                                      totalGridMax:
+                                                          vm.effectiveTotalEndDate?.millisecondsSinceEpoch.toDouble(),
+
+                                                      // The scroll controller is shared with the grid to enable scroll syncing.
+                                                      scrollController: vm.gridScrollController,
+
+                                                      // --- Feature Toggles ---
+                                                      // These control experimental visualization tools.
+                                                      showCursors: _showCursors,
+                                                      showCriticalPath: vm.showCriticalPath,
+                                                      showResourceHistogram: vm.showResourceHistogram,
+                                                      workCalendar: vm.workCalendar,
+                                                      // Display a vertical line at the current system time.
+                                                      showNowLine: _showNowLine,
+                                                      nowLineDate: DateTime.now(),
+                                                      // Highlight free time (slack) based on CPM analysis.
+                                                      showSlack: _showSlack && vm.showCriticalPath,
+
+                                                      visibleRows: vm.visibleGanttRows,
+                                                      rowMaxStackDepth: vm.rowMaxStackDepth,
+                                                      axisHeight: axisHeight,
+                                                      // --- Timeline Customization ---
+                                                      // These builders allow you to customize the look and feel of the timeline axis.
+                                                      //
+                                                      // `timelineAxisHeaderBuilder` is used to draw the main header (e.g. months/years).
+                                                      // In this example, we use a custom implementation that draws a two-line header
+                                                      // when the axis format is set to 'custom'.
+                                                      timelineAxisHeaderBuilder:
+                                                          _selectedAxisFormat == TimelineAxisFormat.custom
+                                                              ? (context, scale, visibleDomain, totalDomain,
+                                                                      currentTheme, totalWidth) =>
+                                                                  _buildCustomTimelineHeader(
+                                                                    context,
+                                                                    scale,
+                                                                    visibleDomain,
+                                                                    totalDomain,
+                                                                    currentTheme,
+                                                                    totalWidth,
+                                                                  )
+                                                              : null,
+                                                      // `timelineAxisLabelBuilder` is used for the minor labels (e.g. days/hours).
+                                                      // Our helper function returns a DateFormat based on the selected granularity.
+                                                      timelineAxisLabelBuilder: _getTimelineAxisLabelBuilder(),
+                                                      rowHeight: vm.rowHeight,
                                                     ),
-                                                  );
-                                                },
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                          // Scrubber
+                                          if (vm.totalStartDate != null &&
+                                              vm.totalEndDate != null &&
+                                              vm.visibleStartDate != null &&
+                                              vm.visibleEndDate != null)
+                                            Container(
+                                              height: 40,
+                                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                              color: Theme.of(context).cardColor,
+                                              child: scrubber.LegacyGanttTimelineScrubber(
+                                                totalStartDate: vm.totalStartDate!,
+                                                totalEndDate: vm.totalEndDate!,
+                                                visibleStartDate: vm.visibleStartDate!,
+                                                visibleEndDate: vm.visibleEndDate!,
+                                                onWindowChanged: vm.onScrubberWindowChanged,
+                                                visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
+                                                rowMaxStackDepth: vm.rowMaxStackDepth,
+                                                rowHeight: vm.rowHeight,
+                                                tasks: [...vm.ganttTasks, ...vm.conflictIndicators]
+                                                    .map((t) => scrubber.LegacyGanttTask(
+                                                          id: t.id,
+                                                          rowId: t.rowId,
+                                                          stackIndex: t.stackIndex,
+                                                          start: t.start,
+                                                          end: t.end,
+                                                          name: t.name,
+                                                          color: t.color,
+                                                          isOverlapIndicator: t.isOverlapIndicator,
+                                                          isTimeRangeHighlight: t.isTimeRangeHighlight,
+                                                          isSummary: t.isSummary,
+                                                        ))
+                                                    .toList(),
+                                                startPadding: const Duration(days: 7),
+                                                endPadding: const Duration(days: 7),
                                               ),
                                             ),
-                                          );
-                                        },
+                                        ],
                                       ),
                                     ),
-                                    // --- Timeline Scrubber ---
-                                    // This widget from the `legacy_timeline_scrubber` package provides a
-                                    // mini-map of the entire timeline, allowing for quick navigation.
-                                    // It's a separate package but designed to work well with the Gantt chart.
-                                    // Note how the task data is mapped to the scrubber's own task model.
-                                    if (vm.totalStartDate != null &&
-                                        vm.totalEndDate != null &&
-                                        vm.visibleStartDate != null &&
-                                        vm.visibleEndDate != null)
-                                      Container(
-                                        height: 40,
-                                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                        color: Theme.of(context).cardColor,
-                                        child: scrubber.LegacyGanttTimelineScrubber(
-                                          totalStartDate: vm.totalStartDate!,
-                                          totalEndDate: vm.totalEndDate!,
-                                          visibleStartDate: vm.visibleStartDate!,
-                                          visibleEndDate: vm.visibleEndDate!,
-                                          onWindowChanged: vm.onScrubberWindowChanged,
-                                          visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
-                                          rowMaxStackDepth: vm.rowMaxStackDepth,
-                                          rowHeight: 27.0,
-                                          tasks: [...vm.ganttTasks, ...vm.conflictIndicators]
-                                              .map((t) => scrubber.LegacyGanttTask(
-                                                    id: t.id,
-                                                    rowId: t.rowId,
-                                                    stackIndex: t.stackIndex,
-                                                    start: t.start,
-                                                    end: t.end,
-                                                    name: t.name,
-                                                    color: t.color,
-                                                    isOverlapIndicator: t.isOverlapIndicator,
-                                                    isTimeRangeHighlight: t.isTimeRangeHighlight,
-                                                    isSummary: t.isSummary,
-                                                  ))
-                                              .toList(),
-                                          startPadding: const Duration(days: 7),
-                                          endPadding: const Duration(days: 7),
-                                        ),
-                                      ),
                                   ],
                                 ),
-                              )
+                              ),
                             ],
-                          ))
-                        ]);
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
           ),
         ),
-      ));
+      );
 
   Future<void> _showEditTaskDialog(BuildContext context, LegacyGanttTask task) async {
     await showDialog(
@@ -2043,4 +2120,124 @@ void _streamTasksBackground(Map<String, dynamic> message) async {
   } catch (e, stack) {
     sendPort.send({'type': 'error', 'error': e.toString(), 'stack': stack.toString()});
   }
+}
+
+class ImportRollbackDialog extends StatelessWidget {
+  final int taskCount;
+  final int resourceCount;
+
+  const ImportRollbackDialog({
+    super.key,
+    required this.taskCount,
+    required this.resourceCount,
+  });
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Import Complete'),
+        content: Text(
+            'Imported $taskCount tasks and $resourceCount resources.\n\nDo you want to keep these changes or rollback?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Rollback', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      );
+}
+
+class _CustomHeaderPainter extends CustomPainter {
+  final double Function(DateTime) scale;
+  final List<DateTime> visibleDomain;
+  final List<DateTime> totalDomain;
+  final LegacyGanttTheme theme;
+  final String locale;
+
+  _CustomHeaderPainter({
+    required this.scale,
+    required this.visibleDomain,
+    required this.totalDomain,
+    required this.theme,
+    required this.locale,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (totalDomain.isEmpty || visibleDomain.isEmpty) return;
+
+    final visibleDuration = visibleDomain.last.difference(visibleDomain.first);
+    final monthTextStyle = theme.axisTextStyle.copyWith(fontWeight: FontWeight.bold);
+    final dayTextStyle = theme.axisTextStyle.copyWith(fontSize: 10);
+
+    // Determine the tick interval based on the visible duration.
+    Duration tickInterval;
+    if (visibleDuration.inDays > 60) {
+      tickInterval = const Duration(days: 7);
+    } else if (visibleDuration.inDays > 14) {
+      tickInterval = const Duration(days: 2);
+    } else {
+      tickInterval = const Duration(days: 1);
+    }
+
+    DateTime current = totalDomain.first;
+    String? lastMonth;
+    while (current.isBefore(totalDomain.last)) {
+      final next = current.add(tickInterval);
+      final monthFormat = DateFormat('MMMM yyyy', locale);
+      final dayFormat = DateFormat('d', locale);
+
+      // Month label
+      final monthStr = monthFormat.format(current);
+      if (monthStr != lastMonth) {
+        lastMonth = monthStr;
+        final monthStart = DateTime(current.year, current.month, 1);
+        final monthEnd = DateTime(current.year, current.month + 1, 0);
+        final startX = scale(monthStart.isBefore(visibleDomain.first) ? visibleDomain.first : monthStart);
+        final endX = scale(monthEnd.isAfter(visibleDomain.last) ? visibleDomain.last : monthEnd);
+
+        final textSpan = TextSpan(text: monthStr, style: monthTextStyle);
+        final textPainter = TextPainter(
+          text: textSpan,
+          textAlign: TextAlign.center,
+          textDirection: ui.TextDirection.ltr,
+        );
+        textPainter.layout();
+        if (endX > startX) {
+          textPainter.paint(
+            canvas,
+            Offset(startX + (endX - startX) / 2 - textPainter.width / 2, 0),
+          );
+        }
+      }
+
+      // Day label
+      final dayX = scale(current);
+      final dayText = dayFormat.format(current);
+      final textSpan = TextSpan(text: dayText, style: dayTextStyle);
+      final textPainter = TextPainter(
+        text: textSpan,
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(dayX - textPainter.width / 2, 20),
+      );
+
+      current = next;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CustomHeaderPainter oldDelegate) =>
+      oldDelegate.scale != scale ||
+      !listEquals(oldDelegate.visibleDomain, visibleDomain) ||
+      !listEquals(oldDelegate.totalDomain, totalDomain) ||
+      oldDelegate.theme != theme ||
+      oldDelegate.locale != locale;
 }

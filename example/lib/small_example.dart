@@ -11,11 +11,11 @@ class SimpleGanttApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: 'Simple Gantt Chart Example',
         theme: ThemeData(
-          primarySwatch: Colors.blue,
+          primarySwatch: Colors.indigo,
           brightness: Brightness.light,
         ),
         darkTheme: ThemeData(
-          primarySwatch: Colors.blue,
+          primarySwatch: Colors.indigo,
           brightness: Brightness.dark,
         ),
         themeMode: ThemeMode.system,
@@ -77,7 +77,7 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
         start: DateTime(2024, 6, 5),
         end: DateTime(2024, 6, 15),
         isSummary: true,
-        color: Colors.amber,
+        color: null,
       ),
       // A regular task.
       LegacyGanttTask(

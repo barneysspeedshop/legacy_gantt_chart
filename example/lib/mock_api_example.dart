@@ -37,13 +37,13 @@ class MyApp extends StatelessWidget {
         ],
         theme: ThemeData.from(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
+            seedColor: Colors.indigo,
             brightness: Brightness.light,
           ),
         ),
         // The Gantt chart supports dark mode out of the box.
         darkTheme: ThemeData.from(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: Brightness.dark),
         ),
         themeMode: ThemeMode.system,
         home: const GanttView(),
@@ -113,9 +113,9 @@ class _GanttViewState extends State<GanttView> {
         return baseTheme.copyWith(
           barColorPrimary: Colors.indigo.shade700,
           barColorSecondary: Colors.indigo.shade500,
-          containedDependencyBackgroundColor: Colors.purple.withValues(alpha: 0.2),
+          containedDependencyBackgroundColor: Colors.purple.withValues(alpha: 0.1),
           dependencyLineColor: Colors.purple.shade200,
-          timeRangeHighlightColor: Colors.blueGrey.withValues(alpha: 0.2),
+          timeRangeHighlightColor: Colors.blueGrey.withValues(alpha: 0.1),
           backgroundColor: isDarkMode ? const Color(0xFF1a1a2e) : const Color(0xFFe3e3f3),
           emptySpaceHighlightColor: Colors.indigo.withValues(alpha: 0.1),
           emptySpaceAddIconColor: Colors.indigo.shade200,
@@ -124,16 +124,17 @@ class _GanttViewState extends State<GanttView> {
         );
       case ThemePreset.standard:
         return baseTheme.copyWith(
-          barColorPrimary: Colors.blue.shade700,
-          barColorSecondary: Colors.blue[600],
+          barColorPrimary: Colors.indigo.shade700,
+          barColorSecondary: Colors.indigo.shade500,
           containedDependencyBackgroundColor: Colors.green.withValues(alpha: 0.15),
           dependencyLineColor: Colors.red.shade700,
           timeRangeHighlightColor: isDarkMode ? Colors.grey[850] : Colors.grey[200],
-          emptySpaceHighlightColor: Colors.blue.withValues(alpha: 0.1),
-          emptySpaceAddIconColor: Colors.blue.shade700,
+          emptySpaceHighlightColor: Colors.indigo.withValues(alpha: 0.1),
+          emptySpaceAddIconColor: Colors.indigo.shade700,
+          nowLineColor: Colors.yellowAccent,
           taskTextStyle: baseTheme.taskTextStyle.copyWith(
             fontWeight: FontWeight.bold,
-            color: Colors.white, // Ensure good contrast on blue bars
+            color: Colors.white,
           ),
         );
     }
@@ -757,8 +758,8 @@ class _GanttViewState extends State<GanttView> {
                                               caption: 'Completed %',
                                               width: 100,
                                               minWidth: 100,
-                                              cellBuilder: (context, data) {
-                                                final double? completion = data['completion'];
+                                              cellBuilder: (context, value, columnId, rowHeight, record) {
+                                                final double? completion = record['completion'];
                                                 if (completion == null) return const SizedBox.shrink();
                                                 final percentage = (completion * 100).clamp(0, 100);
                                                 final percentageText = '${percentage.toStringAsFixed(0)}%';
@@ -769,8 +770,9 @@ class _GanttViewState extends State<GanttView> {
                                                     children: [
                                                       LinearProgressIndicator(
                                                         value: completion,
-                                                        backgroundColor: Colors.grey.shade300,
-                                                        color: Colors.blue,
+                                                        backgroundColor:
+                                                            ganttTheme.barColorPrimary.withValues(alpha: 0.1),
+                                                        color: ganttTheme.barColorPrimary,
                                                         minHeight: 20,
                                                       ),
                                                       Text(
@@ -791,7 +793,7 @@ class _GanttViewState extends State<GanttView> {
                                               caption: '',
                                               width: 56,
                                               minWidth: 56,
-                                              cellBuilder: (context, data) {
+                                              cellBuilder: (context, data, columnId, rowHeight, metadata) {
                                                 final bool isParent = data['parentId'] == null;
                                                 final String rowId = data['id'];
                                                 if (isParent) {
@@ -927,21 +929,15 @@ class _GanttViewState extends State<GanttView> {
                                                 data: vm.ganttTasks,
                                                 dependencies: vm.dependencies,
                                                 conflictIndicators: vm.conflictIndicators,
-                                                visibleRows: vm.visibleGanttRows, // This should be correct
+                                                visibleRows: vm.visibleGanttRows,
                                                 rowHeight: 27.0,
                                                 rowMaxStackDepth: vm.rowMaxStackDepth,
-                                                // The axis height is adjusted based on whether we are using the
-                                                // default single-line header or the custom two-line header.
                                                 axisHeight: axisHeight,
 
-                                                // --- Scroll Controllers and Syncing ---
-                                                // This is the key to synchronizing the vertical scroll between the
-                                                // left-side grid and the right-side chart. We pass the grid's
-                                                // controller here for the internal view model to drive.
+                                                // --- Scroll Controllers ---
                                                 scrollController: vm.gridScrollController,
                                                 onRowRequestVisible: (rowId) {
                                                   vm.ensureRowIsVisible(rowId);
-                                                  // Find parent and expand in grid
                                                   final parent = vm.gridData
                                                       .firstWhereOrNull((p) => p.children.any((c) => c.id == rowId));
                                                   if (parent != null) {
@@ -953,10 +949,8 @@ class _GanttViewState extends State<GanttView> {
                                                 horizontalScrollController: vm.ganttHorizontalScrollController,
 
                                                 // --- Date Range ---
-                                                // These define the currently visible time window.
                                                 gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),
                                                 gridMax: vm.visibleEndDate?.millisecondsSinceEpoch.toDouble(),
-                                                // These define the total scrollable time range.
                                                 totalGridMin:
                                                     vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),
                                                 totalGridMax:
@@ -971,8 +965,6 @@ class _GanttViewState extends State<GanttView> {
                                                 onTaskDoubleClick: (task) {
                                                   _handleSnapToTask(task);
                                                 },
-                                                // This callback is triggered when a user clicks on an empty space,
-                                                // allowing for the creation of new tasks.
                                                 onEmptySpaceClick: (rowId, time) =>
                                                     vm.handleEmptySpaceClick(context, rowId, time),
                                                 onPressTask: (task) {
@@ -982,43 +974,31 @@ class _GanttViewState extends State<GanttView> {
                                                 onTaskHover: (task, globalPosition) =>
                                                     vm.onTaskHover(task, context, globalPosition),
 
-                                                // --- Theming and Styling ---
+                                                // --- Theme ---
                                                 theme: ganttTheme,
-                                                weekendColor: Colors.grey.withValues(alpha: 0.1),
-                                                resizeTooltipDateFormat: _getResizeTooltipDateFormat(),
-                                                resizeTooltipBackgroundColor: Colors.purple,
-                                                resizeHandleWidth: vm.resizeHandleWidth,
-                                                resizeTooltipFontColor: Colors.white,
-                                                focusedTaskResizeHandleWidth: vm.resizeHandleWidth,
 
                                                 // --- Custom Task Content ---
-                                                // This builder injects custom content *inside* the default task bar.
-                                                // It's used here to add an icon and a context menu button.
                                                 taskContentBuilder: (task) {
-                                                  if (task.isTimeRangeHighlight) {
-                                                    return const SizedBox.shrink(); // Hide content for highlights
-                                                  }
                                                   final barColor = task.color ?? ganttTheme.barColorPrimary;
                                                   final textColor =
                                                       ThemeData.estimateBrightnessForColor(barColor) == Brightness.dark
                                                           ? Colors.white
                                                           : Colors.black;
                                                   final textStyle = ganttTheme.taskTextStyle.copyWith(color: textColor);
+
                                                   return GestureDetector(
                                                     onSecondaryTapUp: (details) {
                                                       _showTaskContextMenu(context, task, details.globalPosition);
                                                     },
                                                     child: LayoutBuilder(builder: (context, constraints) {
-                                                      // Define minimum widths for content visibility.
-                                                      final bool canShowButton = constraints.maxWidth >= 32;
+                                                      final bool canShowButton =
+                                                          !task.isTimeRangeHighlight && constraints.maxWidth >= 32;
                                                       final bool canShowText = constraints.maxWidth > 66;
 
                                                       return Stack(
                                                         children: [
-                                                          // Task content (icon and name)
                                                           if (canShowText)
                                                             Padding(
-                                                              // Pad to the right to avoid overlapping the options button.
                                                               padding: const EdgeInsets.only(left: 4.0, right: 32.0),
                                                               child: Row(
                                                                 children: [
@@ -1041,12 +1021,9 @@ class _GanttViewState extends State<GanttView> {
                                                                 ],
                                                               ),
                                                             ),
-
-                                                          // Options menu button
                                                           if (canShowButton)
                                                             Positioned(
-                                                              right:
-                                                                  8, // Inset from the right edge to leave space for resize handle
+                                                              right: 8,
                                                               top: 0,
                                                               bottom: 0,
                                                               child: Builder(
@@ -1072,43 +1049,28 @@ class _GanttViewState extends State<GanttView> {
                                                     }),
                                                   );
                                                 },
-                                                // This is the new builder for the floating resize handles.
+
+                                                // --- Resize Handles ---
                                                 focusedTaskResizeHandleBuilder: (task, part, internalVm, handleWidth) {
                                                   final icon = part == TaskPart.startHandle
                                                       ? Icons.chevron_left
                                                       : Icons.chevron_right;
 
-                                                  // Using a GestureDetector to make the handle draggable.
-                                                  // The onPanStart call directly triggers the resize logic
-                                                  // in the view model.
                                                   return GestureDetector(
-                                                    key: ValueKey(handleWidth), // Pass width for positioning
                                                     onPanStart: (details) {
-                                                      internalVm.onPanStart(
-                                                        DragStartDetails(
-                                                          sourceTimeStamp: details.sourceTimeStamp,
-                                                          globalPosition: details.globalPosition,
-                                                          localPosition: details.localPosition,
-                                                        ),
-                                                        // We explicitly tell the view model which task and part
-                                                        // is being dragged, bypassing the need for hit-testing.
-                                                        overrideTask: task,
-                                                        overridePart: part,
-                                                      );
+                                                      internalVm.onPanStart(details,
+                                                          overrideTask: task, overridePart: part);
                                                     },
                                                     onPanUpdate: internalVm.onPanUpdate,
                                                     onPanEnd: internalVm.onPanEnd,
                                                     child: Container(
                                                       width: handleWidth,
-                                                      height: vm.rowHeight, // Ensure container has height for alignment
-                                                      color: Colors.transparent, // Make the gesture area larger
+                                                      decoration: BoxDecoration(
+                                                        color: ganttTheme.barColorSecondary.withValues(alpha: 0.3),
+                                                        borderRadius: BorderRadius.circular(4),
+                                                      ),
                                                       child: Center(
-                                                        // Center the icon
-                                                        child: Icon(
-                                                          icon,
-                                                          size: handleWidth,
-                                                          color: ganttTheme.barColorSecondary,
-                                                        ),
+                                                        child: Icon(icon, size: 16, color: Colors.white),
                                                       ),
                                                     ),
                                                   );

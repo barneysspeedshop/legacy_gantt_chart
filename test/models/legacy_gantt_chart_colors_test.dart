@@ -32,5 +32,41 @@ void main() {
       );
       expect(colors, isA<LegacyGanttChartColors>());
     });
+
+    test('supports copyWith', () {
+      const colors = LegacyGanttChartColors(
+        barColorPrimary: Colors.blue,
+        barColorSecondary: Colors.red,
+        textColor: Colors.black,
+        backgroundColor: Colors.white,
+      );
+
+      final updated = colors.copyWith(barColorPrimary: Colors.green);
+      expect(updated.barColorPrimary, Colors.green);
+      expect(updated.barColorSecondary, Colors.red);
+      
+      final preserved = colors.copyWith();
+      expect(preserved, equals(colors));
+    });
+
+    test('supports equivalence and hashCode', () {
+      const colors1 = LegacyGanttChartColors(
+        barColorPrimary: Colors.blue,
+        barColorSecondary: Colors.red,
+        textColor: Colors.black,
+        backgroundColor: Colors.white,
+      );
+      const colors2 = LegacyGanttChartColors(
+        barColorPrimary: Colors.blue,
+        barColorSecondary: Colors.red,
+        textColor: Colors.black,
+        backgroundColor: Colors.white,
+      );
+
+      expect(colors1, equals(colors2));
+      expect(colors1.hashCode, equals(colors2.hashCode));
+      expect(colors1 == colors1, isTrue); // Identical
+      expect(colors1 == Object(), isFalse); // Non-matching type
+    });
   });
 }

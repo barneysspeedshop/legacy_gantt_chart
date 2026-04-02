@@ -1,4 +1,5 @@
-// packages/gantt_chart/lib/src/gantt_chart_widget.dart
+import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
@@ -475,6 +476,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
         _internalViewModel!.updateConflictIndicators(widget.conflictIndicators!);
       }
 
+      if (oldWidget.axisHeight != widget.axisHeight) {
+        _internalViewModel!.updateAxisHeight(widget.axisHeight);
+      }
+
       if (oldWidget.workCalendar != widget.workCalendar) {
         _internalViewModel!.workCalendar = widget.workCalendar;
       }
@@ -675,6 +680,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             onTaskLongPress: widget.onTaskLongPress,
             taskBarBuilder: widget.taskBarBuilder,
             resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
+            resizeTooltipDateFormatString: effectiveTheme.resizeTooltipDateFormat,
             scrollController: widget.scrollController,
             ganttHorizontalScrollController: widget.horizontalScrollController,
             onRowRequestVisible: widget.onRowRequestVisible,
@@ -704,6 +710,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
                 vm.updateFocusedTask(widget.focusedTaskId);
                 vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat);
+                vm.updateResizeTooltipDateFormatString(effectiveTheme.resizeTooltipDateFormat);
                 vm.setTool(currentTool);
               }
             });
@@ -972,9 +979,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   }
 
   Widget _buildResizeTooltip(BuildContext context, String text, LegacyGanttTheme theme) {
-    final tooltipBackgroundColor = widget.resizeTooltipBackgroundColor ?? theme.barColorPrimary;
-    final tooltipFontColor = widget.resizeTooltipFontColor ??
-        (ThemeData.estimateBrightnessForColor(tooltipBackgroundColor) == Brightness.dark ? Colors.white : Colors.black);
+    final tooltipBackgroundColor = widget.resizeTooltipBackgroundColor ?? theme.resizeTooltipBackgroundColor;
+    final tooltipFontColor = widget.resizeTooltipFontColor ?? theme.resizeTooltipFontColor;
 
     return Material(
       elevation: 4.0,
@@ -1029,11 +1035,22 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
               continue;
             }
 
+            final overlappingConflicts = vm.conflictIndicators
+                .where(
+                  (indicator) =>
+                      indicator.rowId == task.rowId &&
+                      indicator.stackIndex == task.stackIndex &&
+                      indicator.start.isBefore(task.end) &&
+                      indicator.end.isAfter(task.start),
+                )
+                .toList();
+
             taskWidget = _DefaultTaskBar(
               task: task,
               vm: vm,
               theme: theme,
               content: widget.taskContentBuilder!(task),
+              overlappingConflicts: overlappingConflicts,
             );
           }
 
@@ -1071,18 +1088,29 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
               return taskWidgets;
             }
 
+            final overlappingConflicts = vm.conflictIndicators
+                .where(
+                  (indicator) =>
+                      indicator.rowId == draggedTask.rowId &&
+                      indicator.stackIndex == draggedTask.stackIndex &&
+                      indicator.start.isBefore(draggedTask.end) &&
+                      indicator.end.isAfter(draggedTask.start),
+                )
+                .toList();
+
             taskWidget = _DefaultTaskBar(
               task: draggedTask,
               vm: vm,
               theme: theme,
               content: widget.taskContentBuilder!(draggedTask),
+              overlappingConflicts: overlappingConflicts,
             );
           }
 
           taskWidgets.add(
             Positioned(
               left: startX,
-              top: rowTop + (draggedTask.stackIndex * vm.rowHeight) + vm.translateY,
+              top: rowTop + ((vm.ghostTaskStackIndex ?? 0) * vm.rowHeight) + vm.translateY,
               width: width,
               height: vm.rowHeight,
               child: taskWidget,
@@ -1150,8 +1178,10 @@ List<Widget> _buildFocusedTaskWidgets(
 
   final effectiveRowId =
       vm.draggedTask?.id == focusedTask.id && vm.ghostTaskRowId != null ? vm.ghostTaskRowId! : focusedTask.rowId;
-  final effectiveStart = vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null ? vm.ghostTaskStart! : focusedTask.start;
-  final effectiveEnd = vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null ? vm.ghostTaskEnd! : focusedTask.end;
+  final effectiveStart =
+      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null ? vm.ghostTaskStart! : focusedTask.start;
+  final effectiveEnd =
+      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null ? vm.ghostTaskEnd! : focusedTask.end;
   final effectiveRowIndex = vm.visibleRows.indexWhere((r) => r.id == effectiveRowId);
   if (effectiveRowIndex == -1) return [];
 
@@ -1208,12 +1238,14 @@ class _DefaultTaskBar extends StatefulWidget {
   final LegacyGanttViewModel vm;
   final LegacyGanttTheme theme;
   final Widget? content;
+  final List<LegacyGanttTask> overlappingConflicts;
 
   const _DefaultTaskBar({
     required this.task,
     required this.vm,
     required this.theme,
     this.content,
+    this.overlappingConflicts = const [],
   });
 
   @override
@@ -1256,7 +1288,8 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (content != null)
+              if (content != null) ...[
+                // Layer 1: Normal content
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1278,6 +1311,35 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
                     ),
                   ),
                 ),
+                // Layer 2: White content clipped to conflict areas
+                if (widget.overlappingConflicts.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: verticalInset,
+                    height: barHeight,
+                    child: ClipPath(
+                      clipper: _ConflictClipper(
+                        task: task,
+                        conflicts: widget.overlappingConflicts,
+                        barHeight: barHeight,
+                      ),
+                      child: ColorFiltered(
+                        colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.all(theme.barCornerRadius),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: content,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
               if (_isHovered && vm.onTaskDelete != null)
                 Positioned(
                   right: 0,
@@ -1388,4 +1450,47 @@ class _SelectionBoxPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SelectionBoxPainter oldDelegate) =>
       rect != oldDelegate.rect || borderColor != oldDelegate.borderColor || fillColor != oldDelegate.fillColor;
+}
+
+class _ConflictClipper extends CustomClipper<Path> {
+  final LegacyGanttTask task;
+  final List<LegacyGanttTask> conflicts;
+  final double barHeight;
+
+  _ConflictClipper({
+    required this.task,
+    required this.conflicts,
+    required this.barHeight,
+  });
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final indicatorHeight = barHeight * 0.4;
+    final indicatorTop = barHeight - indicatorHeight;
+
+    for (final conflict in conflicts) {
+      final taskStartMs = task.start.millisecondsSinceEpoch.toDouble();
+      final taskEndMs = task.end.millisecondsSinceEpoch.toDouble();
+      final conflictStartMs = conflict.start.millisecondsSinceEpoch.toDouble();
+      final conflictEndMs = conflict.end.millisecondsSinceEpoch.toDouble();
+
+      final relativeStartPercent =
+          (max(taskStartMs, conflictStartMs) - taskStartMs) / (taskEndMs - taskStartMs);
+      final relativeEndPercent =
+          (min(taskEndMs, conflictEndMs) - taskStartMs) / (taskEndMs - taskStartMs);
+
+      final left = size.width * relativeStartPercent;
+      final right = size.width * relativeEndPercent;
+
+      if (right > left) {
+        path.addRect(Rect.fromLTWH(left, indicatorTop, right - left, indicatorHeight));
+      }
+    }
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_ConflictClipper oldClipper) =>
+      oldClipper.task != task || !listEquals(oldClipper.conflicts, conflicts) || oldClipper.barHeight != barHeight;
 }

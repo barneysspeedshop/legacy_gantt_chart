@@ -63,12 +63,15 @@ void main() {
     });
 
     test('equality should account for all properties', () {
-      // Lag
       const depNoLag = LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2');
       const depWithLag =
           LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2', lag: Duration(days: 1));
+      const depWithLastUpdated =
+          LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2', lastUpdated: 12345);
 
       expect(depNoLag, isNot(equals(depWithLag)));
+      expect(depNoLag, isNot(equals(depWithLastUpdated)));
+      expect(depWithLastUpdated.hashCode, isNot(equals(depNoLag.hashCode)));
     });
 
     test('DependencyType enum has correct values', () {
@@ -77,6 +80,36 @@ void main() {
       expect(DependencyType.values, contains(DependencyType.finishToFinish));
       expect(DependencyType.values, contains(DependencyType.startToFinish));
       expect(DependencyType.values, contains(DependencyType.contained));
+    });
+
+    test('maps to and from protocol dependency correctly for all types', () {
+      for (final type in DependencyType.values) {
+        final dependency = LegacyGanttTaskDependency(
+          predecessorTaskId: 'p-$type',
+          successorTaskId: 's-$type',
+          type: type,
+          lag: const Duration(hours: 1),
+          lastUpdated: 999,
+        );
+
+        final protocolDep = dependency.toProtocolDependency();
+        expect(protocolDep.predecessorTaskId, dependency.predecessorTaskId);
+        expect(protocolDep.successorTaskId, dependency.successorTaskId);
+        expect(protocolDep.lag, dependency.lag);
+        expect(protocolDep.lastUpdated, dependency.lastUpdated);
+
+        final backAgain = LegacyGanttTaskDependency.fromProtocolDependency(protocolDep);
+        expect(backAgain, equals(dependency));
+      }
+    });
+
+    test('contentHash delegate to protocol dependency', () {
+      const dependency = LegacyGanttTaskDependency(
+        predecessorTaskId: 't1',
+        successorTaskId: 't2',
+      );
+      final protocolDep = dependency.toProtocolDependency();
+      expect(dependency.contentHash, equals(protocolDep.contentHash));
     });
   });
 }

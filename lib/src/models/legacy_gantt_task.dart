@@ -11,13 +11,22 @@ Color? _parseColor(dynamic value) {
   if (value == null) return null;
   if (value is String) {
     try {
-      if (value.startsWith('#')) return Color(int.parse(value.substring(1), radix: 16));
-      return Color(int.parse(value, radix: 16));
+      String hexString = value.startsWith('#') ? value.substring(1) : value;
+      if (hexString.length == 6) {
+        hexString = 'FF$hexString';
+      }
+      return Color(int.parse(hexString, radix: 16));
     } catch (_) {
       return null;
     }
   }
-  if (value is int) return Color(value);
+  if (value is int) {
+    // If the integer is 24-bit (RRGGBB), make it opaque (AARRGGBB)
+    if (value >= 0 && value <= 0xFFFFFF) {
+      return Color(0xFF000000 | value);
+    }
+    return Color(value);
+  }
   return null;
 }
 
@@ -210,10 +219,10 @@ class LegacyGanttTask {
       name: pt.name,
       completion: pt.completion,
       isSummary: pt.isSummary || meta['ganttType'] == 'summary' || meta['ganttType'] == 'project',
-      isMilestone: pt.isMilestone,
+      isMilestone: pt.isMilestone || meta['isMilestone'] == true,
       resourceId: pt.resourceId,
-      parentId: pt.parentId,
-      notes: pt.notes,
+      parentId: pt.parentId ?? meta['parentId'],
+      notes: pt.notes ?? meta['notes'],
       isDeleted: pt.isDeleted,
       lastUpdated: pt.lastUpdated,
       lastUpdatedBy: pt.lastUpdatedBy,
@@ -225,12 +234,13 @@ class LegacyGanttTask {
       isTimeRangeHighlight: meta['isTimeRangeHighlight'] == true,
       isOverlapIndicator: meta['isOverlapIndicator'] == true,
       segments: (meta['segments'] as List?)?.map((e) => LegacyGanttTaskSegment.fromJson(e)).toList(),
-      usesWorkCalendar: meta['usesWorkCalendar'] == true,
+      usesWorkCalendar: meta['usesWorkCalendar'] is bool ? meta['usesWorkCalendar'] as bool : false,
       load: (meta['load'] as num?)?.toDouble() ?? 1.0,
-      isAutoScheduled: meta['isAutoScheduled'] == true,
-      propagatesMoveToChildren: meta['propagatesMoveToChildren'] ?? true,
+      isAutoScheduled: meta['isAutoScheduled'] is bool ? meta['isAutoScheduled'] as bool : null,
+      propagatesMoveToChildren: meta['propagatesMoveToChildren'] is bool ? meta['propagatesMoveToChildren'] as bool : true,
       resizePolicy: meta['resizePolicy'] != null
-          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resizePolicy'], orElse: () => ResizePolicy.none)
+          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resize_Policy'] || e.name == meta['resizePolicy'], 
+              orElse: () => ResizePolicy.none)
           : ResizePolicy.none,
       baselineStart: meta['baselineStart'] != null ? DateTime.parse(meta['baselineStart']) : null,
       baselineEnd: meta['baselineEnd'] != null ? DateTime.parse(meta['baselineEnd']) : null,

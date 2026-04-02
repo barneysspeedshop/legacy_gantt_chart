@@ -198,7 +198,14 @@ class LegacyGanttInspector extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(label, style: const TextStyle(color: Colors.grey)),
-            SelectableText(value, style: const TextStyle(fontFamily: 'RobotoMono')),
+            const SizedBox(width: 16),
+            Expanded(
+              child: SelectableText(
+                value,
+                style: const TextStyle(fontFamily: 'RobotoMono'),
+                textAlign: TextAlign.end,
+              ),
+            ),
           ],
         ),
       );
