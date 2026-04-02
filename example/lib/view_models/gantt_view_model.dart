@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/offline_sync.dart';
 
@@ -30,7 +31,7 @@ enum TimelineAxisFormat {
   custom,
 }
 
-enum DropIntent { between, inside }
+
 
 class GanttViewModel extends ChangeNotifier {
   final LocalGanttRepository _localRepository = LocalGanttRepository();
@@ -214,73 +215,11 @@ class GanttViewModel extends ChangeNotifier {
   OverlayEntry? _tooltipOverlay;
   String? _hoveredTaskId;
 
-  Timer? _nestIntentTimer;
-  int _pendingNestRowIndex = -1;
-  DropTarget? _pendingDropTarget;
+  List<Map<String, dynamic>>? _cachedVisibleFlatGridData;
 
-  /// The row and intent currently being hovered during a row drag-and-drop.
-  /// Null when no drag is in progress.
-  DropTarget? get pendingDropTarget => _pendingDropTarget;
+  /// The result of the hit-testing performed by legacy_tree_grid is now
+  /// handled via the onNest and onReorder callbacks.
 
-  /// Called by the UI layer on every pointer-move during a row drag.
-  ///
-  /// - Non-expanded rows immediately show [DropIntent.between] at their sibling level.
-  /// - Expanded rows show [DropIntent.between] immediately, then upgrade to
-  ///   [DropIntent.inside] after the pointer hovers the same expanded row for
-  ///   400 ms — matching the VS Code file-tree drag pattern and preventing the
-  ///   "dancing row" problem caused by SliverReorderableList shifting rows.
-  void updateDropHover(int draggedRowIndex, int hoveredRowIndex) {
-    final flatList = flatGridData;
-    if (hoveredRowIndex < 0 || hoveredRowIndex >= flatList.length) {
-      clearDropTarget();
-      return;
-    }
-    if (draggedRowIndex == hoveredRowIndex) {
-      clearDropTarget();
-      return;
-    }
-
-    final hoveredItem = flatList[hoveredRowIndex];
-    final hoveredId = hoveredItem['id'] as String;
-    final isExpanded = hoveredItem['isExpanded'] == true;
-
-    if (isExpanded) {
-      if (_pendingNestRowIndex != hoveredRowIndex) {
-        // Moved over a new expanded row: show "between" immediately,
-        // schedule an upgrade to "inside" after the hover dwell time.
-        _nestIntentTimer?.cancel();
-        _pendingNestRowIndex = hoveredRowIndex;
-        _pendingDropTarget = DropTarget(hoveredId, DropIntent.between);
-        notifyListeners();
-        _nestIntentTimer = Timer(const Duration(milliseconds: 400), () {
-          if (_pendingNestRowIndex == hoveredRowIndex) {
-            _pendingDropTarget = DropTarget(hoveredId, DropIntent.inside);
-            notifyListeners();
-          }
-        });
-      }
-      // Same expanded row → don't touch intent (let timer handle upgrade)
-    } else {
-      // Non-expanded row: always "between" at its sibling level.
-      _nestIntentTimer?.cancel();
-      _pendingNestRowIndex = -1;
-      final target = DropTarget(hoveredId, DropIntent.between);
-      if (_pendingDropTarget != target) {
-        _pendingDropTarget = target;
-        notifyListeners();
-      }
-    }
-  }
-
-  /// Clears the drop-target indicator and cancels any pending nest-intent timer.
-  void clearDropTarget() {
-    _nestIntentTimer?.cancel();
-    _nestIntentTimer = null;
-    _pendingNestRowIndex = -1;
-    if (_pendingDropTarget == null) return;
-    _pendingDropTarget = null;
-    notifyListeners();
-  }
 
   final GanttScheduleService _scheduleService = GanttScheduleService();
   GanttResponse? get apiResponse => _apiResponse;
@@ -366,6 +305,7 @@ class GanttViewModel extends ChangeNotifier {
 
     _gridData = _buildGridDataFromResources(_localResources, _allGanttTasks);
     _cachedFlatGridData = null; // Invalidate cache
+    _cachedVisibleFlatGridData = null; // Invalidate visible cache
 
     if (_pendingSeedReset) {
       _seedVersion++;
@@ -1323,13 +1263,40 @@ class GanttViewModel extends ChangeNotifier {
     return flatList;
   }
 
+  /// Returns only the visible (expanded) rows for UI hit-testing.
+  List<Map<String, dynamic>> get visibleFlatGridData {
+    if (_cachedVisibleFlatGridData != null) return _cachedVisibleFlatGridData!;
+    final List<Map<String, dynamic>> flatList = [];
+
+    void collect(GanttGridData node, String? parentId) {
+      flatList.add({
+        'id': node.id,
+        'name': node.name,
+        'completion': node.completion,
+        'parentId': parentId,
+        'isExpanded': node.isExpanded,
+        'sortOrder': node.sortOrder,
+      });
+      if (node.isExpanded) {
+        for (final child in node.children) {
+          collect(child, node.id);
+        }
+      }
+    }
+
+    for (final node in _gridData) {
+      collect(node, null);
+    }
+
+    _cachedVisibleFlatGridData = flatList;
+    return flatList;
+  }
+
   Future<void> reorderResources(
     String draggedId,
     String? targetId,
-    bool isAfter, {
-    DropIntent dropIntent = DropIntent.between,
-    String? dropTargetRowId,
-  }) async {
+    bool isAfter,
+  ) async {
     if (!_useLocalDatabase) return;
 
     final flatList = flatGridData;
@@ -1349,7 +1316,6 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (effectiveNewIndex < 0 || effectiveNewIndex >= flatList.length) return;
-    if (oldIndex == effectiveNewIndex) return; // No change
 
     final movedItem = flatList[oldIndex];
     final movedId = movedItem['id'] as String;
@@ -1364,45 +1330,12 @@ class GanttViewModel extends ChangeNotifier {
     final prevItem = effectiveNewIndex > 0 ? simulatedList[effectiveNewIndex - 1] : null;
     final nextItem = effectiveNewIndex < simulatedList.length ? simulatedList[effectiveNewIndex] : null;
 
-    // Prevent dropping a parent into its own descendants
-    if (movedItem['isExpanded'] == true) {
-      bool isDescendant = false;
-      String? currentAncestorId = prevItem?['parentId'] as String?;
-      while (currentAncestorId != null) {
-        if (currentAncestorId == movedId) {
-          isDescendant = true;
-          break;
-        }
-        final parentMap = flatList.firstWhere(
-          (element) => element['id'] == currentAncestorId,
-          orElse: () => {},
-        );
-        if (parentMap.isEmpty) break;
-        currentAncestorId = parentMap['parentId'] as String?;
-      }
-      if (isDescendant) return;
-    }
-
     String? newParentId;
-    // Parent resolution driven by the intent that was previewed to the user.
-    // If nesting, we use dropTargetRowId (the actual hovered row) directly
-    // rather than prevItem, since prevItem can be off-by-one when dragging upward.
-    if (dropIntent == DropIntent.inside) {
-      if (dropTargetRowId != null) {
-        newParentId = dropTargetRowId;
-      } else if (prevItem?['isExpanded'] == true) {
-        newParentId = prevItem?['id'] as String;
-      } else {
-        newParentId = prevItem?['parentId'] as String?;
-      }
+    if (targetId != null) {
+      final targetItem = flatList.firstWhereOrNull((r) => r['id'] == targetId);
+      newParentId = targetItem?['parentId'] as String?;
     } else {
-      // between: sibling of the hovered row (inherits its parentId, enabling un-nesting).
-      if (dropTargetRowId != null) {
-        final targetItem = flatList.firstWhereOrNull((r) => r['id'] == dropTargetRowId);
-        newParentId = targetItem?['parentId'] as String?;
-      } else {
-        newParentId = prevItem?['parentId'] as String?;
-      }
+      newParentId = prevItem?['parentId'] as String?;
     }
 
     // Sort order logic
@@ -1436,7 +1369,7 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    double finalSortOrder;
+    final double finalSortOrder;
     if (nextSortOrder != null) {
       if (nextSortOrder <= prevSortOrder) {
         finalSortOrder = prevSortOrder + 1.0;
@@ -1452,6 +1385,7 @@ class GanttViewModel extends ChangeNotifier {
       final updatedResource = resource.copyWith(
         parentId: newParentId,
         sortOrder: finalSortOrder,
+        lastUpdated: _currentHlc,
       );
 
       final index = _localResources.indexWhere((r) => r.id == movedId);
@@ -1462,6 +1396,50 @@ class GanttViewModel extends ChangeNotifier {
 
       await _processLocalData();
       await _localRepository.insertOrUpdateResource(updatedResource);
+      notifyListeners();
+    }
+  }
+
+  /// Nests a resource inside another resource.
+  Future<void> nestResource(String draggedId, String targetId) async {
+    if (!_useLocalDatabase) return;
+    if (draggedId == targetId) return;
+
+    final flatList = flatGridData;
+    final movedItem = flatList.firstWhereOrNull((item) => item['id'] == draggedId);
+    if (movedItem == null) return;
+
+    // Prevent dropping a parent into its own descendants
+    bool isDescendantOf(String potentialParentId, String potentialChildId) {
+      final child = flatList.firstWhereOrNull((item) => item['id'] == potentialChildId);
+      if (child == null) return false;
+      String? currentParentId = child['parentId'] as String?;
+      while (currentParentId != null) {
+        if (currentParentId == potentialParentId) return true;
+        final p = flatList.firstWhereOrNull((item) => item['id'] == currentParentId);
+        currentParentId = p?['parentId'] as String?;
+      }
+      return false;
+    }
+
+    if (isDescendantOf(draggedId, targetId)) return;
+
+    // Determine final sort order (place at the end of target's children)
+    final siblings = _localResources.where((r) => r.parentId == targetId).toList();
+    double finalSortOrder = 100.0;
+    if (siblings.isNotEmpty) {
+      finalSortOrder = siblings.map((s) => s.sortOrder ?? 0.0).reduce(math.max) + 100.0;
+    }
+
+    final resource = _localResources.firstWhereOrNull((r) => r.id == draggedId);
+    if (resource != null) {
+      final updatedResource = resource.copyWith(
+        parentId: targetId,
+        sortOrder: finalSortOrder,
+        lastUpdated: _currentHlc,
+      );
+      await _localRepository.updateResource(updatedResource);
+      await _processLocalData();
       notifyListeners();
     }
   }
@@ -3424,6 +3402,7 @@ class GanttViewModel extends ChangeNotifier {
         _gridScrollController.jumpTo(predictedNewMaxScroll);
         _ganttScrollController.jumpTo(predictedNewMaxScroll);
         item.isExpanded = isExpanded ?? !item.isExpanded;
+        _cachedVisibleFlatGridData = null; // Invalidate
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
         }
@@ -3451,6 +3430,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     item.isExpanded = !item.isExpanded;
+    _cachedVisibleFlatGridData = null; // Invalidate
 
     if (_useLocalDatabase) {
       _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
@@ -4377,17 +4357,3 @@ class _EditNameDialogState extends State<_EditNameDialog> {
       );
 }
 
-class DropTarget {
-  final String rowId;
-  final DropIntent intent;
-
-  DropTarget(this.rowId, this.intent);
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is DropTarget && runtimeType == other.runtimeType && rowId == other.rowId && intent == other.intent;
-
-  @override
-  int get hashCode => rowId.hashCode ^ intent.hashCode;
-}

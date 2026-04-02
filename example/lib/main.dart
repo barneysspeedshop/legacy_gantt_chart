@@ -90,12 +90,6 @@ class _GanttViewState extends State<GanttView> {
   int _bulkUpdateCount = 0;
   Timer? _bulkUpdateTimer;
 
-  // --- Row drag-and-drop state for drop-zone feedback ---
-  final GlobalKey _gridContainerKey = GlobalKey();
-  bool _isDraggingRow = false;
-  int _draggedRowIndex = -1;
-  // DropTarget state is now handled entirely within the ViewModel
-
   // --- Grid sorting and expansion state ---
 
   late final TextEditingController _uriController;
@@ -1274,365 +1268,197 @@ class _GanttViewState extends State<GanttView> {
                                         children: [
                                           Expanded(
                                             child: LayoutBuilder(
-                                              builder: (context, gridConstraints) => Listener(
-                                                key: _gridContainerKey,
-                                                onPointerDown: (event) {
-                                                  _isDraggingRow = false;
-                                                  _draggedRowIndex = -1;
+                                              builder: (context, gridConstraints) =>
+                                                  UnifiedDataGrid<Map<String, dynamic>>(
+                                                allowSorting: false,
+                                                key: ValueKey('grid_${vm.seedVersion}'),
+                                                mode: DataGridMode.client,
+                                                clientData: vm.flatGridData,
+                                                toMap: (item) => item,
+                                                rowIdKey: 'id',
+                                                isTree: true,
+                                                parentIdKey: 'parentId',
+                                                rowHeightBuilder: (data) {
+                                                  final rowId = data['id'] as String;
+                                                  return (vm.rowMaxStackDepth[rowId] ?? 1).toDouble() * vm.rowHeight;
                                                 },
-                                                onPointerMove: (event) {
-                                                  final renderBox = _gridContainerKey.currentContext?.findRenderObject()
-                                                      as RenderBox?;
-                                                  if (renderBox == null) return;
-                                                  final localPos = renderBox.globalToLocal(event.position);
-
-                                                  final flat = vm.flatGridData;
-                                                  if (flat.isEmpty) return;
-
-                                                  final headerH =
-                                                      _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0;
-
-                                                  double cumulativeY = headerH;
-                                                  int hoveredIndex = -1;
-                                                  for (int i = 0; i < flat.length; i++) {
-                                                    final rowId = flat[i]['id'] as String;
-                                                    final rowH =
-                                                        (vm.rowMaxStackDepth[rowId] ?? 1).toDouble() * vm.rowHeight;
-                                                    if (localPos.dy < cumulativeY + rowH) {
-                                                      hoveredIndex = i;
-                                                      break;
-                                                    }
-                                                    cumulativeY += rowH;
+                                                onRowToggle: (rowId, isExpanded) => vm.toggleExpansion(rowId),
+                                                initialExpandedRowIds:
+                                                    vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
+                                                isExpandedKey: 'isExpanded',
+                                                scrollController: vm.gridScrollController,
+                                                headerHeight:
+                                                    _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
+                                                showFooter: false,
+                                                allowFiltering: false,
+                                                selectedRowId: vm.selectedRowId,
+                                                onSelectionChanged: (selectedRowIds) {
+                                                  if (selectedRowIds.isNotEmpty) {
+                                                    vm.setSelectedRowId(selectedRowIds.first);
                                                   }
-                                                  if (hoveredIndex < 0) hoveredIndex = flat.length - 1;
-
-                                                  if (!_isDraggingRow) {
-                                                    _isDraggingRow = true;
-                                                    _draggedRowIndex = hoveredIndex;
-                                                  }
-
-                                                  vm.updateDropHover(_draggedRowIndex, hoveredIndex);
                                                 },
-                                                onPointerUp: (_) {
-                                                  _isDraggingRow = false;
-                                                  _draggedRowIndex = -1;
-                                                  vm.clearDropTarget();
+                                                onReorder: (draggedId, targetId, isAfter) {
+                                                  vm.reorderResources(draggedId, targetId, isAfter);
                                                 },
-                                                onPointerCancel: (_) {
-                                                  _isDraggingRow = false;
-                                                  _draggedRowIndex = -1;
-                                                  vm.clearDropTarget();
-                                                },
-                                                child: UnifiedDataGrid<Map<String, dynamic>>(
-                                                  allowSorting: false,
-                                                  key: ValueKey('grid_${vm.seedVersion}'),
-                                                  mode: DataGridMode.client,
-                                                  clientData: vm.flatGridData,
-                                                  toMap: (item) => item,
-                                                  rowIdKey: 'id',
-                                                  isTree: true,
-                                                  parentIdKey: 'parentId',
-                                                  rowHeightBuilder: (data) {
-                                                    final rowId = data['id'] as String;
-                                                    return (vm.rowMaxStackDepth[rowId] ?? 1).toDouble() * vm.rowHeight;
-                                                  },
-                                                  onRowToggle: (rowId, isExpanded) => vm.toggleExpansion(rowId),
-                                                  initialExpandedRowIds:
-                                                      vm.gridData.where((p) => p.isExpanded).map((p) => p.id).toSet(),
-                                                  isExpandedKey: 'isExpanded',
-                                                  scrollController: vm.gridScrollController,
-                                                  headerHeight:
-                                                      _selectedAxisFormat == TimelineAxisFormat.custom ? 54.0 : 27.0,
-                                                  showFooter: false,
-                                                  allowFiltering: false,
-                                                  selectedRowId: vm.selectedRowId,
-                                                  onReorder: (draggedId, targetId, isAfter) {
-                                                    final dropTarget = vm.pendingDropTarget;
-                                                    final intent = dropTarget?.intent ?? DropIntent.between;
-                                                    final targetRowId = dropTarget?.rowId;
-                                                    vm.clearDropTarget();
-                                                    vm.reorderResources(
-                                                      draggedId,
-                                                      targetId,
-                                                      isAfter,
-                                                      dropIntent: intent,
-                                                      dropTargetRowId: targetRowId,
-                                                    );
-                                                  },
-                                                  onSelectionChanged: (selectedRowIds) {
-                                                    if (selectedRowIds.isNotEmpty) {
-                                                      vm.setSelectedRowId(selectedRowIds.first);
-                                                    }
-                                                  },
-                                                  columnDefs: [
-                                                    DataColumnDef(
-                                                      id: 'drag',
-                                                      caption: '',
-                                                      width: 40,
-                                                      minWidth: 40,
-                                                      isDragHandle: true,
-                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
-                                                        final rowName = (record['name'] as String?) ?? rowId;
-                                                        final dropTarget = vm.pendingDropTarget;
-                                                        final isTargeted =
-                                                            dropTarget != null && dropTarget.rowId == rowId;
-                                                        final isNesting =
-                                                            isTargeted && dropTarget.intent == DropIntent.inside;
-                                                        final isBetween =
-                                                            isTargeted && dropTarget.intent == DropIntent.between;
-                                                        final Color? highlightColor = isNesting
-                                                            ? ganttTheme.barColorSecondary.withValues(alpha: 0.15)
-                                                            : null;
-
-                                                        String tooltipMsg;
-                                                        if (isNesting) {
-                                                          tooltipMsg = 'Nest inside "$rowName"';
-                                                        } else if (isBetween) {
-                                                          tooltipMsg = 'Move after "$rowName"';
-                                                        } else {
-                                                          tooltipMsg = 'Drag to reorder';
-                                                        }
-
-                                                        Widget icon = Tooltip(
-                                                          message: tooltipMsg,
-                                                          waitDuration: const Duration(milliseconds: 400),
-                                                          child: Icon(
-                                                            Icons.drag_indicator,
-                                                            color:
-                                                                isTargeted ? ganttTheme.barColorPrimary : Colors.grey,
-                                                            size: 20,
-                                                          ),
-                                                        );
-
-                                                        return Container(
-                                                          decoration: BoxDecoration(
-                                                            color: highlightColor,
-                                                            border: isBetween
-                                                                ? Border(
-                                                                    bottom: BorderSide(
-                                                                        color: ganttTheme.barColorPrimary, width: 2))
-                                                                : null,
-                                                          ),
-                                                          child: Center(child: icon),
-                                                        );
-                                                      },
+                                                onNest: (draggedId, targetId) => vm.nestResource(draggedId, targetId),
+                                                columnDefs: [
+                                                  DataColumnDef(
+                                                    id: 'drag',
+                                                    caption: '',
+                                                    width: 40,
+                                                    minWidth: 40,
+                                                    isDragHandle: true,
+                                                    cellBuilder: (context, value, rowId, rowHeight, record) =>
+                                                        const Tooltip(
+                                                      message: 'Drag to reorder or nest',
+                                                      waitDuration: Duration(milliseconds: 400),
+                                                      child: Center(
+                                                        child: Icon(Icons.drag_indicator, color: Colors.grey, size: 20),
+                                                      ),
                                                     ),
-                                                    DataColumnDef(
-                                                      id: 'name',
-                                                      caption: 'Name',
-                                                      flex: 1,
-                                                      isNameColumn: true,
-                                                      minWidth: 150,
-                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
-                                                        final rowName = (record['name'] as String?) ?? rowId;
-                                                        final dropTarget = vm.pendingDropTarget;
-                                                        final isTargeted =
-                                                            dropTarget != null && dropTarget.rowId == rowId;
-                                                        final isNesting =
-                                                            isTargeted && dropTarget.intent == DropIntent.inside;
-                                                        final isBetween =
-                                                            isTargeted && dropTarget.intent == DropIntent.between;
-                                                        final Color? highlightColor = isNesting
-                                                            ? ganttTheme.barColorPrimary.withValues(alpha: 0.15)
-                                                            : null;
-
-                                                        return Container(
-                                                          decoration: BoxDecoration(
-                                                            color: highlightColor,
-                                                            border: isBetween
-                                                                ? Border(
-                                                                    bottom: BorderSide(
-                                                                        color: ganttTheme.barColorPrimary, width: 2))
-                                                                : null,
+                                                  ),
+                                                  DataColumnDef(
+                                                    id: 'name',
+                                                    caption: 'Name',
+                                                    flex: 1,
+                                                    isNameColumn: true,
+                                                    minWidth: 150,
+                                                    cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                      final rowName = (record['name'] as String?) ?? rowId;
+                                                      return Padding(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                                                        child: Align(
+                                                          alignment: Alignment.centerLeft,
+                                                          child: Text(
+                                                            rowName,
+                                                            style: const TextStyle(fontWeight: FontWeight.w500),
+                                                            overflow: TextOverflow.ellipsis,
                                                           ),
-                                                          child: Padding(
-                                                            padding: const EdgeInsets.symmetric(
-                                                                horizontal: 8.0, vertical: 4.0),
-                                                            child: Align(
-                                                              alignment: Alignment.centerLeft,
-                                                              child: Text(
-                                                                rowName,
-                                                                style: const TextStyle(fontWeight: FontWeight.w500),
-                                                                overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                  DataColumnDef(
+                                                    id: 'completion',
+                                                    caption: 'Completed %',
+                                                    width: 100,
+                                                    minWidth: 100,
+                                                    cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                      final double? completion = record['completion'];
+
+                                                      if (completion == null) {
+                                                        return const SizedBox.shrink();
+                                                      }
+
+                                                      final percentage = (completion * 100).clamp(0, 100);
+                                                      final percentageText = '${percentage.toStringAsFixed(0)}%';
+
+                                                      return Padding(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+                                                        child: Stack(
+                                                          alignment: Alignment.center,
+                                                          children: [
+                                                            LinearProgressIndicator(
+                                                              value: completion,
+                                                              backgroundColor:
+                                                                  ganttTheme.barColorSecondary.withValues(alpha: 0.3),
+                                                              color: ganttTheme.barColorPrimary,
+                                                              minHeight: 20,
+                                                            ),
+                                                            Text(
+                                                              percentageText,
+                                                              style: TextStyle(
+                                                                color: percentage > 50 ? Colors.white : Colors.black,
+                                                                fontSize: 12,
+                                                                fontWeight: FontWeight.w600,
                                                               ),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                    ),
-                                                    DataColumnDef(
-                                                      id: 'completion',
-                                                      caption: 'Completed %',
-                                                      width: 100,
-                                                      minWidth: 100,
-                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
-                                                        final double? completion = record['completion'];
-                                                        final dropTarget = vm.pendingDropTarget;
-                                                        final isTargeted =
-                                                            dropTarget != null && dropTarget.rowId == rowId;
-                                                        final isNesting =
-                                                            isTargeted && dropTarget.intent == DropIntent.inside;
-                                                        final isBetween =
-                                                            isTargeted && dropTarget.intent == DropIntent.between;
-                                                        final Color? highlightColor = isNesting
-                                                            ? ganttTheme.barColorSecondary.withValues(alpha: 0.15)
-                                                            : null;
-
-                                                        if (completion == null) {
-                                                          return Container(
-                                                            decoration: BoxDecoration(
-                                                              color: highlightColor,
-                                                              border: isBetween
-                                                                  ? Border(
-                                                                      bottom: BorderSide(
-                                                                          color: ganttTheme.barColorPrimary, width: 2))
-                                                                  : null,
-                                                            ),
-                                                            child: const SizedBox.shrink(),
-                                                          );
-                                                        }
-
-                                                        final percentage = (completion * 100).clamp(0, 100);
-                                                        final percentageText = '${percentage.toStringAsFixed(0)}%';
-
-                                                        return Container(
-                                                          decoration: BoxDecoration(
-                                                            color: highlightColor,
-                                                            border: isBetween
-                                                                ? Border(
-                                                                    bottom: BorderSide(
-                                                                        color: ganttTheme.barColorPrimary, width: 2))
-                                                                : null,
-                                                          ),
-                                                          child: Padding(
-                                                            padding: const EdgeInsets.symmetric(
-                                                                horizontal: 8.0, vertical: 2.0),
-                                                            child: Stack(
-                                                              alignment: Alignment.center,
-                                                              children: [
-                                                                LinearProgressIndicator(
-                                                                  value: completion,
-                                                                  backgroundColor: ganttTheme.barColorSecondary
-                                                                      .withValues(alpha: 0.3),
-                                                                  color: ganttTheme.barColorPrimary,
-                                                                  minHeight: 20,
-                                                                ),
-                                                                Text(
-                                                                  percentageText,
-                                                                  style: TextStyle(
-                                                                    color:
-                                                                        percentage > 50 ? Colors.white : Colors.black,
-                                                                    fontSize: 12,
-                                                                    fontWeight: FontWeight.w600,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                    ),
-                                                    DataColumnDef(
-                                                      id: 'actions',
-                                                      caption: '',
-                                                      width: 56,
-                                                      minWidth: 56,
-                                                      cellBuilder: (context, value, rowId, rowHeight, record) {
-                                                        final bool isParent = record['parentId'] == null;
-                                                        final dropTarget = vm.pendingDropTarget;
-                                                        final isTargeted =
-                                                            dropTarget != null && dropTarget.rowId == rowId;
-                                                        final isNesting =
-                                                            isTargeted && dropTarget.intent == DropIntent.inside;
-                                                        final isBetween =
-                                                            isTargeted && dropTarget.intent == DropIntent.between;
-                                                        final Color? highlightColor = isNesting
-                                                            ? ganttTheme.barColorPrimary.withValues(alpha: 0.15)
-                                                            : null;
-
-                                                        Widget actions;
-                                                        if (isParent) {
-                                                          actions = PopupMenuButton<String>(
-                                                            padding: EdgeInsets.zero,
-                                                            icon: const Icon(Icons.more_vert, size: 16),
-                                                            tooltip: 'Options',
-                                                            onSelected: (val) {
-                                                              if (val == 'add_line_item') {
-                                                                vm.addLineItem(context, rowId);
-                                                              } else if (val == 'delete_row') {
-                                                                vm.deleteResource(rowId);
-                                                              } else if (val == 'edit_task') {
-                                                                vm.editParentTask(context, rowId);
-                                                              } else if (val == 'edit_dependent_tasks') {
-                                                                vm.editDependentTasks(context, rowId);
-                                                              }
-                                                            },
-                                                            itemBuilder: (BuildContext context) =>
-                                                                <PopupMenuEntry<String>>[
-                                                              const PopupMenuItem<String>(
-                                                                  value: 'add_line_item', child: Text('Add Line Item')),
-                                                              const PopupMenuItem<String>(
-                                                                  value: 'edit_task', child: Text('Edit Task')),
-                                                              const PopupMenuItem<String>(
-                                                                  value: 'edit_dependent_tasks',
-                                                                  child: Text('Edit Dependent Tasks')),
-                                                              const PopupMenuDivider(),
-                                                              const PopupMenuItem<String>(
-                                                                  value: 'delete_row', child: Text('Delete Row')),
-                                                            ],
-                                                          );
-                                                        } else {
-                                                          actions = IconButton(
-                                                            icon: const Icon(Icons.delete_outline, size: 18),
-                                                            tooltip: 'Delete Row',
-                                                            onPressed: () => vm.deleteResource(rowId),
-                                                          );
-                                                        }
-
-                                                        return Container(
-                                                          decoration: BoxDecoration(
-                                                            color: highlightColor,
-                                                            border: isBetween
-                                                                ? Border(
-                                                                    bottom: BorderSide(
-                                                                        color: ganttTheme.dependencyLineColor,
-                                                                        width: 2))
-                                                                : null,
-                                                          ),
-                                                          child: Center(child: actions),
-                                                        );
-                                                      },
-                                                    ),
-                                                  ],
-                                                  headerTrailingWidgets: [
-                                                    (context) => PopupMenuButton<String>(
-                                                          padding: const EdgeInsets.only(right: 16.0),
-                                                          icon: const Icon(Icons.more_vert, size: 16),
-                                                          tooltip: 'More Options',
-                                                          onSelected: (val) {
-                                                            if (val == 'add_contact') {
-                                                              vm.addContact(context);
-                                                            } else if (val == 'edit_all_parents') {
-                                                              vm.editAllParentTasks(context);
-                                                            }
-                                                          },
-                                                          itemBuilder: (context) => <PopupMenuEntry<String>>[
-                                                            const PopupMenuItem<String>(
-                                                              value: 'add_contact',
-                                                              child: ListTile(
-                                                                  leading: Icon(Icons.person_add),
-                                                                  title: Text('Add Contact')),
-                                                            ),
-                                                            const PopupMenuItem<String>(
-                                                              value: 'edit_all_parents',
-                                                              child: ListTile(
-                                                                  leading: Icon(Icons.playlist_add_check),
-                                                                  title: Text('Edit All Parents')),
                                                             ),
                                                           ],
                                                         ),
-                                                  ],
-                                                ),
+                                                      );
+                                                    },
+                                                  ),
+                                                  DataColumnDef(
+                                                    id: 'actions',
+                                                    caption: '',
+                                                    width: 56,
+                                                    minWidth: 56,
+                                                    cellBuilder: (context, value, rowId, rowHeight, record) {
+                                                      final bool isParent = record['parentId'] == null;
+
+                                                      Widget actions;
+                                                      if (isParent) {
+                                                        actions = PopupMenuButton<String>(
+                                                          padding: EdgeInsets.zero,
+                                                          icon: const Icon(Icons.more_vert, size: 16),
+                                                          tooltip: 'Options',
+                                                          onSelected: (val) {
+                                                            if (val == 'add_line_item') {
+                                                              vm.addLineItem(context, rowId);
+                                                            } else if (val == 'delete_row') {
+                                                              vm.deleteResource(rowId);
+                                                            } else if (val == 'edit_task') {
+                                                              vm.editParentTask(context, rowId);
+                                                            } else if (val == 'edit_dependent_tasks') {
+                                                              vm.editDependentTasks(context, rowId);
+                                                            }
+                                                          },
+                                                          itemBuilder: (BuildContext context) =>
+                                                              <PopupMenuEntry<String>>[
+                                                            const PopupMenuItem<String>(
+                                                                value: 'add_line_item', child: Text('Add Line Item')),
+                                                            const PopupMenuItem<String>(
+                                                                value: 'edit_task', child: Text('Edit Task')),
+                                                            const PopupMenuItem<String>(
+                                                                value: 'edit_dependent_tasks',
+                                                                child: Text('Edit Dependent Tasks')),
+                                                            const PopupMenuDivider(),
+                                                            const PopupMenuItem<String>(
+                                                                value: 'delete_row', child: Text('Delete Row')),
+                                                          ],
+                                                        );
+                                                      } else {
+                                                        actions = IconButton(
+                                                          icon: const Icon(Icons.delete_outline, size: 18),
+                                                          tooltip: 'Delete Row',
+                                                          onPressed: () => vm.deleteResource(rowId),
+                                                        );
+                                                      }
+
+                                                      return Center(child: actions);
+                                                    },
+                                                  ),
+                                                ],
+                                                headerTrailingWidgets: [
+                                                  (context) => PopupMenuButton<String>(
+                                                        padding: const EdgeInsets.only(right: 16.0),
+                                                        icon: const Icon(Icons.more_vert, size: 16),
+                                                        tooltip: 'More Options',
+                                                        onSelected: (val) {
+                                                          if (val == 'add_contact') {
+                                                            vm.addContact(context);
+                                                          } else if (val == 'edit_all_parents') {
+                                                            vm.editAllParentTasks(context);
+                                                          }
+                                                        },
+                                                        itemBuilder: (context) => <PopupMenuEntry<String>>[
+                                                          const PopupMenuItem<String>(
+                                                            value: 'add_contact',
+                                                            child: ListTile(
+                                                                leading: Icon(Icons.person_add),
+                                                                title: Text('Add Contact')),
+                                                          ),
+                                                          const PopupMenuItem<String>(
+                                                            value: 'edit_all_parents',
+                                                            child: ListTile(
+                                                                leading: Icon(Icons.playlist_add_check),
+                                                                title: Text('Edit All Parents')),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                ],
                                               ),
                                             ),
                                           ),

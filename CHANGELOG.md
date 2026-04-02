@@ -4,6 +4,7 @@
     * Enabled via `enableVerticalTaskDrag` on `LegacyGanttChartWidget`.
     * Row reassignments are reported through the `onTaskMove(task, newStart, newEnd, newRowId)` callback.
     * Includes visual "ghost task" feedback and smart stacking logic for target lanes.
+* **IMPROVEMENT**: Improved reordering rows in the tree grid.
 * **ENHANCEMENT**: UI/UX and Theming improvements.
     * Added `summaryBarColor`, `resizeTooltipBackgroundColor`, `resizeTooltipFontColor`, and `resizeTooltipDateFormat` to `LegacyGanttTheme`.
     * Implemented high-contrast text color logic for task labels to ensure legibility across all theme presets.

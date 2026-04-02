@@ -33,6 +33,12 @@ class LocalGanttRepository {
     return rows.map((row) => _rowToTask(row)).toList();
   }
 
+  Future<List<LocalResource>> getAllResources() async {
+    final db = await GanttDb.db;
+    final rows = await db.query('SELECT * FROM resources WHERE is_deleted = 0 ORDER BY COALESCE(sort_order, 100000000.0) ASC, id ASC');
+    return rows.map((row) => _rowToResource(row)).toList();
+  }
+
   Stream<List<LegacyGanttTaskDependency>> watchDependencies() async* {
     final db = await GanttDb.db;
     yield* db
