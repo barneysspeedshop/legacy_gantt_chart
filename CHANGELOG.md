@@ -1,3 +1,12 @@
+## 7.4.0-rc.2
+
+* **FIX**: Fix for an issue that caused tasks populating in rows with background highlights to render at an incorrect vertical position. 
+* **PERFORMANCE**: **O(1) Vertical Layout Rendering**: Significantly optimized rendering performance for large charts by pre-calculating row vertical offsets.
+    * Replaced O(N) iterative offset calculations in painters with O(1) lookups.
+    * Implemented O(log N) binary search for row hit-testing, improving interaction snappiness.
+* **IMPROVEMENT**: Refactored `BarsCollectionPainter` and `CursorPainter` for better efficiency and reduced redundant drawing operations.
+* **IMPROVEMENT**: Enhanced cache invalidation and state synchronization between the chart widget and its view model.
+
 ## 7.4.0-rc.1
 
 * **FEATURE**: Introduced experimental support for optional vertical reordering of task rows.

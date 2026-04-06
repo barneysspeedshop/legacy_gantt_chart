@@ -98,6 +98,8 @@ class BarsCollectionPainter extends CustomPainter {
   final Map<String, (DateTime, DateTime)> bulkGhostTasks;
   final Set<String> criticalTaskIds;
   final Set<LegacyGanttTaskDependency> criticalDependencies;
+  final Map<String, List<LegacyGanttTask>> tasksByRow;
+  final List<double>? rowVerticalOffsets; // Optional for tests
   final WorkCalendar? workCalendar;
   final bool rollUpMilestones;
   final bool showNowLine;
@@ -110,12 +112,10 @@ class BarsCollectionPainter extends CustomPainter {
   final bool isSecondaryHovered;
   final Offset? secondaryHoverPosition;
 
-  /// Map of tasks grouped by row ID, for efficient access.
-  final Map<String, List<LegacyGanttTask>> tasksByRow;
-
   BarsCollectionPainter({
     required this.data,
     required this.tasksByRow,
+    this.rowVerticalOffsets, // Optional
     required this.conflictIndicators,
     required this.visibleRows,
     required this.domain,
@@ -161,10 +161,25 @@ class BarsCollectionPainter extends CustomPainter {
     _paint(canvas, size);
   }
 
+  /// A helper to get the pre-calculated offsets or fall back to cumulative calculation.
+  /// (Fallback is mainly for backward compatibility in tests).
+  List<double> get _effectiveRowOffsets {
+    if (rowVerticalOffsets != null) return rowVerticalOffsets!;
+
+    final offsets = <double>[0.0];
+    double current = 0.0;
+    for (final row in visibleRows) {
+      final depth = rowMaxStackDepth[row.id] ?? 1;
+      current += rowHeight * depth;
+      offsets.add(current);
+    }
+    return offsets;
+  }
+
   void _paint(Canvas canvas, Size size) {
+    final rowOffsets = _effectiveRowOffsets; // Use the helper
     canvas.save();
     canvas.translate(0, translateY);
-    double cumulativeRowTop = 0;
     _drawDependencyBackgrounds(canvas, size);
     _drawEmptySpaceHighlight(canvas, size);
 
@@ -189,34 +204,25 @@ class BarsCollectionPainter extends CustomPainter {
         } catch (_) {}
       }
 
-      for (final rowData in visibleRows) {
+      for (int i = 0; i < visibleRows.length; i++) {
+        final rowData = visibleRows[i];
         final ghostsInThisRow = ghostsByRow[rowData.id];
         final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
         final double dynamicRowHeight = rowHeight * stackDepth;
+        final double rowTop = rowOffsets[i];
+        final double rowBottom = rowTop + dynamicRowHeight;
 
-        if (ghostsInThisRow == null || ghostsInThisRow.isEmpty) {
-          cumulativeRowTop += dynamicRowHeight;
-          continue;
-        }
-
-        final double rowTop = cumulativeRowTop;
-        final double rowBottom = cumulativeRowTop + dynamicRowHeight;
-
-        if (rowBottom < -translateY || rowTop > -translateY + size.height) {
-          cumulativeRowTop += dynamicRowHeight;
-          continue;
-        }
+        if (ghostsInThisRow == null || ghostsInThisRow.isEmpty) continue;
+        if (rowBottom < -translateY || rowTop > -translateY + size.height) continue;
 
         for (final ghost in ghostsInThisRow) {
           final task = ghost.task;
           final double barStartX = scale(ghost.start);
           final double barEndX = scale(ghost.end);
 
-          if (barEndX < 0 || barStartX > size.width) {
-            continue;
-          }
+          if (barEndX < 0 || barStartX > size.width) continue;
 
-          final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+          final double barTop = rowTop + (task.stackIndex * rowHeight);
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
@@ -239,9 +245,7 @@ class BarsCollectionPainter extends CustomPainter {
             }
           }
         }
-        cumulativeRowTop += dynamicRowHeight;
       }
-      cumulativeRowTop = 0; // Reset for main drawing loop
     }
 
     final Map<String, List<LegacyGanttTask>> milestonesByParent = {};
@@ -266,21 +270,15 @@ class BarsCollectionPainter extends CustomPainter {
       }
     }
 
-    for (var rowData in visibleRows) {
+    for (int i = 0; i < visibleRows.length; i++) {
+      final rowData = visibleRows[i];
       final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
       final double dynamicRowHeight = rowHeight * stackDepth;
+      final double rowTop = rowOffsets[i];
+      final double rowBottom = rowTop + dynamicRowHeight;
 
-      final double rowTop = cumulativeRowTop;
-      final double rowBottom = cumulativeRowTop + dynamicRowHeight;
-
-      if (rowBottom < visibleContentTop) {
-        cumulativeRowTop += dynamicRowHeight;
-        continue;
-      }
-
-      if (rowTop > visibleContentBottom) {
-        break;
-      }
+      if (rowBottom < visibleContentTop) continue;
+      if (rowTop > visibleContentBottom) break;
 
       final tasksInThisRow = tasksByRow[rowData.id] ?? [];
 
@@ -292,7 +290,7 @@ class BarsCollectionPainter extends CustomPainter {
         final double barWidth = max(0, barEndX - barStartX);
 
         if (barWidth > 0 && barStartX < size.width) {
-          final rect = Rect.fromLTWH(barStartX, cumulativeRowTop, barWidth, dynamicRowHeight);
+          final rect = Rect.fromLTWH(barStartX, rowTop, barWidth, dynamicRowHeight);
           final paint = Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2);
           canvas.drawRect(rect, paint);
         }
@@ -302,16 +300,11 @@ class BarsCollectionPainter extends CustomPainter {
         final double barStartX = scale(task.start);
         final double barEndX = scale(task.end);
 
-        if (barEndX < 0) {
-          continue;
-        }
-        if (barStartX > size.width) {
-          break; // Since tasks are sorted by start time, we can stop here.
-        }
+        if (barEndX < 0) continue;
+        if (barStartX > size.width) break;
 
         final double barWidth = max(0, barEndX - barStartX);
-
-        final rect = Rect.fromLTWH(barStartX, cumulativeRowTop, barWidth, dynamicRowHeight);
+        final rect = Rect.fromLTWH(barStartX, rowTop, barWidth, dynamicRowHeight);
         final paint = Paint()..color = task.color ?? theme.timeRangeHighlightColor;
         canvas.drawRect(rect, paint);
       }
@@ -319,9 +312,7 @@ class BarsCollectionPainter extends CustomPainter {
       if (!hasCustomTaskBuilder) {
         if (showSlack) {
           for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
-            if (task.cellBuilder != null || task.isMilestone) {
-              continue;
-            }
+            if (task.cellBuilder != null || task.isMilestone) continue;
 
             final stats = cpmStats[task.id];
             if (stats != null && stats.float > 0) {
@@ -330,7 +321,7 @@ class BarsCollectionPainter extends CustomPainter {
               final double slackEndX = scale(task.end.add(Duration(minutes: stats.float)));
 
               if (slackEndX > slackStartX && slackEndX > 0 && slackStartX < size.width) {
-                final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+                final double barTop = rowTop + (task.stackIndex * rowHeight);
                 final double barHeight = rowHeight * theme.barHeightRatio;
                 final double slackHeight = barHeight * 0.6;
                 final double slackVerticalCenterOffset = (rowHeight - slackHeight) / 2;
@@ -352,30 +343,22 @@ class BarsCollectionPainter extends CustomPainter {
         }
 
         for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
-          if (task.cellBuilder != null) {
-            continue;
-          }
+          if (task.cellBuilder != null) continue;
 
           final double taskStartX = scale(task.start);
           final double taskEndX = scale(task.end);
-          if (taskEndX < 0) {
-            continue;
-          }
-          if (taskStartX > size.width) {
-            break; // Since tasks are sorted by start time, we can stop here.
-          }
+          if (taskEndX < 0) continue;
+          if (taskStartX > size.width) break;
 
           final isBeingDragged = task.id == draggedTaskId;
-
-          final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+          final double barTop = rowTop + (task.stackIndex * rowHeight);
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
-
           final bool hasSegments = task.segments != null && task.segments!.isNotEmpty;
 
           if (task.isMilestone) {
             _drawMilestone(canvas, task, taskStartX, barTop + barVerticalCenterOffset, barHeight, isBeingDragged);
-            continue; // Skip the rest of the bar drawing logic for milestones
+            continue;
           }
 
           final RRect barRRect = RRect.fromRectAndRadius(
@@ -383,21 +366,14 @@ class BarsCollectionPainter extends CustomPainter {
             theme.barCornerRadius,
           );
 
-          if (taskEndX <= taskStartX) {
-            continue;
-          }
+          if (taskEndX <= taskStartX) continue;
 
           if (hasSegments) {
             for (final segment in task.segments!) {
               final double barStartX = scale(segment.start);
               final double barEndX = scale(segment.end);
-              if (barEndX <= barStartX) {
-                continue;
-              }
-
-              if (barEndX < 0 || barStartX > size.width) {
-                continue;
-              }
+              if (barEndX <= barStartX) continue;
+              if (barEndX < 0 || barStartX > size.width) continue;
 
               final RRect segmentRRect = RRect.fromRectAndRadius(
                 Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barEndX - barStartX, barHeight),
@@ -445,6 +421,7 @@ class BarsCollectionPainter extends CustomPainter {
                     final double mStartX = scale(milestone.start);
                     if (mStartX + barHeight < 0 || mStartX > size.width) continue;
 
+
                     _drawMilestone(
                       canvas,
                       milestone,
@@ -463,8 +440,8 @@ class BarsCollectionPainter extends CustomPainter {
               final double baselineEndX = scale(task.baselineEnd!);
 
               if (baselineEndX > 0 && baselineStartX < size.width && baselineEndX > baselineStartX) {
-                final double baselineTop = barRRect.bottom + 2; // 2px gap below main bar
-                final double baselineHeight = barHeight * 0.3; // Thinner than main bar
+                final double baselineTop = barRRect.bottom + 2;
+                final double baselineHeight = barHeight * 0.3;
 
                 final RRect baselineRRect = RRect.fromRectAndRadius(
                   Rect.fromLTWH(baselineStartX, baselineTop, baselineEndX - baselineStartX, baselineHeight),
@@ -489,7 +466,7 @@ class BarsCollectionPainter extends CustomPainter {
 
           if (barEndX < 0 || barStartX > size.width) continue;
 
-          final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+          final double barTop = rowTop + (task.stackIndex * rowHeight);
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
@@ -509,12 +486,9 @@ class BarsCollectionPainter extends CustomPainter {
         for (final task in tasksInThisRow.where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)) {
           final double taskStartX = scale(task.start);
           final double taskEndX = scale(task.end);
-          if (taskEndX < 0 || taskStartX > size.width || (taskEndX <= taskStartX && !task.isMilestone)) {
-            continue;
-          }
+          if (taskEndX < 0 || taskStartX > size.width || (taskEndX <= taskStartX && !task.isMilestone)) continue;
 
-          final isBeingDragged = task.id == draggedTaskId;
-          final double barTop = cumulativeRowTop + (task.stackIndex * rowHeight);
+          final double barTop = rowTop + (task.stackIndex * rowHeight);
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
           final RRect barRRect = RRect.fromRectAndRadius(
@@ -537,7 +511,7 @@ class BarsCollectionPainter extends CustomPainter {
           }
 
           if (enableDependencyCreation) {
-            _drawDependencyHandles(canvas, barRRect, task, isBeingDragged, task.isMilestone);
+            _drawDependencyHandles(canvas, barRRect, task, task.id == draggedTaskId, task.isMilestone);
           }
 
           if (task.name != null && task.name!.isNotEmpty && !hasCustomTaskBuilder && !hasCustomTaskContentBuilder) {
@@ -559,17 +533,15 @@ class BarsCollectionPainter extends CustomPainter {
                 textDirection: TextDirection.ltr,
                 maxLines: 1,
                 ellipsis: '...');
-            textPainter.layout(minWidth: 0, maxWidth: max(0, overallWidth - 8)); // 4px padding on each side
+            textPainter.layout(minWidth: 0, maxWidth: max(0, overallWidth - 8));
 
             final textOffset = Offset(taskStartX + 4, barTop + (rowHeight - textPainter.height) / 2);
 
-            // Layer 1: Base text (uses theme color, often black)
             canvas.save();
             canvas.clipRect(Rect.fromLTWH(taskStartX, barTop, overallWidth, rowHeight));
             textPainter.paint(canvas, textOffset);
             canvas.restore();
 
-            // Layer 2: White text over conflict indicators
             if (overlappingConflicts.isNotEmpty) {
               final whiteTextStyle = theme.taskTextStyle.copyWith(color: Colors.white);
               final whiteTextSpan = TextSpan(text: task.name, style: whiteTextStyle);
@@ -591,7 +563,6 @@ class BarsCollectionPainter extends CustomPainter {
                   final conflictTop = barTop + barVerticalCenterOffset + barHeight - indicatorHeight;
 
                   canvas.save();
-                  // Clip to the conflict indicator's area (bottom 40% of the bar in the overlap range)
                   canvas.clipRect(Rect.fromLTWH(conflictStartX, conflictTop, conflictWidth, indicatorHeight));
                   whiteTextPainter.paint(canvas, textOffset);
                   canvas.restore();
@@ -603,66 +574,39 @@ class BarsCollectionPainter extends CustomPainter {
       }
 
       if (theme.showRowBorders) {
-        final y = cumulativeRowTop + dynamicRowHeight - 0.5; // Center on the pixel line
+        final y = rowOffsets[i] + dynamicRowHeight - 0.5;
         final borderPaint = Paint()
           ..color = theme.rowBorderColor ?? theme.gridColor
           ..strokeWidth = 1.0;
         canvas.drawLine(Offset(0, y), Offset(size.width, y), borderPaint);
       }
-
-      cumulativeRowTop += dynamicRowHeight;
     }
 
     _drawDependencyLines(canvas, size);
-
     _drawInprogressDependencyLine(canvas, size);
 
     if ((draggedTaskId != null || drawingTask != null) && ghostTaskStart != null && ghostTaskEnd != null) {
-      final LegacyGanttTask originalTask;
-      if (drawingTask != null) {
-        originalTask = drawingTask!;
-      } else {
-        originalTask = data.firstWhere((t) => t.id == draggedTaskId,
-            orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
-      }
+      final LegacyGanttTask originalTask = drawingTask ?? data.firstWhere((t) => t.id == draggedTaskId, orElse: () => LegacyGanttTask.empty());
 
       if (originalTask.id.isNotEmpty) {
-        double ghostRowTop = 0;
-        bool foundRow = false;
-        for (var rowData in visibleRows) {
-          if (rowData.id == (ghostTaskRowId ?? originalTask.rowId)) {
-            foundRow = true;
-            break;
-          }
-          final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-          ghostRowTop += rowHeight * stackDepth;
-        }
-
-        if (foundRow) {
-          final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
+        int rowIndex = visibleRows.indexWhere((r) => r.id == (ghostTaskRowId ?? originalTask.rowId));
+        if (rowIndex != -1) {
+          final double barTop = rowOffsets[rowIndex] + (originalTask.stackIndex * rowHeight);
           final double barHeight = rowHeight * theme.barHeightRatio;
           final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
 
           if (originalTask.isMilestone) {
-            final double milestoneX = scale(ghostTaskStart!);
-            final double milestoneY = barTop + barVerticalCenterOffset;
-            _drawMilestone(canvas, originalTask, milestoneX, milestoneY, barHeight, true);
+            _drawMilestone(canvas, originalTask, scale(ghostTaskStart!), barTop + barVerticalCenterOffset, barHeight, true);
           } else {
             final double startX = scale(ghostTaskStart!);
             final double endX = scale(ghostTaskEnd!);
-            final double barStartX = min(startX, endX);
-            final double barEndX = max(startX, endX);
-            final double barWidth = max(0, barEndX - barStartX);
             final RRect barRRect = RRect.fromRectAndRadius(
-              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
+              Rect.fromLTWH(min(startX, endX), barTop + barVerticalCenterOffset, max(0, (endX - startX).abs()), barHeight),
               theme.barCornerRadius,
             );
             final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
             canvas.drawRRect(barRRect, barPaint);
-
-            if (originalTask.isSummary) {
-              _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
-            }
+            if (originalTask.isSummary) _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
           }
         }
       }
@@ -670,94 +614,50 @@ class BarsCollectionPainter extends CustomPainter {
 
     for (final ghost in remoteGhosts.values) {
       if (ghost.tasks.isEmpty && ghost.taskId.isEmpty) continue;
-
-      final Iterable<({String taskId, DateTime start, DateTime end})> ghostItems;
-      if (ghost.tasks.isNotEmpty) {
-        ghostItems = ghost.tasks.entries.map((e) => (taskId: e.key, start: e.value.start, end: e.value.end));
-      } else {
-        if (ghost.start == null || ghost.end == null) continue;
-        ghostItems = [(taskId: ghost.taskId, start: ghost.start!, end: ghost.end!)];
-      }
+      final Iterable<({String taskId, DateTime start, DateTime end})> ghostItems = ghost.tasks.isNotEmpty
+          ? ghost.tasks.entries.map((e) => (taskId: e.key, start: e.value.start, end: e.value.end))
+          : [(taskId: ghost.taskId, start: ghost.start!, end: ghost.end!)];
 
       for (final item in ghostItems) {
-        final originalTask = data.firstWhere((t) => t.id == item.taskId,
-            orElse: () => LegacyGanttTask(id: '', rowId: '', start: DateTime.now(), end: DateTime.now()));
+        final originalTask = data.firstWhere((t) => t.id == item.taskId, orElse: () => LegacyGanttTask.empty());
+        if (originalTask.id.isEmpty) continue;
 
-        if (originalTask.id.isNotEmpty) {
-          if (originalTask.isSummary) {
-            final summaryChildRowIds = data.where((t) => t.parentId == originalTask.id).map((t) => t.rowId).toSet();
-
-            double currentRowTop = 0;
-            for (var rowData in visibleRows) {
-              final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-              final double dynamicRowHeight = rowHeight * stackDepth;
-
-              if (summaryChildRowIds.contains(rowData.id)) {
-                final double barStartX = scale(item.start);
-                final double barEndX = scale(item.end);
-                final double rectX = min(barStartX, barEndX);
-                final double rectW = max(0, max(barStartX, barEndX) - rectX);
-
-                if (rectW > 0 && rectX < size.width) {
-                  final rect = Rect.fromLTWH(rectX, currentRowTop, rectW, dynamicRowHeight);
-                  final paint = Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2);
-                  canvas.drawRect(rect, paint);
-                }
-              }
-
-              currentRowTop += dynamicRowHeight;
-            }
-          }
-
-          double ghostRowTop = 0;
-          bool foundRow = false;
-          for (var rowData in visibleRows) {
-            if (rowData.id == originalTask.rowId) {
-              foundRow = true;
-              break;
-            }
-            final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-            ghostRowTop += rowHeight * stackDepth;
-          }
-
-          if (foundRow) {
-            final double barTop = ghostRowTop + (originalTask.stackIndex * rowHeight);
-            final double barHeight = rowHeight * theme.barHeightRatio;
-            final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
-
-            final double barStartX = scale(item.start);
-            final double barEndX = scale(item.end);
-            final double barWidth = max(0, barEndX - barStartX);
-
-            final RRect barRRect = RRect.fromRectAndRadius(
-              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, barWidth, barHeight),
-              theme.barCornerRadius,
-            );
-
-            final userColor = ghost.userColor != null
-                ? (Color(int.parse(ghost.userColor!.replaceAll('#', '0xff'))))
-                : Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
-
-            if (originalTask.isMilestone) {
-              final double milestoneX = scale(item.start);
-              final double milestoneY = barTop + barVerticalCenterOffset;
-              final paint = Paint()..color = userColor.withValues(alpha: 0.5);
-              final double diamondSize = barHeight;
-              final path = Path();
-              path.moveTo(milestoneX, milestoneY + diamondSize / 2);
-              path.lineTo(milestoneX + diamondSize / 2, milestoneY);
-              path.lineTo(milestoneX + diamondSize, milestoneY + diamondSize / 2);
-              path.lineTo(milestoneX + diamondSize / 2, milestoneY + diamondSize);
-              path.close();
-              canvas.drawPath(path, paint);
-            } else {
-              final barPaint = Paint()..color = userColor.withValues(alpha: 0.5);
-              canvas.drawRRect(barRRect, barPaint);
-
-              if (originalTask.isSummary) {
-                _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
+        if (originalTask.isSummary) {
+          final summaryChildRowIds = data.where((t) => t.parentId == originalTask.id).map((t) => t.rowId).toSet();
+          for (int i = 0; i < visibleRows.length; i++) {
+            if (summaryChildRowIds.contains(visibleRows[i].id)) {
+              final double barStartX = scale(item.start);
+              final double barEndX = scale(item.end);
+              final double rectX = min(barStartX, barEndX);
+              final double rectW = max(0, max(barStartX, barEndX) - rectX);
+              if (rectW > 0 && rectX < size.width) {
+                canvas.drawRect(Rect.fromLTWH(rectX, rowOffsets[i], rectW, rowHeight * (rowMaxStackDepth[visibleRows[i].id] ?? 1)), Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2));
               }
             }
+          }
+        }
+
+        int rowIndex = visibleRows.indexWhere((r) => r.id == originalTask.rowId);
+        if (rowIndex != -1) {
+          final double barTop = rowOffsets[rowIndex] + (originalTask.stackIndex * rowHeight);
+          final double barHeight = rowHeight * theme.barHeightRatio;
+          final double barVerticalCenterOffset = (rowHeight - barHeight) / 2;
+          final double barStartX = scale(item.start);
+          final double barEndX = scale(item.end);
+          final RRect barRRect = RRect.fromRectAndRadius(Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, max(0, barEndX - barStartX), barHeight), theme.barCornerRadius);
+          final userColor = ghost.userColor != null ? (Color(int.parse(ghost.userColor!.replaceAll('#', '0xff')))) : Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
+
+          if (originalTask.isMilestone) {
+            final path = Path();
+            path.moveTo(barStartX, barTop + barVerticalCenterOffset + barHeight / 2);
+            path.lineTo(barStartX + barHeight / 2, barTop + barVerticalCenterOffset);
+            path.lineTo(barStartX + barHeight, barTop + barVerticalCenterOffset + barHeight / 2);
+            path.lineTo(barStartX + barHeight / 2, barTop + barVerticalCenterOffset + barHeight);
+            path.close();
+            canvas.drawPath(path, Paint()..color = userColor.withValues(alpha: 0.5));
+          } else {
+            canvas.drawRRect(barRRect, Paint()..color = userColor.withValues(alpha: 0.5));
+            if (originalTask.isSummary) _drawAngledPattern(canvas, barRRect, theme.summaryBarColor.withValues(alpha: 1.0), 1.5);
           }
         }
       }
@@ -768,426 +668,184 @@ class BarsCollectionPainter extends CustomPainter {
 
   void _drawNowLine(Canvas canvas, Size size) {
     if (!showNowLine) return;
-
     final now = nowLineDate ?? DateTime.now();
     final double x = scale(now);
-
     if (x < 0 || x > size.width) return;
-
-    final paint = Paint()
-      ..color = theme.nowLineColor
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
+    final paint = Paint()..color = theme.nowLineColor..strokeWidth = 2.0..style = PaintingStyle.stroke;
     canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-
     final path = Path();
-    const double markerSize = 6.0;
-    path.moveTo(x - markerSize, 0);
-    path.lineTo(x + markerSize, 0);
-    path.lineTo(x, markerSize);
+    path.moveTo(x - 6.0, 0);
+    path.lineTo(x + 6.0, 0);
+    path.lineTo(x, 6.0);
     path.close();
-
     canvas.drawPath(path, Paint()..color = theme.nowLineColor);
   }
 
   void _drawAngledPattern(Canvas canvas, RRect rrect, Color color, double strokeWidth) {
-    final patternPaint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
+    final patternPaint = Paint()..color = color..strokeWidth = strokeWidth..style = PaintingStyle.stroke;
     canvas.save();
     canvas.clipRRect(rrect);
-
-    const double lineSpacing = 8.0;
-    for (double i = -rrect.height; i < rrect.width; i += lineSpacing) {
-      canvas.drawLine(
-        Offset(rrect.left + i, rrect.top),
-        Offset(rrect.left + i + rrect.height, rrect.bottom),
-        patternPaint,
-      );
+    for (double i = -rrect.height; i < rrect.width; i += 8.0) {
+      canvas.drawLine(Offset(rrect.left + i, rrect.top), Offset(rrect.left + i + rrect.height, rrect.bottom), patternPaint);
     }
     canvas.restore();
   }
 
-  void _drawSummaryPattern(Canvas canvas, RRect rrect) {
-    _drawAngledPattern(canvas, rrect, theme.summaryBarColor, 1.5);
-  }
+  void _drawSummaryPattern(Canvas canvas, RRect rrect) => _drawAngledPattern(canvas, rrect, theme.summaryBarColor, 1.5);
 
   void _drawConflictIndicator(Canvas canvas, RRect rrect, bool isSummaryConflict) {
     final indicatorHeight = rrect.height * 0.4;
-    final indicatorRect = Rect.fromLTWH(
-      rrect.left,
-      rrect.bottom - indicatorHeight,
-      rrect.width,
-      indicatorHeight,
-    );
-    final indicatorRRect = RRect.fromRectAndRadius(indicatorRect, theme.barCornerRadius);
-
+    final indicatorRRect = RRect.fromRectAndRadius(Rect.fromLTWH(rrect.left, rrect.bottom - indicatorHeight, rrect.width, indicatorHeight), theme.barCornerRadius);
     canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
-
-    final backgroundPaint = Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4);
-    canvas.drawRRect(indicatorRRect, backgroundPaint);
-
+    canvas.drawRRect(indicatorRRect, Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4));
     _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
   }
 
   void _drawMilestone(Canvas canvas, LegacyGanttTask task, double x, double y, double height, bool isBeingDragged) {
     final paint = Paint()..color = (task.color ?? theme.barColorPrimary).withValues(alpha: isBeingDragged ? 0.5 : 1.0);
-
-    final double diamondSize = height;
     final path = Path();
-    path.moveTo(x, y + diamondSize / 2); // Center left
-    path.lineTo(x + diamondSize / 2, y); // Top
-    path.lineTo(x + diamondSize, y + diamondSize / 2); // Center right
-    path.lineTo(x + diamondSize / 2, y + diamondSize); // Bottom
+    path.moveTo(x, y + height / 2);
+    path.lineTo(x + height / 2, y);
+    path.lineTo(x + height, y + height / 2);
+    path.lineTo(x + height / 2, y + height);
     path.close();
-
     canvas.drawPath(path, paint);
   }
 
   void _drawDependencyHandles(Canvas canvas, RRect rrect, LegacyGanttTask task, bool isBeingDragged, bool isMilestone) {
     if (isBeingDragged || task.isSummary) return;
-
     final handlePaint = Paint()..color = theme.dependencyLineColor.withValues(alpha: 0.8);
-    const handleRadius = 4.0;
-
     if (isMilestone) {
-      final center = Offset(rrect.center.dx + (rrect.height / 2), rrect.center.dy);
-      canvas.drawCircle(center, handleRadius, handlePaint);
+      canvas.drawCircle(Offset(rrect.center.dx + (rrect.height / 2), rrect.center.dy), 4.0, handlePaint);
     } else {
-      final leftCenter = Offset(rrect.left, rrect.center.dy);
-      canvas.drawCircle(leftCenter, handleRadius, handlePaint);
-      final rightCenter = Offset(rrect.right, rrect.center.dy);
-      canvas.drawCircle(rightCenter, handleRadius, handlePaint);
+      canvas.drawCircle(Offset(rrect.left, rrect.center.dy), 4.0, handlePaint);
+      canvas.drawCircle(Offset(rrect.right, rrect.center.dy), 4.0, handlePaint);
     }
-
     if (task.id == hoveredTaskForDependency) {
-      final borderPaint = Paint()
-        ..color = theme.dependencyLineColor
-        ..strokeWidth = 2.0
-        ..style = PaintingStyle.stroke;
-      canvas.drawRRect(rrect.inflate(2.0), borderPaint);
+      canvas.drawRRect(rrect.inflate(2.0), Paint()..color = theme.dependencyLineColor..strokeWidth = 2.0..style = PaintingStyle.stroke);
     }
   }
 
   void _drawDependencyBackgrounds(Canvas canvas, Size size) {
     if (dependencies.isEmpty) return;
-    final processedContainedPredecessors = <String>{};
+    final processed = <String>{};
     for (final dependency in dependencies) {
-      if (dependency.type == DependencyType.contained) {
-        if (processedContainedPredecessors.contains(dependency.predecessorTaskId)) {
-          continue;
-        }
-        processedContainedPredecessors.add(dependency.predecessorTaskId);
+      if (dependency.type == DependencyType.contained && processed.add(dependency.predecessorTaskId)) {
         _drawContainedDependency(canvas, dependency);
       }
     }
   }
 
   void _drawInprogressDependencyLine(Canvas canvas, Size size) {
-    if (dependencyDragStartTaskId == null || dependencyDragCurrentPosition == null) {
-      return;
-    }
-
+    if (dependencyDragStartTaskId == null || dependencyDragCurrentPosition == null) return;
     final startTaskRect = _findTaskRect(dependencyDragStartTaskId!);
     if (startTaskRect == null) return;
-
     final startX = (dependencyDragStartIsFromStart ?? false) ? startTaskRect.left : startTaskRect.right;
     final startY = startTaskRect.center.dy;
-
     final endX = dependencyDragCurrentPosition!.dx;
     final endY = dependencyDragCurrentPosition!.dy;
-
-    Color lineColor;
-    String? statusText;
-
-    switch (dependencyDragStatus) {
-      case DependencyDragStatus.cycle:
-        lineColor = Colors.red;
-        statusText = 'Cycle Detected';
-        break;
-      case DependencyDragStatus.inadmissible:
-        lineColor = Colors.orange;
-        if (dependencyDragDelayAmount != null) {
-          final days = (dependencyDragDelayAmount! / (24 * 60)).toStringAsFixed(1);
-          statusText = 'Delay: +$days days';
-        } else {
-          statusText = 'Delay Warning';
-        }
-        break;
-      case DependencyDragStatus.admissible:
-        lineColor = Colors.green;
-        statusText = 'Safe';
-        break;
-      case DependencyDragStatus.none:
-        lineColor = theme.dependencyLineColor;
-        break;
-    }
-
-    final paint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
+    Color lineColor = dependencyDragStatus == DependencyDragStatus.cycle ? Colors.red : (dependencyDragStatus == DependencyDragStatus.inadmissible ? Colors.orange : (dependencyDragStatus == DependencyDragStatus.admissible ? Colors.green : theme.dependencyLineColor));
+    final paint = Paint()..color = lineColor..strokeWidth = 2.0..style = PaintingStyle.stroke;
     canvas.drawLine(Offset(startX, startY), Offset(endX, endY), paint);
-
     final arrowPath = Path();
-    const arrowSize = 6.0;
-    arrowPath.moveTo(endX - arrowSize, endY - arrowSize / 2);
+    arrowPath.moveTo(endX - 6.0, endY - 3.0);
     arrowPath.lineTo(endX, endY);
-    arrowPath.lineTo(endX - arrowSize, endY + arrowSize / 2);
+    arrowPath.lineTo(endX - 6.0, endY + 3.0);
     canvas.drawPath(arrowPath, paint);
-
-    if (statusText != null) {
-      final textSpan = TextSpan(
-        text: statusText,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          backgroundColor: lineColor.withValues(alpha: 0.8),
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(endX + 10, endY - 10));
-    }
   }
 
   void _drawDependencyLines(Canvas canvas, Size size) {
-    if (dependencies.isEmpty) return;
     for (final dependency in dependencies) {
       switch (dependency.type) {
-        case DependencyType.finishToStart:
-          _drawFinishToStartDependency(canvas, dependency);
-          break;
-        case DependencyType.startToStart:
-          _drawStartToStartDependency(canvas, dependency);
-          break;
-        case DependencyType.finishToFinish:
-          _drawFinishToFinishDependency(canvas, dependency);
-          break;
-        case DependencyType.startToFinish:
-          _drawStartToFinishDependency(canvas, dependency);
-          break;
-        case DependencyType.contained:
-          break;
+        case DependencyType.finishToStart: _drawFinishToStartDependency(canvas, dependency); break;
+        case DependencyType.startToStart: _drawStartToStartDependency(canvas, dependency); break;
+        case DependencyType.finishToFinish: _drawFinishToFinishDependency(canvas, dependency); break;
+        case DependencyType.startToFinish: _drawStartToFinishDependency(canvas, dependency); break;
+        case DependencyType.contained: break;
       }
     }
   }
 
   void _drawFinishToStartDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
-    final predecessorRect = _findTaskRect(dependency.predecessorTaskId);
-    final successorRect = _findTaskRect(dependency.successorTaskId);
-
-    if (predecessorRect == null || successorRect == null) return;
-
-    final startX = predecessorRect.right;
-    final startY = predecessorRect.center.dy;
-    final endX = successorRect.left;
-    final endY = successorRect.center.dy;
-
-    final paint = Paint()
-      ..color = theme.dependencyLineColor
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    path.moveTo(startX, startY); // Exit predecessor from the right
-
-    const offset = 10.0;
-    final midX = startX + offset;
-
-    if (endX > midX) {
-      path.lineTo(midX, startY);
-      path.lineTo(midX, endY);
+    final p = _findTaskRect(dependency.predecessorTaskId);
+    final s = _findTaskRect(dependency.successorTaskId);
+    if (p == null || s == null) return;
+    final path = Path()..moveTo(p.right, p.center.dy);
+    if (s.left > p.right + 10) {
+      path.lineTo(p.right + 10, p.center.dy);
+      path.lineTo(p.right + 10, s.center.dy);
     } else {
-      final midY = startY < endY ? successorRect.top - offset : successorRect.bottom + offset;
-      path.lineTo(midX, startY);
-      path.lineTo(midX, midY);
-      path.lineTo(endX - offset, midY);
-      path.lineTo(endX - offset, endY);
+      final midY = p.center.dy < s.center.dy ? s.top - 10 : s.bottom + 10;
+      path.lineTo(p.right + 10, p.center.dy);
+      path.lineTo(p.right + 10, midY);
+      path.lineTo(s.left - 10, midY);
+      path.lineTo(s.left - 10, s.center.dy);
     }
-    path.lineTo(endX, endY); // Enter successor from the left
-    canvas.drawPath(path, paint);
-
-    final arrowPath = Path();
-    const arrowSize = 5.0;
-    arrowPath.moveTo(endX - arrowSize, endY - arrowSize / 2);
-    arrowPath.lineTo(endX, endY);
-    arrowPath.lineTo(endX - arrowSize, endY + arrowSize / 2);
-    canvas.drawPath(arrowPath, paint);
+    path.lineTo(s.left, s.center.dy);
+    canvas.drawPath(path, Paint()..color = theme.dependencyLineColor..strokeWidth = 1.5..style = PaintingStyle.stroke);
   }
 
   void _drawStartToStartDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
-    final predecessorRect = _findTaskRect(dependency.predecessorTaskId);
-    final successorRect = _findTaskRect(dependency.successorTaskId);
-
-    if (predecessorRect == null || successorRect == null) return;
-
-    final startX = predecessorRect.left;
-    final startY = predecessorRect.center.dy;
-    final endX = successorRect.left;
-    final endY = successorRect.center.dy;
-
-    final paint = Paint()
-      ..color = theme.dependencyLineColor
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    if (criticalDependencies.contains(dependency)) {
-      paint.color = theme.criticalPathColor;
-      paint.strokeWidth = 2.0;
-    }
-
-    final path = Path();
-    path.moveTo(startX, startY);
-
-    const offset = 10.0;
-    final midX1 = startX - offset;
-    final midX2 = endX - offset;
-
-    if (startY == endY) {
-      path.lineTo(min(midX1, midX2), startY);
-      path.lineTo(min(midX1, midX2), endY);
-    } else {
-      path.lineTo(midX1, startY);
-      path.lineTo(midX1, endY);
-    }
-    path.lineTo(endX, endY);
-
-    canvas.drawPath(path, paint);
-
-    final arrowPath = Path();
-    const arrowSize = 5.0;
-    arrowPath.moveTo(endX - arrowSize, endY - arrowSize / 2);
-    arrowPath.lineTo(endX, endY);
-    arrowPath.lineTo(endX - arrowSize, endY + arrowSize / 2);
-    canvas.drawPath(arrowPath, paint);
+    final p = _findTaskRect(dependency.predecessorTaskId);
+    final s = _findTaskRect(dependency.successorTaskId);
+    if (p == null || s == null) return;
+    final path = Path()..moveTo(p.left, p.center.dy)..lineTo(p.left - 10, p.center.dy)..lineTo(p.left - 10, s.center.dy)..lineTo(s.left, s.center.dy);
+    canvas.drawPath(path, Paint()..color = criticalDependencies.contains(dependency) ? theme.criticalPathColor : theme.dependencyLineColor..strokeWidth = criticalDependencies.contains(dependency) ? 2.0 : 1.5..style = PaintingStyle.stroke);
   }
 
   void _drawFinishToFinishDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
-    final predecessorRect = _findTaskRect(dependency.predecessorTaskId);
-    final successorRect = _findTaskRect(dependency.successorTaskId);
-
-    if (predecessorRect == null || successorRect == null) return;
-
-    final startX = predecessorRect.right;
-    final startY = predecessorRect.center.dy;
-    final endX = successorRect.right;
-    final endY = successorRect.center.dy;
-
-    final paint = Paint()
-      ..color = theme.dependencyLineColor
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    path.moveTo(startX, startY);
-
-    const offset = 10.0;
-    final midX1 = startX + offset;
-    final midX2 = endX + offset;
-
-    if (startY == endY) {
-      path.lineTo(max(midX1, midX2), startY);
-      path.lineTo(max(midX1, midX2), endY);
-    } else {
-      path.lineTo(midX1, startY);
-      path.lineTo(midX1, endY);
-    }
-    path.lineTo(endX, endY);
-
-    canvas.drawPath(path, paint);
-
-    final arrowPath = Path();
-    const arrowSize = 5.0;
-    arrowPath.moveTo(endX + arrowSize, endY - arrowSize / 2);
-    arrowPath.lineTo(endX, endY);
-    arrowPath.lineTo(endX + arrowSize, endY + arrowSize / 2);
-    canvas.drawPath(arrowPath, paint);
+    final p = _findTaskRect(dependency.predecessorTaskId);
+    final s = _findTaskRect(dependency.successorTaskId);
+    if (p == null || s == null) return;
+    final path = Path()..moveTo(p.right, p.center.dy)..lineTo(p.right + 10, p.center.dy)..lineTo(p.right + 10, s.center.dy)..lineTo(s.right, s.center.dy);
+    canvas.drawPath(path, Paint()..color = theme.dependencyLineColor..strokeWidth = 1.5..style = PaintingStyle.stroke);
   }
 
   void _drawStartToFinishDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
-    final predecessorRect = _findTaskRect(dependency.predecessorTaskId);
-    final successorRect = _findTaskRect(dependency.successorTaskId);
-
-    if (predecessorRect == null || successorRect == null) return;
-
-    final startX = predecessorRect.left;
-    final startY = predecessorRect.center.dy;
-    final endX = successorRect.right;
-    final endY = successorRect.center.dy;
-
-    final paint = Paint()
-      ..color = theme.dependencyLineColor
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    path.moveTo(startX, startY);
-
-    const offset = 10.0;
-    final midX = startX - offset;
-
-    if (endX < midX) {
-      path.lineTo(midX, startY);
-      path.lineTo(midX, endY);
+    final p = _findTaskRect(dependency.predecessorTaskId);
+    final s = _findTaskRect(dependency.successorTaskId);
+    if (p == null || s == null) return;
+    final path = Path()..moveTo(p.left, p.center.dy);
+    if (s.right < p.left - 10) {
+      path.lineTo(p.left - 10, p.center.dy);
+      path.lineTo(p.left - 10, s.center.dy);
     } else {
-      final midY = startY < endY ? successorRect.top - offset : successorRect.bottom + offset;
-      path.lineTo(midX, startY);
-      path.lineTo(midX, midY);
-      path.lineTo(endX + offset, midY);
-      path.lineTo(endX + offset, endY);
+      final midY = p.center.dy < s.center.dy ? s.top - 10 : s.bottom + 10;
+      path.lineTo(p.left - 10, p.center.dy);
+      path.lineTo(p.left - 10, midY);
+      path.lineTo(s.right + 10, midY);
+      path.lineTo(s.right + 10, s.center.dy);
     }
-    path.lineTo(endX, endY);
-    canvas.drawPath(path, paint);
-
-    final arrowPath = Path();
-    const arrowSize = 5.0;
-    arrowPath.moveTo(endX + arrowSize, endY - arrowSize / 2);
-    arrowPath.lineTo(endX, endY);
-    arrowPath.lineTo(endX + arrowSize, endY + arrowSize / 2);
-    canvas.drawPath(arrowPath, paint);
+    path.lineTo(s.right, s.center.dy);
+    canvas.drawPath(path, Paint()..color = theme.dependencyLineColor..strokeWidth = 1.5..style = PaintingStyle.stroke);
   }
 
   void _drawContainedDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
     final predecessorTask = _findTaskById(dependency.predecessorTaskId);
-    if (predecessorTask == null || !predecessorTask.isSummary) {
-      return;
-    }
-
-    double? groupStartY;
-    double? groupEndY;
-
-    double currentY = 0;
+    if (predecessorTask == null || !predecessorTask.isSummary) return;
+    double? groupStartY, groupEndY;
     bool inGroup = false;
-
-    for (final rowData in visibleRows) {
-      final int stackDepth = rowMaxStackDepth[rowData.id] ?? 1;
-      final double rowHeightWithStack = rowHeight * stackDepth;
+    final rowOffsetsLocal = _effectiveRowOffsets;
+    for (int i = 0; i < visibleRows.length; i++) {
+      final row = visibleRows[i];
+      final rowTop = rowOffsetsLocal[i] + translateY;
+      final stackDepth = rowMaxStackDepth[row.id] ?? 1;
+      final rowHeightFull = rowHeight * stackDepth;
 
       if (inGroup) {
-        final bool isNewGroup = data.any((task) => task.rowId == rowData.id && task.isSummary);
-        if (isNewGroup) {
-          inGroup = false; // The current group has ended.
+        final bool isNewSummary = tasksByRow[row.id]?.any((task) => task.isSummary) ?? false;
+        if (isNewSummary) {
+          inGroup = false; 
         } else {
-          groupEndY = currentY + rowHeightWithStack;
+          groupEndY = rowTop + rowHeightFull;
         }
       }
 
-      if (rowData.id == predecessorTask.rowId) {
+      if (row.id == predecessorTask.rowId) {
         inGroup = true;
-        groupStartY = currentY;
-        groupEndY = currentY + rowHeightWithStack;
+        groupStartY = rowTop;
+        groupEndY = rowTop + rowHeightFull;
       }
-
-      currentY += rowHeightWithStack;
     }
 
     if (groupStartY == null || groupEndY == null) return;

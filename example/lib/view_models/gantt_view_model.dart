@@ -307,7 +307,7 @@ class GanttViewModel extends ChangeNotifier {
     _cachedFlatGridData = null; // Invalidate cache
     _cachedVisibleFlatGridData = null; // Invalidate visible cache
 
-    if (_pendingSeedReset) {
+    if (_pendingSeedReset && (_localResources.isNotEmpty || !_useLocalDatabase)) {
       _seedVersion++;
       _pendingSeedReset = false;
     }
@@ -1768,6 +1768,8 @@ class GanttViewModel extends ChangeNotifier {
     _visibleStartDate = null;
     _visibleEndDate = null;
     _cachedFlatGridData = null;
+    _cachedVisibleFlatGridData = null;
+    _seedVersion++;
     notifyListeners();
 
     try {
@@ -1856,6 +1858,7 @@ class GanttViewModel extends ChangeNotifier {
         _totalEndDate = _startDate.add(Duration(days: _range));
       }
 
+      _seedVersion++;
       _setLoading(false);
       if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
 
@@ -3901,7 +3904,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (_visibleStartDate == null || _visibleEndDate == null) _setInitialVisibleWindow();
-
+    _seedVersion++;
     notifyListeners();
   }
 

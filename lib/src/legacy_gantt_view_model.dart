@@ -58,7 +58,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
   Map<String, int> rowMaxStackDepth;
 
   /// The height of a single task lane.
-  final double rowHeight;
+  double rowHeight;
 
   /// The height of the time axis header.
   double? _axisHeight;
@@ -71,6 +71,17 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_axisHeight != newHeight) {
       if (isDisposed) return;
       _axisHeight = newHeight;
+      _calculateRowOffsets();
+      notifyListeners();
+    }
+  }
+
+  /// Updates the row height and notifies listeners.
+  void updateRowHeight(double newHeight) {
+    if (rowHeight != newHeight) {
+      if (isDisposed) return;
+      rowHeight = newHeight;
+      _calculateRowOffsets();
       notifyListeners();
     }
   }
@@ -939,7 +950,22 @@ class LegacyGanttViewModel extends ChangeNotifier {
   String? get dependencyHoveredTaskId => _dependencyHoveredTaskId;
 
   List<double> _rowVerticalOffsets = [];
+  List<double> get rowVerticalOffsets => _rowVerticalOffsets;
   double _totalContentHeight = 0;
+
+  void _calculateRowOffsets() {
+    _rowVerticalOffsets = List<double>.filled(visibleRows.length + 1, 0.0);
+    double currentTop = 0.0;
+
+    for (int i = 0; i < visibleRows.length; i++) {
+      _rowVerticalOffsets[i] = currentTop;
+      final rowId = visibleRows[i].id;
+      final int stackDepth = rowMaxStackDepth[rowId] ?? 1;
+      currentTop += rowHeight * stackDepth;
+    }
+    _rowVerticalOffsets[visibleRows.length] = currentTop; // Total height
+    _totalContentHeight = currentTop;
+  }
 
   bool _showCriticalPath = false;
   Set<String> _criticalTaskIds = {};
@@ -1223,22 +1249,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     super.dispose();
   }
 
-  /// 2. New Helper: Pre-calculates the Y position of every row.
-  /// Call this in the constructor and if visibleRows/stackDepth ever changes.
-  void _calculateRowOffsets() {
-    _rowVerticalOffsets = List<double>.filled(visibleRows.length + 1, 0.0);
-    double currentTop = 0.0;
-
-    for (int i = 0; i < visibleRows.length; i++) {
-      _rowVerticalOffsets[i] = currentTop;
-      final rowId = visibleRows[i].id;
-      final int stackDepth = rowMaxStackDepth[rowId] ?? 1;
-      currentTop += rowHeight * stackDepth;
-    }
-    _rowVerticalOffsets[visibleRows.length] = currentTop;
-    _totalContentHeight = currentTop;
-  }
-
   /// 3. New Helper: O(log N) Binary Search to find the row index from a Y-coordinate.
   int _findRowIndex(double y) {
     if (_rowVerticalOffsets.isEmpty || y < 0 || y >= _totalContentHeight) {
@@ -1246,21 +1256,6 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
     int low = 0;
     int high = _rowVerticalOffsets.length - 2; // -2 because last index is total height
-    int result = -1;
-    while (low <= high) {
-      int mid = low + ((high - low) >> 1);
-      if (_rowVerticalOffsets[mid] <= y) {
-        result = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    if (result != -1 && y >= _rowVerticalOffsets[result] && y < _rowVerticalOffsets[result + 1]) {
-      return result;
-    }
-    low = 0;
-    high = _rowVerticalOffsets.length - 2;
     while (low <= high) {
       int mid = (low + high) ~/ 2;
       double top = _rowVerticalOffsets[mid];
@@ -1782,6 +1777,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final List<DateTime> stackEndTimes = [];
 
       for (final task in tasks) {
+        // If it's a background highlight, it stays at stackIndex 0 and doesn't affect stacking.
+        if (task.isTimeRangeHighlight) {
+          layoutTasks.add(task.copyWith(stackIndex: 0));
+          continue;
+        }
+
         int assignedStackIndex = 0;
         bool placed = false;
 
@@ -1803,11 +1804,12 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
 
       _tasksByRow[rowId] = layoutTasks;
-      calculatedMaxStackDepth[rowId] = stackEndTimes.length;
+      calculatedMaxStackDepth[rowId] = max(1, stackEndTimes.length);
     }
 
     rowMaxStackDepth.clear();
     rowMaxStackDepth.addAll(calculatedMaxStackDepth);
+    _calculateRowOffsets();
   }
 
   void onPanStart(

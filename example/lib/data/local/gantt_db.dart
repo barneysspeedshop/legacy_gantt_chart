@@ -58,7 +58,8 @@ class GanttDb {
             parent_id TEXT,
             is_auto_scheduled INTEGER DEFAULT 1,
             propagates_move_to_children INTEGER DEFAULT 1,
-            resize_policy INTEGER DEFAULT 0
+            resize_policy INTEGER DEFAULT 0,
+            is_time_range_highlight INTEGER DEFAULT 0
           )
         ''');
 
@@ -314,8 +315,13 @@ class GanttDb {
             await db.execute('ALTER TABLE tasks ADD COLUMN is_deleted INTEGER DEFAULT 0');
           } catch (_) {}
         }
+        if (oldVersion < 20) {
+          try {
+            await db.execute('ALTER TABLE tasks ADD COLUMN is_time_range_highlight INTEGER DEFAULT 0');
+          } catch (_) {}
+        }
       },
-      version: 19,
+      version: 20,
     );
 
     // Enable WAL mode for better concurrency (allows concurrent reads and writes)

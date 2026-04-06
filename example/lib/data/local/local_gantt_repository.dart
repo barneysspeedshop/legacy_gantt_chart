@@ -77,7 +77,8 @@ class LocalGanttRepository {
             is_auto_scheduled = ?19,
             propagates_move_to_children = ?20,
             resize_policy = ?21,
-            last_updated_by = ?22
+            last_updated_by = ?22,
+            is_time_range_highlight = ?23
           WHERE id = ?1
           ''',
           [
@@ -102,14 +103,15 @@ class LocalGanttRepository {
             (task.isAutoScheduled ?? true) ? 1 : 0,
             task.propagatesMoveToChildren ? 1 : 0,
             task.resizePolicy.index,
-            task.lastUpdatedBy
+            task.lastUpdatedBy,
+            task.isTimeRangeHighlight ? 1 : 0
           ],
         );
 
         batch.execute(
           '''
-          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by)
-          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22)
+          INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by, is_time_range_highlight)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22, ?23)
           ''',
           [
             task.id,
@@ -133,7 +135,8 @@ class LocalGanttRepository {
             (task.isAutoScheduled ?? true) ? 1 : 0,
             task.propagatesMoveToChildren ? 1 : 0,
             task.resizePolicy.index,
-            task.lastUpdatedBy
+            task.lastUpdatedBy,
+            task.isTimeRangeHighlight ? 1 : 0
           ],
         );
       }
@@ -172,7 +175,8 @@ class LocalGanttRepository {
             is_auto_scheduled = ?19,
             propagates_move_to_children = ?20,
             resize_policy = ?21,
-            last_updated_by = ?22
+            last_updated_by = ?22,
+            is_time_range_highlight = ?23
           WHERE id = ?1
           ''',
           [
@@ -197,7 +201,8 @@ class LocalGanttRepository {
             (task.isAutoScheduled ?? true) ? 1 : 0,
             task.propagatesMoveToChildren ? 1 : 0,
             task.resizePolicy.index,
-            task.lastUpdatedBy
+            task.lastUpdatedBy,
+            task.isTimeRangeHighlight ? 1 : 0
           ],
         );
       }
@@ -234,7 +239,8 @@ class LocalGanttRepository {
           is_auto_scheduled = ?19,
           propagates_move_to_children = ?20,
           resize_policy = ?21,
-          last_updated_by = ?22
+          last_updated_by = ?22,
+          is_time_range_highlight = ?23
         WHERE id = ?1
         ''',
         [
@@ -259,14 +265,15 @@ class LocalGanttRepository {
           (task.isAutoScheduled ?? true) ? 1 : 0,
           task.propagatesMoveToChildren ? 1 : 0,
           task.resizePolicy.index,
-          task.lastUpdatedBy
+          task.lastUpdatedBy,
+          task.isTimeRangeHighlight ? 1 : 0
         ],
       );
 
       await db.execute(
         '''
-        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22)
+        INSERT OR IGNORE INTO tasks (id, row_id, start_date, end_date, name, color, text_color, stack_index, is_summary, is_milestone, resource_id, last_updated, completion, baseline_start, baseline_end, notes, uses_work_calendar, deleted_at, is_deleted, parent_id, is_auto_scheduled, propagates_move_to_children, resize_policy, last_updated_by, is_time_range_highlight)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL, 0, ?18, ?19, ?20, ?21, ?22, ?23)
         ''',
         [
           task.id,
@@ -290,7 +297,8 @@ class LocalGanttRepository {
           (task.isAutoScheduled ?? true) ? 1 : 0,
           task.propagatesMoveToChildren ? 1 : 0,
           task.resizePolicy.index,
-          task.lastUpdatedBy
+          task.lastUpdatedBy,
+          task.isTimeRangeHighlight ? 1 : 0
         ],
       );
     });
@@ -474,6 +482,7 @@ class LocalGanttRepository {
       isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
       propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
       resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
+      isTimeRangeHighlight: (row['is_time_range_highlight'] as int?) == 1,
       lastUpdated: _parseHlc(row['last_updated']),
       lastUpdatedBy: row['last_updated_by'] as String?,
     );

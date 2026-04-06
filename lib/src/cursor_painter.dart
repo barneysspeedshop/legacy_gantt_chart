@@ -9,6 +9,7 @@ class CursorPainter extends CustomPainter {
   final Map<String, int> rowMaxStackDepth;
   final double rowHeight;
   final double translateY;
+  final List<double>? rowVerticalOffsets;
 
   CursorPainter({
     required this.remoteCursors,
@@ -17,33 +18,23 @@ class CursorPainter extends CustomPainter {
     required this.rowMaxStackDepth,
     required this.rowHeight,
     required this.translateY,
+    this.rowVerticalOffsets,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (remoteCursors.isEmpty) return;
 
-    final Map<String, double> rowYPositions = {};
-    double currentTop = 0.0;
-
-    for (final row in visibleRows) {
-      final int stackDepth = rowMaxStackDepth[row.id] ?? 1;
-      final double rowHeightTotal = rowHeight * stackDepth;
-
-      rowYPositions[row.id] = currentTop + (rowHeight / 2);
-
-      currentTop += rowHeightTotal;
-    }
+    final offsets = rowVerticalOffsets;
+    if (offsets == null) return;
 
     for (final cursor in remoteCursors.values) {
-      final rowCenterY = rowYPositions[cursor.rowId];
+      final int rowIndex = visibleRows.indexWhere((r) => r.id == cursor.rowId);
+      if (rowIndex != -1) {
+        final double rowTop = offsets[rowIndex];
+        final double y = rowTop + (rowHeight / 2) + translateY;
 
-      if (rowCenterY != null) {
-        final y = rowCenterY + translateY; // Apply scroll translation
-
-        if (y < -50 || y > size.height + 50) {
-          continue;
-        }
+        if (y < -50 || y > size.height + 50) continue;
 
         final x = totalScale(cursor.time);
         _drawCursor(canvas, Offset(x, y), cursor.color, cursor.userId);
@@ -55,16 +46,6 @@ class CursorPainter extends CustomPainter {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
-
-    final path = Path();
-    path.moveTo(position.dx, position.dy);
-    path.lineTo(position.dx + 5, position.dy + 14);
-    path.lineTo(position.dx + 8, position.dy + 14); // slightly wider tail
-    path.lineTo(position.dx + 12, position.dy + 20); // extended tail
-    path.lineTo(position.dx + 15, position.dy + 18); // tick
-    path.lineTo(position.dx + 11, position.dy + 12); // back to arrow
-    path.lineTo(position.dx + 16, position.dy + 12); // arrow right wing
-    path.close();
 
     final simplePath = Path();
     simplePath.moveTo(position.dx, position.dy);
@@ -102,5 +83,6 @@ class CursorPainter extends CustomPainter {
   bool shouldRepaint(covariant CursorPainter oldDelegate) =>
       oldDelegate.translateY != translateY ||
       oldDelegate.totalScale != totalScale ||
-      oldDelegate.remoteCursors != remoteCursors; // Map ref check (VM creates new map?)
+      oldDelegate.remoteCursors != remoteCursors ||
+      oldDelegate.rowVerticalOffsets != rowVerticalOffsets;
 }

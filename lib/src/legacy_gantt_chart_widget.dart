@@ -557,6 +557,10 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             _internalViewModel!.updateData(allItems);
             _internalViewModel!.updateDependencies(dependencies);
             _internalViewModel!.updateConflictIndicators(conflictIndicators);
+            _internalViewModel!.updateVisibleRows(widget.visibleRows);
+            _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+            _internalViewModel!.updateRowHeight(widget.rowHeight);
+            _internalViewModel!.updateAxisHeight(widget.axisHeight);
             _internalViewModel!.updateVisibleRange(controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
                 controller.visibleEndDate.millisecondsSinceEpoch.toDouble());
           }
@@ -626,6 +630,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
           if (allItems.isEmpty && !widget.showEmptyRows) {
             return _buildEmptyView(context, effectiveTheme);
           }
+          if (_internalViewModel != null) {
+            _internalViewModel!.updateVisibleRows(widget.visibleRows);
+            _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+            _internalViewModel!.updateRowHeight(widget.rowHeight);
+            _internalViewModel!.updateAxisHeight(widget.axisHeight);
+          }
           return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
         },
       ));
@@ -636,6 +646,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       final allItems = [...tasks, ...holidays];
       if (allItems.isEmpty && !widget.showEmptyRows) {
         return _wrap(_buildEmptyView(context, effectiveTheme));
+      }
+      if (_internalViewModel != null) {
+        _internalViewModel!.updateVisibleRows(widget.visibleRows);
+        _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+        _internalViewModel!.updateRowHeight(widget.rowHeight);
+        _internalViewModel!.updateAxisHeight(widget.axisHeight);
       }
       return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
     }
@@ -729,25 +745,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                       final double totalContentWidth =
                           vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
 
-                      final double totalContentHeight = widget.visibleRows
-                          .where((row) => widget.showEmptyRows || (vm.tasksByRow[row.id]?.isNotEmpty ?? false))
-                          .fold<double>(
-                            0.0,
-                            (prev, row) => prev + widget.rowHeight * (widget.rowMaxStackDepth[row.id] ?? 1),
-                          );
-
-                      final bool useIntrinsicHeight = !constraints.maxHeight.isFinite;
-                      final double chartHeight;
-
-                      if (widget.height != null) {
-                        chartHeight = widget.height!;
-                      } else if (useIntrinsicHeight) {
-                        chartHeight = vm.timeAxisHeight + totalContentHeight;
-                      } else {
-                        chartHeight = constraints.maxHeight;
-                      }
-                      final double contentHeight = chartHeight - vm.timeAxisHeight;
-
                       return Column(
                         children: [
                           Expanded(
@@ -788,36 +785,40 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                   child: ClipRect(
                                     child: Stack(
                                       children: [
-                                        Padding(
-                                          padding: EdgeInsets.only(top: vm.timeAxisHeight),
+                                        Positioned.fill(
+                                          child: RepaintBoundary(
+                                            child: CustomPaint(
+                                              painter: AxisPainter(
+                                                x: 0,
+                                                y: 0,
+                                                width: totalContentWidth,
+                                                height: constraints.maxHeight,
+                                                scale: vm.totalScale,
+                                                domain: vm.totalDomain,
+                                                visibleDomain: vm.visibleExtent,
+                                                theme: effectiveTheme.copyWith(
+                                                    axisTextStyle: const TextStyle(color: Colors.transparent)),
+                                                weekendColor: effectiveTheme.weekendColor,
+                                                weekendDays:
+                                                    widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: vm.timeAxisHeight,
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 0,
                                           child: Stack(
                                             children: [
                                               RepaintBoundary(
                                                 child: CustomPaint(
                                                   size: Size(
                                                       constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                                  painter: AxisPainter(
-                                                    x: 0,
-                                                    y: 0,
-                                                    width: totalContentWidth,
-                                                    height: contentHeight,
-                                                    scale: vm.totalScale,
-                                                    domain: vm.totalDomain,
-                                                    visibleDomain: vm.visibleExtent,
-                                                    theme: effectiveTheme.copyWith(
-                                                        axisTextStyle: const TextStyle(color: Colors.transparent)),
-                                                    weekendColor: effectiveTheme.weekendColor,
-                                                    weekendDays:
-                                                        widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
-                                                  ),
-                                                ),
-                                              ),
-                                              RepaintBoundary(
-                                                child: CustomPaint(
-                                                  size: Size(
-                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
                                                   painter: BarsCollectionPainter(
                                                     tasksByRow: vm.tasksByRow,
+                                                    rowVerticalOffsets: vm.rowVerticalOffsets,
                                                     conflictIndicators: vm.conflictIndicators,
                                                     dependencies: vm.dependencies,
                                                     data: vm.data,
@@ -879,7 +880,8 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                   vm.data,
                                                   effectiveTheme,
                                                   widget.focusedTaskResizeHandleBuilder,
-                                                  widget.focusedTaskResizeHandleWidth),
+                                                  widget.focusedTaskResizeHandleWidth,
+                                                  vm.rowVerticalOffsets),
                                               if (vm.showRemoteCursors)
                                                 IgnorePointer(
                                                   child: RepaintBoundary(
@@ -894,6 +896,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                                                         rowMaxStackDepth: widget.rowMaxStackDepth,
                                                         rowHeight: widget.rowHeight,
                                                         translateY: vm.translateY,
+                                                        rowVerticalOffsets: vm.rowVerticalOffsets,
                                                       ),
                                                     ),
                                                   ),
@@ -1164,70 +1167,55 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   }
 }
 
+
 List<Widget> _buildFocusedTaskWidgets(
   LegacyGanttViewModel vm,
   List<LegacyGanttTask> tasks,
   LegacyGanttTheme theme,
   Widget Function(LegacyGanttTask, TaskPart, LegacyGanttViewModel, double)? handleBuilder,
   double handleWidth,
+  List<double>? rowOffsets,
 ) {
-  if (vm.focusedTaskId == null) return [];
+  if (vm.focusedTaskId == null || rowOffsets == null) return [];
 
   final focusedTask = tasks.firstWhere((t) => t.id == vm.focusedTaskId, orElse: () => LegacyGanttTask.empty());
   if (focusedTask.id.isEmpty) return [];
 
-  final effectiveRowId =
-      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskRowId != null ? vm.ghostTaskRowId! : focusedTask.rowId;
-  final effectiveStart =
-      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null ? vm.ghostTaskStart! : focusedTask.start;
-  final effectiveEnd =
-      vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null ? vm.ghostTaskEnd! : focusedTask.end;
-  final effectiveRowIndex = vm.visibleRows.indexWhere((r) => r.id == effectiveRowId);
-  if (effectiveRowIndex == -1) return [];
+  final int rowIndex = vm.visibleRows.indexWhere((r) => r.id == focusedTask.rowId);
+  if (rowIndex == -1) return [];
 
-  final rowTop = vm.getRowVerticalOffset(effectiveRowIndex);
-  if (rowTop == null) return [];
+  final double rowTop = rowOffsets[rowIndex];
+  final double barTop = rowTop + (focusedTask.stackIndex * vm.rowHeight);
+
+  // Ghost task support
+  final effectiveStart = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null) ? vm.ghostTaskStart! : focusedTask.start;
+  final effectiveEnd = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null) ? vm.ghostTaskEnd! : focusedTask.end;
 
   final startX = vm.totalScale(effectiveStart);
   final endX = vm.totalScale(effectiveEnd);
   final width = endX - startX;
-  final top = rowTop + (focusedTask.stackIndex * vm.rowHeight) + vm.translateY;
 
-  final List<Widget> widgets = [
-    Positioned(
+  final List<Widget> widgets = [];
+  if (width > 0) {
+    widgets.add(Positioned(
       left: startX,
-      top: top,
+      top: barTop,
       width: width,
       height: vm.rowHeight,
       child: IgnorePointer(
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: theme.barColorSecondary, width: 2),
+            border: Border.all(color: theme.barColorSecondary.withValues(alpha: 0.5), width: 3),
             borderRadius: BorderRadius.circular(4.0),
           ),
         ),
       ),
-    )
-  ];
+    ));
 
-  if (handleBuilder != null) {
-    final startHandle = handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth);
-    final endHandle = handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth);
-
-    widgets.addAll([
-      Positioned(
-        left: startX - handleWidth,
-        top: top,
-        height: vm.rowHeight,
-        child: startHandle,
-      ),
-      Positioned(
-        left: endX,
-        top: top,
-        height: vm.rowHeight,
-        child: endHandle,
-      ),
-    ]);
+    if (handleBuilder != null) {
+      widgets.add(Positioned(left: startX - handleWidth, top: barTop, height: vm.rowHeight, child: handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth)));
+      widgets.add(Positioned(left: endX, top: barTop, height: vm.rowHeight, child: handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth)));
+    }
   }
 
   return widgets;
