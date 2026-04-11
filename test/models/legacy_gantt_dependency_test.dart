@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
+import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 void main() {
   group('LegacyGanttTaskDependency', () {
@@ -66,8 +66,8 @@ void main() {
       const depNoLag = LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2');
       const depWithLag =
           LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2', lag: Duration(days: 1));
-      const depWithLastUpdated =
-          LegacyGanttTaskDependency(predecessorTaskId: '1', successorTaskId: '2', lastUpdated: 12345);
+      const depWithLastUpdated = LegacyGanttTaskDependency(
+          predecessorTaskId: '1', successorTaskId: '2', lastUpdated: Hlc(millis: 12345, counter: 0, nodeId: 'test'));
 
       expect(depNoLag, isNot(equals(depWithLag)));
       expect(depNoLag, isNot(equals(depWithLastUpdated)));
@@ -89,7 +89,7 @@ void main() {
           successorTaskId: 's-$type',
           type: type,
           lag: const Duration(hours: 1),
-          lastUpdated: 999,
+          lastUpdated: const Hlc(millis: 999, counter: 0, nodeId: 'test'),
         );
 
         final protocolDep = dependency.toProtocolDependency();

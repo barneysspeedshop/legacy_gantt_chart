@@ -263,9 +263,9 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   @override
-  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {
+  Future<void> syncWithMerkle({required MerkleTree localTree}) async {
     if (_innerClient != null) {
-      await _innerClient!.syncWithMerkle(remoteRoot: remoteRoot, depth: depth);
+      await _innerClient!.syncWithMerkle(localTree: localTree);
     }
   }
 

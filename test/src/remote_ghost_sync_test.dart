@@ -36,7 +36,7 @@ class MockGanttSyncClient implements GanttSyncClient {
   Future<String> getMerkleRoot() async => '';
 
   @override
-  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
+  Future<void> syncWithMerkle({required MerkleTree localTree}) async {}
 
   @override
   String get actorId => 'mock-actor';

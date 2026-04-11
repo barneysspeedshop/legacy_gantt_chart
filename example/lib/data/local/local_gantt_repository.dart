@@ -728,4 +728,14 @@ class LocalResource {
         lastUpdated: lastUpdated ?? this.lastUpdated,
         sortOrder: sortOrder ?? this.sortOrder,
       );
+
+  ProtocolResource toProtocolResource() => ProtocolResource(
+        id: id,
+        name: name ?? 'Unnamed',
+        type: 'person',
+        parentId: parentId,
+        metadata: {'isExpanded': isExpanded},
+        lastUpdated: lastUpdated,
+        isDeleted: false,
+      );
 }

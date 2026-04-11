@@ -20,7 +20,7 @@ dependencies:
   legacy_context_menu: ^2.1.2
   legacy_gantt_chart:
     path: ../
-  legacy_gantt_protocol: ^1.0.6
+  legacy_gantt_protocol: ^2.0.0
   legacy_timeline_scrubber: ^2.0.0
   legacy_tree_grid: 0.14.1
   path: ^1.9.1

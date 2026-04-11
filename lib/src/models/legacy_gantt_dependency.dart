@@ -36,7 +36,7 @@ class LegacyGanttTaskDependency {
   final Duration? lag;
 
   /// The timestamp of the last update to this dependency, if tracked.
-  final int? lastUpdated;
+  final Hlc? lastUpdated;
 
   const LegacyGanttTaskDependency({
     required this.predecessorTaskId,

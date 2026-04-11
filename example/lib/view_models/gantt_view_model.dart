@@ -2378,6 +2378,9 @@ class GanttViewModel extends ChangeNotifier {
           if (_isSyncConnected != isConnected) {
             _isSyncConnected = isConnected;
             notifyListeners();
+            if (isConnected) {
+              _performMerkleSync();
+            }
           }
         });
       }
@@ -2403,6 +2406,27 @@ class GanttViewModel extends ChangeNotifier {
       _isSyncConnected = false;
       notifyListeners();
       rethrow;
+    }
+  }
+
+  Future<void> _performMerkleSync() async {
+    if (_syncClient == null) return;
+    print('Initiating Merkle Sync...');
+
+    // We compute the local tree based on the currently loaded data
+    // OR we could force a fresh fetch from DB if needed, but watch streams keep this up-to-date.
+    try {
+      final pTasks = _allGanttTasks.map((t) => t.toProtocolTask()).toList();
+      final pDeps = _dependencies.map((d) => d.toProtocolDependency()).toList();
+      final pRes = _localResources.map((r) => r.toProtocolResource()).toList();
+
+      final crdtEngine = CRDTEngine();
+      final localTree = crdtEngine.computeMerkleTree(pTasks, dependencies: pDeps, resources: pRes);
+
+      print('Local Merkle Root is ${localTree.root.hash}');
+      await _syncClient!.syncWithMerkle(localTree: localTree);
+    } catch (e) {
+      print('Failed to perform Merkle Sync: $e');
     }
   }
 

@@ -67,7 +67,7 @@ class MockInnerClient implements WebSocketGanttSyncClient {
   Future<String> getMerkleRoot() async => '';
 
   @override
-  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
+  Future<void> syncWithMerkle({required MerkleTree localTree}) async {}
 
   @override
   String get actorId => 'mock-inner-actor';
@@ -335,7 +335,7 @@ void main() {
       final root = await client.getMerkleRoot();
       expect(root, '');
 
-      await client.syncWithMerkle(remoteRoot: 'root', depth: 1);
+      await client.syncWithMerkle(localTree: MerkleTree.build([]));
     });
 
     test('clearQueue and dispose work correctly', () async {

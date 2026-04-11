@@ -187,6 +187,22 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               return;
             }
 
+            if (type == 'MERKLE_NODE') {
+              if (dataMap != null && dataMap['prefix'] is String && dataMap['children'] is Map) {
+                final prefix = dataMap['prefix'] as String;
+                final childrenDynamic = dataMap['children'] as Map;
+                final children = childrenDynamic.map((k, v) => MapEntry(k.toString(), v.toString()));
+
+                if (_merkleNodeCompleters.containsKey(prefix)) {
+                  if (!_merkleNodeCompleters[prefix]!.isCompleted) {
+                    _merkleNodeCompleters[prefix]!.complete(children);
+                  }
+                  _merkleNodeCompleters.remove(prefix);
+                }
+              }
+              return;
+            }
+
             final timestamp = envelope['timestamp'];
             final actorId = envelope['actorId'];
 
@@ -280,9 +296,61 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
   }
 
+  final Map<String, Completer<Map<String, String>>> _merkleNodeCompleters = {};
+
+  Future<Map<String, String>> _getMerkleNodeChildren(String prefix) async {
+    final completer = Completer<Map<String, String>>();
+    _merkleNodeCompleters[prefix] = completer;
+
+    _channel!.sink.add(jsonEncode({
+      'type': 'GET_MERKLE_NODE',
+      'data': {'prefix': prefix},
+    }));
+
+    return completer.future.timeout(const Duration(seconds: 10));
+  }
+
+  void _getEntitiesInPrefix(String prefix) {
+    _channel!.sink.add(jsonEncode({
+      'type': 'GET_ENTITIES_IN_RANGE',
+      'data': {'prefix': prefix},
+    }));
+  }
+
   @override
-  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {
-    print('Syncing with Merkle: remoteRoot=$remoteRoot (Not fully implemented yet)');
+  Future<void> syncWithMerkle({required MerkleTree localTree}) async {
+    if (_channel == null) throw Exception('Not connected');
+
+    final remoteRoot = await getMerkleRoot();
+    if (localTree.root.hash == remoteRoot) {
+      print('Merkle Sync: Perfect match at root');
+      return;
+    }
+
+    print('Merkle Sync: Root mismatch, starting traversal');
+    await _traverseMerkleNode('', localTree);
+  }
+
+  Future<void> _traverseMerkleNode(String prefix, MerkleTree localTree) async {
+    if (prefix.length == 13) {
+      print('Merkle Sync: Mismatch at deepest level $prefix, fetching entities');
+      _getEntitiesInPrefix(prefix);
+      return;
+    }
+
+    final remoteChildrenRaw = await _getMerkleNodeChildren(prefix);
+    final localNode = localTree.getNode(prefix);
+    final localChildrenHashes = localNode?.children.map((k, v) => MapEntry(k, v.hash)) ?? {};
+
+    for (final remoteChildEntry in remoteChildrenRaw.entries) {
+      final childPrefix = remoteChildEntry.key;
+      final remoteHash = remoteChildEntry.value;
+      final localHash = localChildrenHashes[childPrefix];
+
+      if (localHash != remoteHash) {
+        await _traverseMerkleNode(childPrefix, localTree);
+      }
+    }
   }
 
   @override

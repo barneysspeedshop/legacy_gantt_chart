@@ -1,3 +1,10 @@
+## 8.0.0-rc.1
+
+* **BREAKING CHANGE**: Upgraded `legacy_gantt_protocol` to `2.0.0`.
+* **BREAKING CHANGE**: Updated `LegacyGanttTaskDependency.lastUpdated` from `int` to `Hlc` to align with the new synchronization protocol.
+* **BREAKING CHANGE**: Updated `GanttSyncClient.syncWithMerkle` signature to require a `MerkleTree` object instead of root hash and depth.
+* **FEAT**: Enhanced `WebSocketGanttSyncClient` and `OfflineGanttSyncClient` to support the improved Merkle Tree synchronization logic.
+
 ## 7.4.0
 
 * **FEATURE**: **Jira CSV Import Integration**: Added support for importing tasks directly from Jira CSV exports by mapping "Time in Status" and "Created Date".

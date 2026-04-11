@@ -23,7 +23,7 @@ class MockGanttSyncClient extends Mock implements GanttSyncClient {
   Future<void> sendOperations(List<Operation> operations) async {}
 
   @override
-  Future<void> syncWithMerkle({required String remoteRoot, required int depth}) async {}
+  Future<void> syncWithMerkle({required MerkleTree localTree}) async {}
 
   Future<void> connect({String? since}) async {}
 
