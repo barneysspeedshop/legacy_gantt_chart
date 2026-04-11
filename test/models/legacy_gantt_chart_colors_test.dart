@@ -44,7 +44,7 @@ void main() {
       final updated = colors.copyWith(barColorPrimary: Colors.green);
       expect(updated.barColorPrimary, Colors.green);
       expect(updated.barColorSecondary, Colors.red);
-      
+
       final preserved = colors.copyWith();
       expect(preserved, equals(colors));
     });

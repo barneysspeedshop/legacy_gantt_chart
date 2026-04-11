@@ -14,6 +14,9 @@ class CsvImportMapping {
   final int? parentColumnIndex;
   final String? openStatusValue;
 
+  final int? timeInStatusColumnIndex;
+  final int? createdColumnIndex;
+
   const CsvImportMapping({
     this.nameColumnIndex,
     this.startColumnIndex,
@@ -24,6 +27,8 @@ class CsvImportMapping {
     this.keyColumnIndex,
     this.parentColumnIndex,
     this.openStatusValue,
+    this.timeInStatusColumnIndex,
+    this.createdColumnIndex,
   });
 }
 
@@ -157,6 +162,26 @@ class CsvImporter {
 
         end = parsed?.end; // This is the end of the *first* parsed component if it was a range like Jan-Mar
         baselineEnd = parsed?.originalEnd; // This is the end of the *full* range
+      }
+
+      // Jira "Time in Status" Logic: Override start/end if columns are mapped
+      if (mapping.timeInStatusColumnIndex != null && mapping.createdColumnIndex != null) {
+        if (mapping.timeInStatusColumnIndex! < row.length && mapping.createdColumnIndex! < row.length) {
+          final timeInStatusVal = row[mapping.timeInStatusColumnIndex!].toString().trim();
+          final createdVal = row[mapping.createdColumnIndex!].toString().trim();
+          final createdDt = _parseSingleDate(createdVal);
+
+          if (createdDt != null && timeInStatusVal.isNotEmpty) {
+            final jiraResult = JiraStatusParser.parse(timeInStatusVal, createdDt);
+            if (jiraResult != null) {
+              start = jiraResult.start;
+              end = jiraResult.end;
+              // Clean up baselines if they were set from other columns
+              baselineStart = null;
+              baselineEnd = null;
+            }
+          }
+        }
       }
 
       // Ensure end is after start
@@ -425,6 +450,32 @@ class CsvImporter {
         end = parsed?.end;
         baselineEnd = parsed?.originalEnd;
       }
+
+      // Jira "Time in Status" Logic: Override start/end if columns are mapped
+      if (mapping.timeInStatusColumnIndex != null && mapping.createdColumnIndex != null) {
+        if (mapping.timeInStatusColumnIndex! < row.length && mapping.createdColumnIndex! < row.length) {
+          final timeInStatusVal = row[mapping.timeInStatusColumnIndex!].toString().trim();
+          final createdVal = row[mapping.createdColumnIndex!].toString().trim();
+
+          if (timeInStatusVal.isNotEmpty) {
+            final createdDt = _parseSingleDate(createdVal);
+            if (createdDt != null) {
+              final jiraResult = JiraStatusParser.parse(timeInStatusVal, createdDt);
+              if (jiraResult != null) {
+                start = jiraResult.start;
+                end = jiraResult.end;
+                baselineStart = null;
+                baselineEnd = null;
+              }
+            } else {
+              // print('[Isolate] Failed to parse Created Date for $key: "$createdVal"');
+            }
+          } else {
+            // print('[Isolate] Empty Time in Status for $key - falling back');
+          }
+        }
+      }
+
       if (start != null && end != null && end.isBefore(start)) {
         end = start.add(const Duration(days: 1));
       }
@@ -521,6 +572,8 @@ class CsvImporter {
 
       // Yield Chunk
       if (chunkTasks.length + chunkResources.length >= chunkSize) {
+        // Safe to print here since we are in an isolate, but we need to ensure it's not too verbose
+        // print('Isolate yielding chunk: ${chunkTasks.length} tasks, ${chunkResources.length} resources');
         yield (tasks: List.of(chunkTasks), resources: List.of(chunkResources));
         chunkTasks.clear();
         chunkResources.clear();
@@ -529,7 +582,8 @@ class CsvImporter {
 
     // Yield Remaining
     if (chunkTasks.isNotEmpty || chunkResources.isNotEmpty) {
-      yield (tasks: chunkTasks, resources: chunkResources);
+      // print('Isolate yielding final: ${chunkTasks.length} tasks, ${chunkResources.length} resources');
+      yield (tasks: List.of(chunkTasks), resources: List.of(chunkResources));
     }
   }
 
@@ -600,15 +654,21 @@ class CsvImporter {
   static DateTime? _parseSingleDate(String input) {
     // Try formats
     final formats = [
+      DateFormat('MMM d, yyyy h:mm a', 'en_US'),
+      DateFormat('MMM d yyyy h:mm a', 'en_US'),
       DateFormat('MMM d, yyyy', 'en_US'),
+      DateFormat('MMM d yyyy', 'en_US'),
       DateFormat('MMM yyyy', 'en_US'),
+      DateFormat('yyyy-MM-dd HH:mm:ss', 'en_US'),
       DateFormat('yyyy-MM-dd'),
       DateFormat('yyyy/MM/dd'),
       DateFormat('MM/dd/yyyy'),
       DateFormat('M/d/yyyy'),
+      DateFormat('MM/dd/yy'), // Support 2-digit years
+      DateFormat('M/d/yy'),
       DateFormat('d MMM yyyy', 'en_US'),
-      DateFormat('MMM, yyyy', 'en_US'), // Just in case comma exists
-      DateFormat('MMM d', 'en_US'), // For implicit year support
+      DateFormat('MMM, yyyy', 'en_US'),
+      DateFormat('MMM d', 'en_US'),
     ];
 
     for (var fmt in formats) {

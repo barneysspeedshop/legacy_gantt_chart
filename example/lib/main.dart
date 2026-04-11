@@ -169,7 +169,7 @@ class _GanttViewState extends State<GanttView> {
         return baseTheme.copyWith(
           barColorPrimary: Colors.blue.shade700,
           barColorSecondary: Colors.blue[600],
-          summaryBarColor: const Color(0xFF333333).withValues(alpha: 0.7),
+          summaryBarColor: const Color(0xFFAEB126).withValues(alpha: 0.7),
           containedDependencyBackgroundColor: Colors.green.withValues(alpha: 0.15),
           dependencyLineColor: Colors.red.shade700,
           timeRangeHighlightColor: isDarkMode ? Colors.grey[850] : Colors.grey[200],
@@ -480,17 +480,18 @@ class _GanttViewState extends State<GanttView> {
       await for (final message in receivePort) {
         if (message['type'] == 'chunk') {
           final data = message['data'] as ({List<LegacyGanttTask> tasks, List<LocalResource> resources});
-          final resources = data.resources;
+          final List<LocalResource> resources = data.resources;
+          final List<LegacyGanttTask> tasks = data.tasks;
 
           if (resources.isNotEmpty) {
             _viewModel.addResources(resources);
             importedResourceIds.addAll(resources.map((r) => r.id));
             totalResources += resources.length;
           }
-          if (data.tasks.isNotEmpty) {
-            _viewModel.addTasks(data.tasks);
-            importedTaskIds.addAll(data.tasks.map((t) => t.id));
-            totalTasks += data.tasks.length;
+          if (tasks.isNotEmpty) {
+            _viewModel.addTasks(tasks);
+            importedTaskIds.addAll(tasks.map((t) => t.id));
+            totalTasks += tasks.length;
           }
         } else if (message['type'] == 'done') {
           break;
@@ -510,6 +511,7 @@ class _GanttViewState extends State<GanttView> {
 
         // Rollback Prompt
         if (importedTaskIds.isNotEmpty || importedResourceIds.isNotEmpty) {
+          print('');
           final shouldRollback = await showDialog<bool>(
             context: context,
             builder: (context) => ImportRollbackDialog(
@@ -1489,8 +1491,6 @@ class _GanttViewState extends State<GanttView> {
                                                 vm.maintainScrollOffsetForWidth(ganttWidth);
                                                 final axisHeight =
                                                     _selectedAxisFormat == TimelineAxisFormat.custom ? 56.0 : 28.0;
-                                                final ganttTheme = LegacyGanttTheme.fromTheme(Theme.of(context));
-
                                                 return SingleChildScrollView(
                                                   scrollDirection: Axis.horizontal,
                                                   controller: vm.ganttHorizontalScrollController,

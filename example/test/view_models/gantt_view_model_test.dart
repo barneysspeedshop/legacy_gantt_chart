@@ -63,24 +63,26 @@ void main() {
 
     final repo = LocalGanttRepository();
     await repo.init();
-    
+
     // Insert initial data (Two siblings)
     // p1 at index 0, p2 at index 1
     await repo.insertResources([
       const LocalResource(id: 'p1', name: 'Parent 1', sortOrder: 100.0),
       const LocalResource(id: 'p2', name: 'Parent 2', sortOrder: 200.0),
     ]);
-    
+
     // Add tasks to ensure grid data builds
     await repo.insertTasks([
-      LegacyGanttTask(id: 't1', rowId: 'p1', start: DateTime.now(), end: DateTime.now().add(const Duration(days: 1)), name: 'T1'),
-      LegacyGanttTask(id: 't2', rowId: 'p2', start: DateTime.now(), end: DateTime.now().add(const Duration(days: 1)), name: 'T2'),
+      LegacyGanttTask(
+          id: 't1', rowId: 'p1', start: DateTime.now(), end: DateTime.now().add(const Duration(days: 1)), name: 'T1'),
+      LegacyGanttTask(
+          id: 't2', rowId: 'p2', start: DateTime.now(), end: DateTime.now().add(const Duration(days: 1)), name: 'T2'),
     ]);
 
     // 2. Init ViewModel
     final vm = GanttViewModel(useLocalDatabase: true);
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     // Verify initial positions
     final flat = vm.flatGridData;
     expect(flat[0]['id'], 'p1');
@@ -92,8 +94,8 @@ void main() {
     // targetId = 'p1' (targetIndex = 0), isAfter = true -> effectiveNewIndex = 1
     // oldIndex == effectiveNewIndex (True)
     await vm.nestResource(
-      'p2', 
-      'p1', 
+      'p2',
+      'p1',
     );
 
     // Wait for async reorder to complete and repository watch to trigger

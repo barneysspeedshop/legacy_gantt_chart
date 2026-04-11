@@ -19,6 +19,7 @@ export 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 export 'src/utils/critical_path_calculator.dart';
 export 'src/models/work_calendar.dart';
+export 'src/utils/jira_status_parser.dart';
 
 export 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart'
     hide LegacyGanttTask, LegacyGanttTheme, LegacyGanttTaskSegment;

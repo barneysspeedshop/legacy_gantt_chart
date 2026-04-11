@@ -21,6 +21,8 @@ class _CsvImportDialogState extends State<CsvImportDialog> {
   int? _keyColIndex;
   int? _parentColIndex;
   String _openStatusValue = 'Open';
+  int? _timeInStatusColIndex;
+  int? _createdColIndex;
 
   List<String> _headers = [];
   List<List<dynamic>> _dataRows = [];
@@ -57,6 +59,8 @@ class _CsvImportDialogState extends State<CsvImportDialog> {
     _progressColIndex = find(['progress', 'completion', 'status', 'done']);
     _keyColIndex = find(['key', 'issue key', 'id']);
     _parentColIndex = find(['parent', 'parent key', 'parent id']);
+    _timeInStatusColIndex = find(['time in status', '[chart] time in status']);
+    _createdColIndex = find(['created', 'creation date', 'issued']);
   }
 
   @override
@@ -97,7 +101,11 @@ class _CsvImportDialogState extends State<CsvImportDialog> {
     );
   }
 
-  bool get _canImport => _nameColIndex != null && _startColIndex != null && _endColIndex != null;
+  bool get _canImport {
+    final hasBasicDates = _startColIndex != null && _endColIndex != null;
+    final hasJiraDates = _timeInStatusColIndex != null && _createdColIndex != null;
+    return _nameColIndex != null && (hasBasicDates || hasJiraDates);
+  }
 
   void _onImport() {
     final mapping = CsvImportMapping(
@@ -110,87 +118,104 @@ class _CsvImportDialogState extends State<CsvImportDialog> {
       keyColumnIndex: _keyColIndex,
       parentColumnIndex: _parentColIndex,
       openStatusValue: _openStatusValue,
+      timeInStatusColumnIndex: _timeInStatusColIndex,
+      createdColumnIndex: _createdColIndex,
     );
     Navigator.of(context).pop(mapping);
   }
 
-  Widget _buildMappingSection() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Column Mapping', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _buildDropdown('Task Name *', _nameColIndex, (v) => setState(() => _nameColIndex = v))),
-              const SizedBox(width: 16),
-              Expanded(
-                  child: _buildDropdown('Start Date *', _startColIndex, (v) => setState(() => _startColIndex = v))),
-              const SizedBox(width: 16),
-              Expanded(child: _buildDropdown('End Date *', _endColIndex, (v) => setState(() => _endColIndex = v))),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                  child: _buildDropdown(
-                      'Unique Key (e.g. Issue Key)', _keyColIndex, (v) => setState(() => _keyColIndex = v))),
-              const SizedBox(width: 16),
-              Expanded(
-                  child: _buildDropdown(
-                      'Parent Ref / Dependency', _parentColIndex, (v) => setState(() => _parentColIndex = v))),
-              const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                  child: _buildDropdown(
-                      'Resource / Team', _resourceColIndex, (v) => setState(() => _resourceColIndex = v))),
-              const SizedBox(width: 16),
-              Expanded(
-                  child: _buildDropdown(
-                      'Progress / Status', _progressColIndex, (v) => setState(() => _progressColIndex = v))),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Value for 100% completion (e.g. "Closed")',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    TextFormField(
-                      initialValue: _closedStatusValue,
-                      enabled: _progressColIndex != null,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                        hintText: 'e.g. Closed',
-                      ),
-                      onChanged: (v) => _closedStatusValue = v,
+  Widget _buildMappingSection() {
+    final hasJiraDates = _timeInStatusColIndex != null && _createdColIndex != null;
+    final isBasicRequired = !hasJiraDates;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Column Mapping', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: _buildDropdown('Task Name *', _nameColIndex, (v) => setState(() => _nameColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown('Start Date ${isBasicRequired ? '*' : ''}', _startColIndex,
+                    (v) => setState(() => _startColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown(
+                    'End Date ${isBasicRequired ? '*' : ''}', _endColIndex, (v) => setState(() => _endColIndex = v))),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+                child: _buildDropdown(
+                    'Unique Key (e.g. Issue Key)', _keyColIndex, (v) => setState(() => _keyColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown(
+                    'Parent Ref / Dependency', _parentColIndex, (v) => setState(() => _parentColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown('[CHART] Time in Status (Jira)', _timeInStatusColIndex,
+                    (v) => setState(() => _timeInStatusColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown(
+                    'Created Date (Jira)', _createdColIndex, (v) => setState(() => _createdColIndex = v))),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+                child:
+                    _buildDropdown('Resource / Team', _resourceColIndex, (v) => setState(() => _resourceColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+                child: _buildDropdown(
+                    'Progress / Status', _progressColIndex, (v) => setState(() => _progressColIndex = v))),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Value for 100% completion (e.g. "Closed")',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  TextFormField(
+                    initialValue: _closedStatusValue,
+                    enabled: _progressColIndex != null,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      hintText: 'e.g. Closed',
                     ),
-                    const SizedBox(height: 16),
-                    const Text('Value for "Open" Status (Keep Row if No Dates)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    TextFormField(
-                      initialValue: _openStatusValue,
-                      enabled: _progressColIndex != null,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                        hintText: 'e.g. Open',
-                      ),
-                      onChanged: (v) => _openStatusValue = v,
+                    onChanged: (v) => _closedStatusValue = v,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Value for "Open" Status (Keep Row if No Dates)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  TextFormField(
+                    initialValue: _openStatusValue,
+                    enabled: _progressColIndex != null,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      hintText: 'e.g. Open',
                     ),
-                  ],
-                ),
+                    onChanged: (v) => _openStatusValue = v,
+                  ),
+                ],
               ),
-            ],
-          ),
-        ],
-      );
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _buildDropdown(String label, int? value, ValueChanged<int?> onChanged) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -237,9 +237,10 @@ class LegacyGanttTask {
       usesWorkCalendar: meta['usesWorkCalendar'] is bool ? meta['usesWorkCalendar'] as bool : false,
       load: (meta['load'] as num?)?.toDouble() ?? 1.0,
       isAutoScheduled: meta['isAutoScheduled'] is bool ? meta['isAutoScheduled'] as bool : null,
-      propagatesMoveToChildren: meta['propagatesMoveToChildren'] is bool ? meta['propagatesMoveToChildren'] as bool : true,
+      propagatesMoveToChildren:
+          meta['propagatesMoveToChildren'] is bool ? meta['propagatesMoveToChildren'] as bool : true,
       resizePolicy: meta['resizePolicy'] != null
-          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resize_Policy'] || e.name == meta['resizePolicy'], 
+          ? ResizePolicy.values.firstWhere((e) => e.name == meta['resize_Policy'] || e.name == meta['resizePolicy'],
               orElse: () => ResizePolicy.none)
           : ResizePolicy.none,
       baselineStart: meta['baselineStart'] != null ? DateTime.parse(meta['baselineStart']) : null,

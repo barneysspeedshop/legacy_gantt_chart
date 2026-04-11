@@ -1167,7 +1167,6 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
   }
 }
 
-
 List<Widget> _buildFocusedTaskWidgets(
   LegacyGanttViewModel vm,
   List<LegacyGanttTask> tasks,
@@ -1188,8 +1187,10 @@ List<Widget> _buildFocusedTaskWidgets(
   final double barTop = rowTop + (focusedTask.stackIndex * vm.rowHeight);
 
   // Ghost task support
-  final effectiveStart = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null) ? vm.ghostTaskStart! : focusedTask.start;
-  final effectiveEnd = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null) ? vm.ghostTaskEnd! : focusedTask.end;
+  final effectiveStart =
+      (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null) ? vm.ghostTaskStart! : focusedTask.start;
+  final effectiveEnd =
+      (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null) ? vm.ghostTaskEnd! : focusedTask.end;
 
   final startX = vm.totalScale(effectiveStart);
   final endX = vm.totalScale(effectiveEnd);
@@ -1213,8 +1214,16 @@ List<Widget> _buildFocusedTaskWidgets(
     ));
 
     if (handleBuilder != null) {
-      widgets.add(Positioned(left: startX - handleWidth, top: barTop, height: vm.rowHeight, child: handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth)));
-      widgets.add(Positioned(left: endX, top: barTop, height: vm.rowHeight, child: handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth)));
+      widgets.add(Positioned(
+          left: startX - handleWidth,
+          top: barTop,
+          height: vm.rowHeight,
+          child: handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth)));
+      widgets.add(Positioned(
+          left: endX,
+          top: barTop,
+          height: vm.rowHeight,
+          child: handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth)));
     }
   }
 
@@ -1463,10 +1472,8 @@ class _ConflictClipper extends CustomClipper<Path> {
       final conflictStartMs = conflict.start.millisecondsSinceEpoch.toDouble();
       final conflictEndMs = conflict.end.millisecondsSinceEpoch.toDouble();
 
-      final relativeStartPercent =
-          (max(taskStartMs, conflictStartMs) - taskStartMs) / (taskEndMs - taskStartMs);
-      final relativeEndPercent =
-          (min(taskEndMs, conflictEndMs) - taskStartMs) / (taskEndMs - taskStartMs);
+      final relativeStartPercent = (max(taskStartMs, conflictStartMs) - taskStartMs) / (taskEndMs - taskStartMs);
+      final relativeEndPercent = (min(taskEndMs, conflictEndMs) - taskStartMs) / (taskEndMs - taskStartMs);
 
       final left = size.width * relativeStartPercent;
       final right = size.width * relativeEndPercent;

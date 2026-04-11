@@ -1,3 +1,19 @@
+## 7.4.0
+
+* **FEATURE**: **Jira CSV Import Integration**: Added support for importing tasks directly from Jira CSV exports by mapping "Time in Status" and "Created Date".
+    * Tasks now automatically calculate their start and end dates based on Jira's status history.
+    * Updated `CsvImportDialog` with new mapping options for Jira-specific columns.
+* **ENHANCEMENT**: **Enhanced Date Parsing**: Expanded CSV import compatibility to support more date formats, including those with time components (H:MM A) and 2-digit years.
+* **ENHANCEMENT**: **Improved Summary Task Visuals**:
+    * Updated default `summaryBarColor` to a more vibrant greenish-yellow for better visibility.
+    * Enhanced angled pattern rendering for summary tasks with thicker lines and optimized spacing for better clarity at various zoom levels.
+* **IMPROVEMENT**: Publicly exported `JiraStatusParser` for utility usage.
+* **FIX**: Fixed a potential state mutation issue in `CsvImporter` by creating defensive copies of task and resource lists before yielding the final chunk from the isolate stream.
+* **FIX**: Improved visual clarity of summary task patterns by increasing the default stroke width and adjusting pattern spacing to prevent visual "bleeding" at various zoom levels.
+* **FIX**: Resolved an issue in the CSV import dialog where the "Import" button would remain disabled even when a valid Jira-specific date mapping was provided.
+* **FIX**: Corrected date parsing failures for Jira CSV imports by adding support for formats with time components (AM/PM) and 2-digit years.
+* **FIX**: Removed redundant theme calculations in the example application to optimize repaint performance.
+
 ## 7.4.0-rc.2
 
 * **FIX**: Fix for an issue that caused tasks populating in rows with background highlights to render at an incorrect vertical position. 

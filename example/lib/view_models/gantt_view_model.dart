@@ -31,8 +31,6 @@ enum TimelineAxisFormat {
   custom,
 }
 
-
-
 class GanttViewModel extends ChangeNotifier {
   final LocalGanttRepository _localRepository = LocalGanttRepository();
   bool _useLocalDatabase = false;
@@ -180,6 +178,7 @@ class GanttViewModel extends ChangeNotifier {
           holidays: {DateTime(DateTime.now().year, 12, 25)}, // Christmas for current year
         )
       : null;
+
   /// Scroll controllers to synchronize the vertical scroll of the grid and chart,
   /// and to manage the horizontal scroll of the chart.
   final ScrollController _gridScrollController = ScrollController();
@@ -219,7 +218,6 @@ class GanttViewModel extends ChangeNotifier {
 
   /// The result of the hit-testing performed by legacy_tree_grid is now
   /// handled via the onNest and onReorder callbacks.
-
 
   final GanttScheduleService _scheduleService = GanttScheduleService();
   GanttResponse? get apiResponse => _apiResponse;
@@ -1564,7 +1562,7 @@ class GanttViewModel extends ChangeNotifier {
         debugPrint('Error waiting for seeding during dispose: $e');
       }
     }
- 
+
     await _tasksSubscription?.cancel();
     await _dependenciesSubscription?.cancel();
     await _resourcesSubscription?.cancel();
@@ -4359,4 +4357,3 @@ class _EditNameDialogState extends State<_EditNameDialog> {
         ],
       );
 }
-

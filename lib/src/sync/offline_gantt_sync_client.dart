@@ -176,7 +176,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       final idsToDelete = <int>[];
 
       for (final row in rows) {
-        // We don't break mid-batch processing for connectivity, 
+        // We don't break mid-batch processing for connectivity,
         // but we verify innerClient still exists.
         if (_innerClient == null) break;
 
@@ -219,10 +219,11 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             print('OfflineClient: Flushing batch of ${opsToSend.length} operations...');
             await _innerClient!.sendOperations(opsToSend);
           }
-          
-          await _lock.synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+
+          await _lock
+              .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
           print('OfflineClient: Successfully deleted ${idsToDelete.length} operations from queue.');
-          
+
           // CRITICAL: Update pending count immediately after delete so listeners see progress
           _updatePendingCount();
         } catch (e) {
@@ -327,7 +328,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
 
     if (opsToQueue.isNotEmpty) {
-      // Simplified: Always queue and then flush. 
+      // Simplified: Always queue and then flush.
       // The _performFlush handles batching automatically.
       // This avoids complex and race-prone bundling logic here.
       await _queueOperations(opsToQueue);

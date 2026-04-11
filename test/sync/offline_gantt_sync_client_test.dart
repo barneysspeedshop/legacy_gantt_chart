@@ -134,26 +134,27 @@ void main() {
     test('Manages inner client switches correctly', () async {
       final newMock = MockInnerClient();
       await client.setInnerClient(newMock);
-      
+
       newMock.connectionController.add(true);
       await Future.delayed(Duration.zero);
-      
-      await client.sendOperation(Operation(type: 'NEW_CLIENT', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+
+      await client
+          .sendOperation(Operation(type: 'NEW_CLIENT', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       expect(newMock.sentOperations, hasLength(1));
       expect(mockInner.sentOperations, isEmpty);
-      
+
       await newMock.dispose();
     });
 
     test('removeInnerClient updates connection state', () async {
       final expectation = expectLater(client.connectionStateStream, emitsInOrder([true, false]));
-      
+
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
       await client.removeInnerClient();
-      
+
       await expectation;
     });
 
@@ -218,7 +219,7 @@ void main() {
       mockInner.shouldFailSend = true;
       final results = <int>[];
       final sub = client.outboundPendingCount.listen(results.add);
-      
+
       await Future.delayed(Duration.zero); // Initial 0
 
       await client.sendOperation(Operation(type: 'OP1', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
@@ -228,11 +229,11 @@ void main() {
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 200));
-      
+
       expect(results.last, 0);
       expect(results, contains(1));
       expect(results, contains(2));
-      
+
       await sub.cancel();
     });
 
@@ -294,15 +295,15 @@ void main() {
     test('sendOperations sends directly when online and queue empty', () async {
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       final ops = [
         Operation(type: 'BATCH1', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'),
         Operation(type: 'BATCH2', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'),
       ];
-      
+
       await client.sendOperations(ops);
       await Future.delayed(const Duration(milliseconds: 100)); // Wait for async queue & flush
-      
+
       expect(mockInner.sentOperations, hasLength(2));
       expect(mockInner.sentOperations.map((e) => e.type), containsAll(['BATCH1', 'BATCH2']));
     });
@@ -311,18 +312,18 @@ void main() {
       mockInner.shouldFailSend = true;
       await client.sendOperation(Operation(type: 'QUEUED', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       final newOps = [
         Operation(type: 'NEW', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'),
       ];
-      
+
       await client.sendOperations(newOps);
       await Future.delayed(const Duration(milliseconds: 200)); // Wait for both flushes
-      
+
       expect(mockInner.sentOperations, hasLength(2));
       expect(mockInner.sentOperations.map((o) => o.type), containsAll(['QUEUED', 'NEW']));
     });
@@ -330,26 +331,27 @@ void main() {
     test('Delegates sync methods to inner client', () async {
       final initialState = await client.getInitialState();
       expect(initialState, isEmpty);
-      
+
       final root = await client.getMerkleRoot();
       expect(root, '');
-      
+
       await client.syncWithMerkle(remoteRoot: 'root', depth: 1);
     });
 
     test('clearQueue and dispose work correctly', () async {
       mockInner.shouldFailSend = true;
-      await client.sendOperation(Operation(type: 'TO_BE_CLEARED', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
-      await Future.delayed(const Duration(milliseconds: 50)); 
-      
+      await client
+          .sendOperation(Operation(type: 'TO_BE_CLEARED', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await Future.delayed(const Duration(milliseconds: 50));
+
       await client.clearQueue();
-      await Future.delayed(const Duration(milliseconds: 50)); 
-      
+      await Future.delayed(const Duration(milliseconds: 50));
+
       mockInner.shouldFailSend = false;
-      mockInner.connectionController.add(true); 
+      mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50)); // Propagation
       await client.dispose();
-      
+
       expect(mockInner.sentOperations, isEmpty);
     });
 
@@ -362,12 +364,12 @@ void main() {
         actorId: 'A',
       ));
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 100)); // Let it start
       await client.dispose();
-      
+
       expect(mockInner.sentOperations.isNotEmpty, isTrue);
       expect(mockInner.sentOperations.first.data['start_date'], '2023-01-01');
       expect(mockInner.sentOperations.first.data.containsKey('start'), isFalse);
@@ -379,13 +381,13 @@ void main() {
         ['BAD_JSON', '{invalid_json}', Hlc.fromIntTimestamp(1).toString(), 'A'],
       );
       await Future.delayed(const Duration(milliseconds: 50));
-      
+
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 100)); // Let it start
       await client.dispose();
-      
+
       final countResult = await crdt.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0');
-      expect(countResult.first.values.first, 0); 
+      expect(countResult.first.values.first, 0);
     });
 
     test('Delegates inboundProgress to inner client', () {

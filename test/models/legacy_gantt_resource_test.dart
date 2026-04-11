@@ -34,7 +34,7 @@ void main() {
       expect(updated.isExpanded, isTrue);
       expect(updated.ganttType, 'job');
       expect(updated.isDeleted, isTrue);
-      
+
       // Verify original is unchanged
       expect(original.name, 'Original');
       expect(original.isExpanded, isFalse);
