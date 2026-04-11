@@ -32,7 +32,7 @@ void main() {
     test('Handles large 64-bit durations', () {
       // ~85 days in MS
       const int largeDuration = 7347300280;
-      final raw = '1_*:*_1_*:*_${largeDuration}_*|*_2_*:*_1_*:*_${largeDuration ~/ 2}';
+      const raw = '1_*:*_1_*:*_${largeDuration}_*|*_2_*:*_1_*:*_${largeDuration ~/ 2}';
 
       final result = JiraStatusParser.parse(raw, createdDate);
 
