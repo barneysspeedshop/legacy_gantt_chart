@@ -123,7 +123,7 @@ void main() {
     mockSyncClient.emit(batchOp);
 
     // Await strictly a microtask or small delay for the stream listener to fire and process
-    await Future.delayed(Duration.zero);
+    await Future.delayed(const Duration(milliseconds: 50));
 
     // Assert
     expect(viewModel.data.length, 2, reason: 'Should have 2 tasks restored');
@@ -187,7 +187,7 @@ void main() {
 
     mockSyncClient.emit(opWithFlattenedMetadata);
 
-    await Future.delayed(Duration.zero);
+    await Future.delayed(const Duration(milliseconds: 50));
 
     expect(viewModel.data.length, 1);
     final task = viewModel.data.first;

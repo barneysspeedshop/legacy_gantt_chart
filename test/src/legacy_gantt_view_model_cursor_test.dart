@@ -129,7 +129,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero); // Wait for stream
+      await Future.delayed(const Duration(milliseconds: 50)); // Wait for stream and sync process timer
 
       expect(viewModel.remoteCursors.containsKey('remote_user_1'), isTrue);
       final cursor = viewModel.remoteCursors['remote_user_1']!;
