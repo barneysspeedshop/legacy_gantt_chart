@@ -87,7 +87,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero);
+      await Future.delayed(const Duration(milliseconds: 50));
 
       expect(viewModel.dependencies.length, 1);
       final dep = viewModel.dependencies.first;
@@ -114,7 +114,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero);
+      await Future.delayed(const Duration(milliseconds: 50));
 
       expect(viewModel.dependencies, isEmpty);
     });
@@ -189,7 +189,7 @@ void main() {
         actorId: 'remote',
       );
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero);
+      await Future.delayed(const Duration(milliseconds: 50));
       expect(viewModel.dependencies, [dep]);
 
       // 2. updateDependencies called with same list (simulating Parent update)
@@ -233,7 +233,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(resetOp);
-      await Future.delayed(Duration.zero); // Allow stream to process
+      await Future.delayed(const Duration(milliseconds: 50)); // Allow stream to process
 
       // Verify that dependencies are cleared
       expect(viewModel.dependencies, isEmpty);
@@ -252,7 +252,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero);
+      await Future.delayed(const Duration(milliseconds: 50));
 
       // t1 dependencies should be gone, t3->t4 should remain
       expect(viewModel.dependencies.length, 1);

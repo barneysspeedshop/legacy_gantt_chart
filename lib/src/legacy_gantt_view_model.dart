@@ -625,6 +625,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (op.type == 'RESET_DATA') {
       debugPrint('WARNING: RESET_DATA received. Destructive wipe (Emergency Admin Action)...');
+      taskOps.clear();
+      dependencyOps.clear();
       dependencies = [];
       _tasks.clear();
       _cachedProtocolTasks = null;

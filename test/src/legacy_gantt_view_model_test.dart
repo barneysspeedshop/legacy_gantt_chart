@@ -172,7 +172,7 @@ void main() {
       );
 
       mockSyncClient.addOperation(op);
-      await Future.delayed(Duration.zero); // Wait for stream listener
+      await Future.delayed(const Duration(milliseconds: 50)); // Wait for stream listener and operation buffer
 
       // Task should be updated
       expect(viewModel.data.first.start, DateTime(2023, 1, 2));

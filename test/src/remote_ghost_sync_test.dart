@@ -81,7 +81,7 @@ void main() {
     mockClient.emitOperation(op);
 
     // Wait for stream to process
-    await Future.delayed(Duration.zero);
+    await Future.delayed(const Duration(milliseconds: 50));
 
     expect(viewModel.remoteGhosts.length, 1);
     final ghost = viewModel.remoteGhosts['user1']!;
@@ -125,7 +125,7 @@ void main() {
     );
 
     mockClient.emitOperation(op);
-    await Future.delayed(Duration.zero);
+    await Future.delayed(const Duration(milliseconds: 50));
 
     final ghost = viewModel.remoteGhosts['user2']!;
     expect(ghost.taskId, 't3');
