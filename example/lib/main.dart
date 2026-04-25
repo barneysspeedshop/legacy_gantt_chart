@@ -847,12 +847,21 @@ class _GanttViewState extends State<GanttView> {
           const Divider(height: 24),
           Padding(
             padding: const EdgeInsets.only(top: 8.0),
-            child: Center(
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.refresh),
-                label: const Text('Re-seed Local Data'),
-                onPressed: () => vm.seedLocalDatabase(),
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Re-seed Local Data'),
+                  onPressed: () => vm.seedLocalDatabase(),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.delete_forever),
+                  label: const Text('Clear All Data'),
+                  onPressed: () => vm.clearDatabase(),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -1782,6 +1791,9 @@ class _GanttViewState extends State<GanttView> {
                                                           vm.handleEmptySpaceTap(rowId, time),
                                                       onDependencyAdd: (dependency) =>
                                                           vm.handleDependencyCreated(dependency),
+                                                      onDependenciesSynced: (dependencies) =>
+                                                          vm.handleDependenciesSynced(dependencies),
+
                                                       // These define the total scrollable time range for the dataset.
                                                       totalGridMin:
                                                           vm.effectiveTotalStartDate?.millisecondsSinceEpoch.toDouble(),

@@ -286,6 +286,68 @@ class LegacyGanttViewModel extends ChangeNotifier {
     return Hlc(millis: DateTime.now().millisecondsSinceEpoch, counter: 0, nodeId: 'local-vm');
   }
 
+  final List<Operation> _opBuffer = [];
+  Timer? _syncProcessTimer;
+  static const Duration _syncProcessDelay = Duration(milliseconds: 32);
+
+  /// A cache of protocol tasks to avoid redundant conversions.
+  List<ProtocolTask>? _cachedProtocolTasks;
+
+  void _scheduleSyncProcess() {
+    if (_syncProcessTimer?.isActive ?? false) return;
+
+    _syncProcessTimer = Timer(_syncProcessDelay, () {
+      _processOpBuffer();
+    });
+  }
+
+  void _processOpBuffer() {
+    if (isDisposed || _opBuffer.isEmpty) return;
+
+    final ops = List<Operation>.from(_opBuffer);
+    _opBuffer.clear();
+
+    final List<Operation> taskOps = [];
+    final List<Operation> dependencyOps = [];
+    bool needsNotify = false;
+
+    for (final op in ops) {
+      final processed = _processOperation(op, taskOps, dependencyOps);
+      if (processed) {
+        needsNotify = true;
+      }
+    }
+
+    if (dependencyOps.isNotEmpty) {
+      _safeMergeDependencies(dependencyOps);
+      needsNotify = true;
+    }
+
+    if (taskOps.isNotEmpty) {
+      _safeMergeTasks(taskOps);
+
+      if (taskGrouper != null) {
+        final conflicts = LegacyGanttConflictDetector().run(
+          tasks: _tasks,
+          taskGrouper: taskGrouper!,
+        );
+        conflictIndicators = conflicts;
+      }
+      _rebuildTasksByRow();
+      _calculateDomains();
+      needsNotify = true;
+    }
+
+    if (taskOps.isNotEmpty || dependencyOps.isNotEmpty) {
+      _recalculateCriticalPath();
+      needsNotify = true;
+    }
+
+    if (needsNotify && !isDisposed) {
+      notifyListeners();
+    }
+  }
+
   void _sendGhostUpdate(String taskId, DateTime start, DateTime end) {
     if (syncClient == null) return;
     if (_ghostUpdateThrottle?.isActive ?? false) return;
@@ -391,7 +453,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
     }
 
-    if (!isDisposed) notifyListeners();
+    if (!isDisposed) {
+      // notifyListeners() is now handled by _processOpBuffer
+    }
   }
 
   void _handlePresenceUpdate(Map<String, dynamic> data, String actorId) {
@@ -451,6 +515,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// A callback that is invoked when a new dependency is created via the Draw Dependencies tool.
   final Function(LegacyGanttTaskDependency dependency)? onDependencyAdd;
 
+  /// A callback that is invoked when a batch of dependencies is synced from a remote source.
+  final Function(List<LegacyGanttTaskDependency> dependencies)? onDependenciesSynced;
+
   LegacyGanttViewModel({
     required this.conflictIndicators,
     required List<LegacyGanttTask> data,
@@ -458,6 +525,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     required this.visibleRows,
     required Map<String, int> rowMaxStackDepth,
     this.onDependencyAdd,
+    this.onDependenciesSynced,
     required this.rowHeight,
     double? axisHeight,
     double? gridMin,
@@ -526,123 +594,151 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void _handleIncomingOperation(Operation op) {
     if (isDisposed) return;
-
-    final List<Operation> taskOps = [];
-    _processOperation(op, taskOps);
-
-    if (taskOps.isNotEmpty) {
-      _safeMergeTasks(taskOps);
-
-      if (taskGrouper != null) {
-        final conflicts = LegacyGanttConflictDetector().run(
-          tasks: _tasks,
-          taskGrouper: taskGrouper!,
-        );
-        conflictIndicators = conflicts;
-      }
-      _rebuildTasksByRow();
-      _calculateDomains(); // Recalculate domains as data changed
-      _recalculateCriticalPath();
-      notifyListeners();
-    }
+    _opBuffer.add(op);
+    _scheduleSyncProcess();
   }
 
-  void _processOperation(Operation op, List<Operation> taskOps) {
+  /// Processes an operation. Returns true if it caused a non-task state change that requires notifyListeners.
+  bool _processOperation(Operation op, List<Operation> taskOps, List<Operation> dependencyOps) {
     if (op.type == 'BATCH_UPDATE') {
       final operations = op.data['operations'] as List;
+      bool subNeedsNotify = false;
       for (final rawOp in operations) {
         if (rawOp is Map<String, dynamic>) {
           try {
             final subOp = Operation.fromJson(rawOp);
-            _processOperation(subOp, taskOps);
+            if (_processOperation(subOp, taskOps, dependencyOps)) {
+              subNeedsNotify = true;
+            }
           } catch (e) {
             debugPrint('Error parsing batch operation: $e');
           }
         }
       }
-      return;
+      return subNeedsNotify;
     }
 
-    if (op.type == 'INSERT_DEPENDENCY') {
-      _handleInsertDependency(op.data);
-    } else if (op.type == 'DELETE_DEPENDENCY') {
-      _handleDeleteDependency(op.data);
-    } else if (op.type == 'CLEAR_DEPENDENCIES') {
-      _handleClearDependencies(op.data);
-    } else if (op.type == 'RESET_DATA') {
-      debugPrint('WARNING: RESET_DATA received. This operation is deprecated for normal syncing.');
-      debugPrint('Please use BATCH_UPDATE with the full state for seeding to ensure CRDT convergence.');
-      debugPrint('Proceeding with destructive wipe (Emergency Admin Action)...');
+    if (op.type == 'INSERT_DEPENDENCY' || op.type == 'DELETE_DEPENDENCY' || op.type == 'CLEAR_DEPENDENCIES') {
+      dependencyOps.add(op);
+      return false;
+    }
+
+    if (op.type == 'RESET_DATA') {
+      debugPrint('WARNING: RESET_DATA received. Destructive wipe (Emergency Admin Action)...');
       dependencies = [];
       _tasks.clear();
+      _cachedProtocolTasks = null;
       conflictIndicators = [];
       _rebuildTasksByRow();
       _calculateDomains();
-      notifyListeners();
+      return true;
     } else if (op.type == 'CURSOR_MOVE') {
       _handleRemoteCursorMove(op.data, op.actorId);
+      return true;
     } else if (op.type == 'GHOST_UPDATE') {
       _handleRemoteGhostUpdate(op.data, op.actorId);
+      return true;
     } else if (op.type == 'PRESENCE_UPDATE') {
       _handlePresenceUpdate(op.data, op.actorId);
+      return true;
     } else {
       taskOps.add(op);
+      return false;
     }
   }
 
-  void _handleInsertDependency(Map<String, dynamic> data) {
-    final typeStr = data['type'] as String? ?? 'finishToStart';
-    final depType =
-        DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
-    final newDep = LegacyGanttTaskDependency(
-      predecessorTaskId: data['predecessorTaskId'],
-      successorTaskId: data['successorTaskId'],
-      type: depType,
-      lag: data['lag'] != null ? Duration(milliseconds: data['lag']) : null,
-    );
-    if (!dependencies.contains(newDep)) {
-      dependencies = List.from(dependencies)..add(newDep);
-      onDependencyAdd?.call(newDep);
-      _recalculateCriticalPath();
-      notifyListeners();
-    }
-  }
+  void _safeMergeDependencies(List<Operation> ops) {
+    if (isDisposed || ops.isEmpty) return;
 
-  void _handleDeleteDependency(Map<String, dynamic> data) {
-    final pred = data['predecessorTaskId'];
-    final succ = data['successorTaskId'];
-    final initialLen = dependencies.length;
-    dependencies = dependencies.where((d) => !(d.predecessorTaskId == pred && d.successorTaskId == succ)).toList();
-    if (dependencies.length != initialLen) {
-      notifyListeners();
-    }
-  }
+    final currentDependencies = Set<LegacyGanttTaskDependency>.from(dependencies);
+    final newlyAdded = <LegacyGanttTaskDependency>[];
+    bool changed = false;
 
-  void _handleClearDependencies(Map<String, dynamic> data) {
-    final taskId = data['taskId'];
-    if (taskId != null) {
-      final initialLen = dependencies.length;
-      dependencies = dependencies.where((d) => d.predecessorTaskId != taskId && d.successorTaskId != taskId).toList();
-      if (dependencies.length != initialLen) {
-        notifyListeners();
+    for (final op in ops) {
+      if (op.type == 'INSERT_DEPENDENCY') {
+        final data = op.data;
+        final typeStr = data['type'] as String? ?? 'finishToStart';
+        final depType =
+            DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
+        final newDep = LegacyGanttTaskDependency(
+          predecessorTaskId: data['predecessorTaskId'],
+          successorTaskId: data['successorTaskId'],
+          type: depType,
+          lag: data['lag'] != null ? Duration(milliseconds: data['lag']) : null,
+        );
+
+        if (!currentDependencies.contains(newDep)) {
+          currentDependencies.add(newDep);
+          newlyAdded.add(newDep);
+          changed = true;
+        }
+      } else if (op.type == 'DELETE_DEPENDENCY') {
+        final data = op.data;
+        final pred = data['predecessorTaskId'];
+        final succ = data['successorTaskId'];
+        final toRemove = currentDependencies
+            .where((d) => d.predecessorTaskId == pred && d.successorTaskId == succ)
+            .toList(); // Copy to avoid concurrent modification
+        if (toRemove.isNotEmpty) {
+          currentDependencies.removeAll(toRemove);
+          changed = true;
+        }
+      } else if (op.type == 'CLEAR_DEPENDENCIES') {
+        final data = op.data;
+        final taskId = data['taskId'];
+        if (taskId != null) {
+          final toRemove =
+              currentDependencies.where((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId).toList();
+          if (toRemove.isNotEmpty) {
+            currentDependencies.removeAll(toRemove);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      dependencies = currentDependencies.toList();
+
+      if (newlyAdded.isNotEmpty) {
+        // Trigger bulk synced callback
+        onDependenciesSynced?.call(newlyAdded);
+
+        // Fallback for individual listeners if they exist
+        if (onDependencyAdd != null) {
+          newlyAdded.forEach(onDependencyAdd!.call);
+        }
       }
     }
   }
 
   /// Helper to merge tasks while preserving transient state (e.g. cellBuilder)
   void _safeMergeTasks(List<Operation> ops) {
+    if (ops.isEmpty) return;
+
+    // Initialize or keep persistent cache of protocol tasks
+    if (_cachedProtocolTasks == null || _cachedProtocolTasks!.length != _tasks.length) {
+      _cachedProtocolTasks = _tasks.map((t) => t.toProtocolTask()).toList();
+    }
+
+    final mergedProtocolTasks = _crdtEngine.mergeTasks(_cachedProtocolTasks!, ops);
+
+    // If the length didn't change and we have high confidence it's a minor update,
+    // we can optimize the mapping.
     final taskMap = {for (var t in _tasks) t.id: t};
-    final currentProtocolTasks = _tasks.map((t) => t.toProtocolTask()).toList();
-    final mergedProtocolTasks = _crdtEngine.mergeTasks(currentProtocolTasks, ops);
 
     _tasks = mergedProtocolTasks.map((pt) {
       final original = taskMap[pt.id];
       if (original != null) {
+        // copyWithProtocol is much faster than fromProtocolTask as it preserves
+        // identity and transient fields
         return original.copyWithProtocol(pt);
       } else {
         return LegacyGanttTask.fromProtocolTask(pt);
       }
     }).toList();
+
+    _cachedProtocolTasks = mergedProtocolTasks;
   }
 
   Map<String, List<ResourceBucket>> _baseResourceBuckets = {};
@@ -1240,12 +1336,19 @@ class LegacyGanttViewModel extends ChangeNotifier {
   bool get isDisposed => _isDisposed;
 
   @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
+
+  @override
   void dispose() {
     _isDisposed = true;
     scrollController?.removeListener(_onExternalScroll);
     ganttHorizontalScrollController?.removeListener(_onHorizontalScrollControllerUpdate);
     _syncSubscription?.cancel();
     _ghostUpdateThrottle?.cancel();
+    _syncProcessTimer?.cancel();
     super.dispose();
   }
 

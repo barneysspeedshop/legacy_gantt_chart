@@ -255,12 +255,16 @@ class GanttViewModel extends ChangeNotifier {
     });
 
     _tasksSubscription = _localRepository.watchTasks().listen((tasks) async {
-      if (tasks.isEmpty && _shouldAutoSeed) {
+      if (_shouldAutoSeed) {
         _shouldAutoSeed = false;
-        await seedLocalDatabase();
-        return;
+        if (tasks.isEmpty) {
+          final existingResources = await _localRepository.getAllResources();
+          if (existingResources.isEmpty) {
+            await seedLocalDatabase();
+            return;
+          }
+        }
       }
-      _shouldAutoSeed = false;
 
       _allGanttTasks = tasks;
       await _processLocalData();
@@ -391,7 +395,9 @@ class GanttViewModel extends ChangeNotifier {
 
     // Self-healing: Ensure contained dependencies exist for all parent-child relationships
     // This fixes the issue where summary backgrounds are lost if the server sync drops these derived dependencies.
-    if (_useLocalDatabase) {
+    // Skip during initial sync — dependencies are still arriving, so scanning for "missing"
+    // ones is premature. Self-healing will run once after the final sync batch completes.
+    if (!_isInitialSyncing) {
       try {
         final existingKeys = _dependencies
             .where((d) => d.type == DependencyType.contained)
@@ -407,6 +413,7 @@ class GanttViewModel extends ChangeNotifier {
                 predecessorTaskId: task.parentId!,
                 successorTaskId: task.id,
                 type: DependencyType.contained,
+                lastUpdated: _currentHlc,
               ));
             }
           }
@@ -414,9 +421,13 @@ class GanttViewModel extends ChangeNotifier {
 
         if (missingDeps.isNotEmpty) {
           print('Restoring ${missingDeps.length} missing contained dependencies for summary visuals...');
-          await _localRepository.insertDependencies(missingDeps);
-          // Note: inserting dependencies will trigger watchDependencies -> _syncToController
-          // so we don't strictly need to notify here, but for safety we continue.
+          if (_useLocalDatabase) {
+            await _localRepository.insertDependencies(missingDeps);
+            // Note: inserting dependencies will trigger watchDependencies -> _syncToController
+            // so we don't strictly need to notify here, but for safety we continue.
+          } else {
+            _dependencies = List.from(_dependencies)..addAll(missingDeps);
+          }
         }
       } catch (e) {
         print('Error ensuring contained dependencies: $e');
@@ -847,6 +858,48 @@ class GanttViewModel extends ChangeNotifier {
     } finally {
       _activeSeedingFuture = null;
     }
+  }
+
+  Future<void>? _activeClearFuture;
+
+  Future<void> clearDatabase() async {
+    if (_activeClearFuture != null) {
+      return _activeClearFuture;
+    }
+
+    _activeClearFuture = _clearDatabaseInternal();
+    try {
+      await _activeClearFuture;
+    } finally {
+      _activeClearFuture = null;
+    }
+  }
+
+  Future<void> _clearDatabaseInternal() async {
+    _setLoading(true);
+    notifyListeners();
+
+    await _localRepository.deleteAllDependencies();
+    await _localRepository.deleteAllTasks();
+    await _localRepository.deleteAllResources();
+
+    if (_syncClient is OfflineGanttSyncClient) {
+      await (_syncClient as OfflineGanttSyncClient).clearQueue();
+    }
+
+    if (_syncClient != null) {
+      final opsToSend = <Operation>[];
+      opsToSend.add(Operation(
+        type: 'RESET_DATA',
+        data: {},
+        timestamp: _currentHlc,
+        actorId: 'local-user',
+      ));
+      await _syncClient!.sendOperations(opsToSend);
+    }
+
+    _pendingSeedReset = true;
+    notifyListeners();
   }
 
   Future<void> _seedLocalDatabaseInternal() async {
@@ -1540,12 +1593,15 @@ class GanttViewModel extends ChangeNotifier {
     _tasksSubscription?.cancel();
     _dependenciesSubscription?.cancel();
     _resourcesSubscription?.cancel();
+    _syncOperationsSubscription?.cancel();
+    _connectionStateSubscription?.cancel();
     _gridScrollController.removeListener(_syncGridScroll);
     _ganttScrollController.removeListener(_syncGanttScroll);
     _gridScrollController.dispose();
     _ganttScrollController.dispose();
     _ganttHorizontalScrollController.removeListener(_onGanttScroll);
     _ganttHorizontalScrollController.dispose();
+    _presenceThrottle?.cancel();
     super.dispose();
   }
 
@@ -1566,6 +1622,8 @@ class GanttViewModel extends ChangeNotifier {
     await _tasksSubscription?.cancel();
     await _dependenciesSubscription?.cancel();
     await _resourcesSubscription?.cancel();
+    await _syncOperationsSubscription?.cancel();
+    await _connectionStateSubscription?.cancel();
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).dispose();
     } else if (_syncClient is WebSocketGanttSyncClient) {
@@ -1576,6 +1634,7 @@ class GanttViewModel extends ChangeNotifier {
     _ganttScrollController.dispose();
     _ganttHorizontalScrollController.removeListener(_onGanttScroll);
     _ganttHorizontalScrollController.dispose();
+    _presenceThrottle?.cancel();
     super.dispose();
   }
 
@@ -2293,6 +2352,19 @@ class GanttViewModel extends ChangeNotifier {
   StreamSubscription<Operation>? _syncOperationsSubscription;
   StreamSubscription<bool>? _connectionStateSubscription;
 
+  bool _isMerkleSyncing = false;
+  final List<Operation> _operationBuffer = [];
+
+  /// Tracks the number of operations expected during initial server sync.
+  /// Set when SYNC_METADATA arrives, reset when all ops have been processed.
+  int _initialSyncExpected = 0;
+  int _initialSyncReceived = 0;
+
+  /// True when the client is in the middle of receiving initial sync data
+  /// from the server. During this window, expensive recomputation
+  /// (_processLocalData) is deferred until all batches arrive.
+  bool get _isInitialSyncing => _initialSyncExpected > 0 && _initialSyncReceived < _initialSyncExpected;
+
   /// Factory for creating the sync client. Can be overridden for testing.
   GanttSyncClient Function({required Uri uri, required String authToken})? syncClientFactory;
 
@@ -2366,6 +2438,7 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       _connectionStateSubscription?.cancel();
+      _syncOperationsSubscription?.cancel();
       Stream<bool>? connectionStream;
       if (_syncClient is OfflineGanttSyncClient) {
         connectionStream = (_syncClient as OfflineGanttSyncClient).connectionStateStream;
@@ -2424,10 +2497,70 @@ class GanttViewModel extends ChangeNotifier {
       final localTree = crdtEngine.computeMerkleTree(pTasks, dependencies: pDeps, resources: pRes);
 
       print('Local Merkle Root is ${localTree.root.hash}');
-      await _syncClient!.syncWithMerkle(localTree: localTree);
+
+      _isMerkleSyncing = true;
+      _operationBuffer.clear();
+
+      try {
+        await _syncClient!.syncWithMerkle(localTree: localTree);
+      } finally {
+        await finalizeMerkleSync();
+        _isMerkleSyncing = false;
+      }
     } catch (e) {
       print('Failed to perform Merkle Sync: $e');
+      _isMerkleSyncing = false;
     }
+  }
+
+  Future<void> finalizeMerkleSync() async {
+    if (_operationBuffer.isEmpty) return;
+
+    print('Finalizing Merkle Sync: Processing buffered operations');
+
+    while (_operationBuffer.isNotEmpty) {
+      // Create a snapshot of the current buffer and clear it
+      final currentBatch = List<Operation>.from(_operationBuffer);
+      _operationBuffer.clear();
+
+      print('Processing Merkle Sync batch of ${currentBatch.length} operations...');
+
+      final batchTasks = <LegacyGanttTask>[];
+      final batchDependencies = <LegacyGanttTaskDependency>[];
+      final batchResources = <LocalResource>[];
+      final batchDeletedTaskIds = <String>[];
+      final batchDeletedDependencies = <(String, String)>[];
+      final batchDeletedResourceIds = <String>[];
+
+      for (final op in currentBatch) {
+        await _processOperationInternal(
+          op,
+          notify: false,
+          batchTasks: batchTasks,
+          batchDependencies: batchDependencies,
+          batchResources: batchResources,
+          batchDeletedTaskIds: batchDeletedTaskIds,
+          batchDeletedDependencies: batchDeletedDependencies,
+          batchDeletedResourceIds: batchDeletedResourceIds,
+        );
+      }
+
+      if (_useLocalDatabase) {
+        if (batchTasks.isNotEmpty) await _localRepository.insertTasks(batchTasks);
+        if (batchDeletedTaskIds.isNotEmpty) await _localRepository.deleteTasks(batchDeletedTaskIds, _currentHlc);
+        if (batchDependencies.isNotEmpty) await _localRepository.insertDependencies(batchDependencies);
+        if (batchDeletedDependencies.isNotEmpty) {
+          await _localRepository.deleteDependencies(batchDeletedDependencies, _currentHlc);
+        }
+        if (batchResources.isNotEmpty) await _localRepository.insertResources(batchResources);
+        if (batchDeletedResourceIds.isNotEmpty) {
+          await _localRepository.deleteResources(batchDeletedResourceIds, _currentHlc);
+        }
+      }
+    }
+
+    await _processLocalData();
+    notifyListeners();
   }
 
   Future<void> disconnectSync() async {
@@ -2446,12 +2579,36 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     _isSyncConnected = false;
+    _initialSyncExpected = 0;
+    _initialSyncReceived = 0;
     notifyListeners();
   }
 
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
+    if (op.type == 'SYNC_METADATA') {
+      final total = (op.data['totalOperations'] as int?) ?? 0;
+      if (total > 0) {
+        _initialSyncExpected = total;
+        _initialSyncReceived = 0;
+        print('Initial sync starting: expecting $total operations');
+      }
+      // When total is 0, there's nothing to defer — just ignore.
+      return;
+    }
+
+    if (op.type == 'RESET_DATA') {
+      print('SyncClient: Received RESET_DATA, clearing buffer and applying immediately');
+      _operationBuffer.clear();
+      await _processOperationInternal(op, notify: true);
+      return;
+    }
+
+    if (_isMerkleSyncing) {
+      _operationBuffer.add(op);
+      return;
+    }
     print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
 
     if (op.type == 'BATCH_UPDATE') {
@@ -2459,6 +2616,9 @@ class GanttViewModel extends ChangeNotifier {
       final batchTasks = <LegacyGanttTask>[];
       final batchDependencies = <LegacyGanttTaskDependency>[];
       final batchResources = <LocalResource>[];
+      final batchDeletedTaskIds = <String>[];
+      final batchDeletedDependencies = <(String, String)>[];
+      final batchDeletedResourceIds = <String>[];
 
       for (final opEnv in operations) {
         try {
@@ -2500,6 +2660,9 @@ class GanttViewModel extends ChangeNotifier {
             batchTasks: batchTasks,
             batchDependencies: batchDependencies,
             batchResources: batchResources,
+            batchDeletedTaskIds: batchDeletedTaskIds,
+            batchDeletedDependencies: batchDeletedDependencies,
+            batchDeletedResourceIds: batchDeletedResourceIds,
           );
         } catch (e) {
           print('Error processing batch item: $e');
@@ -2510,13 +2673,25 @@ class GanttViewModel extends ChangeNotifier {
         if (batchTasks.isNotEmpty) {
           await _localRepository.insertTasks(batchTasks);
         }
+        if (batchDeletedTaskIds.isNotEmpty) {
+          await _localRepository.deleteTasks(batchDeletedTaskIds, op.timestamp);
+        }
         if (batchDependencies.isNotEmpty) {
           await _localRepository.insertDependencies(batchDependencies);
+        }
+        if (batchDeletedDependencies.isNotEmpty) {
+          await _localRepository.deleteDependencies(batchDeletedDependencies, op.timestamp);
         }
         if (batchResources.isNotEmpty) {
           await _localRepository.insertResources(batchResources);
         }
+        if (batchDeletedResourceIds.isNotEmpty) {
+          await _localRepository.deleteResources(batchDeletedResourceIds, op.timestamp);
+        }
       }
+
+      // Track how many operations we've received for initial sync progress
+      _initialSyncReceived += operations.length;
 
       try {
         if (_useLocalDatabase) {
@@ -2524,7 +2699,18 @@ class GanttViewModel extends ChangeNotifier {
           // Use the batch timestamp which is the latest server time for this batch
           await _localRepository.setLastServerSyncTimestamp(op.timestamp);
         }
-        await _processLocalData();
+        // During initial sync, defer the expensive _processLocalData() until
+        // all expected batches have arrived. DB writes above still happen
+        // incrementally (crash-safe), we just skip the grid rebuild, stacking
+        // recalculation, and self-healing until the final batch.
+        if (!_isInitialSyncing) {
+          await _processLocalData();
+          if (_initialSyncExpected > 0) {
+            print('Initial sync complete: processed $_initialSyncReceived/$_initialSyncExpected operations');
+            _initialSyncExpected = 0;
+            _initialSyncReceived = 0;
+          }
+        }
       } catch (e) {
         print('Error in _processLocalData during batch update: $e');
       } finally {
@@ -2541,6 +2727,9 @@ class GanttViewModel extends ChangeNotifier {
     List<LegacyGanttTask>? batchTasks,
     List<LegacyGanttTaskDependency>? batchDependencies,
     List<LocalResource>? batchResources,
+    List<String>? batchDeletedTaskIds,
+    List<(String, String)>? batchDeletedDependencies,
+    List<String>? batchDeletedResourceIds,
   }) async {
     // If we recently ignored a RESET_DATA command, we must also ignore any side-effect operations
     // (like DELETE_DEPENDENCY or DELETE_TASK) that have the EXACT SAME timestamp as the reset.
@@ -2753,7 +2942,12 @@ class GanttViewModel extends ChangeNotifier {
           await _localRepository.insertTasks(batchTasks);
           batchTasks.clear();
         }
-        await _localRepository.deleteTask(taskId, _currentHlc);
+        if (batchDeletedTaskIds != null) {
+          batchDeletedTaskIds.add(taskId);
+        } else {
+          // Using op.timestamp instead of _currentHlc here for single ops from outside
+          await _localRepository.deleteTask(taskId, op.timestamp);
+        }
       }
 
       _ganttTasks.removeWhere((t) => t.id == taskId);
@@ -2792,6 +2986,8 @@ class GanttViewModel extends ChangeNotifier {
         predecessorTaskId: data['predecessorTaskId'] ?? data['predecessor_task_id'],
         successorTaskId: data['successorTaskId'] ?? data['successor_task_id'],
         type: dependencyType,
+        lag: data['lag'] != null ? Duration(milliseconds: (data['lag'] as num).toInt()) : null,
+        lastUpdated: op.timestamp,
       );
 
       if (_useLocalDatabase) {
@@ -2817,8 +3013,11 @@ class GanttViewModel extends ChangeNotifier {
           await _localRepository.insertDependencies(batchDependencies);
           batchDependencies.clear();
         }
-        // Timestamp check is now handled inside repo.deleteDependency
-        await _localRepository.deleteDependency(data['predecessorTaskId'], data['successorTaskId'], op.timestamp);
+        if (batchDeletedDependencies != null) {
+          batchDeletedDependencies.add((pred, succ));
+        } else {
+          await _localRepository.deleteDependency(pred, succ, op.timestamp);
+        }
         if (notify) await _processLocalData();
       } else {
         _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
@@ -2876,29 +3075,17 @@ class GanttViewModel extends ChangeNotifier {
             await _localRepository.insertResources(batchResources);
             batchResources.clear();
           }
-          await _localRepository.deleteResource(id, _currentHlc);
+          if (batchDeletedResourceIds != null) {
+            batchDeletedResourceIds.add(id);
+          } else {
+            await _localRepository.deleteResource(id, op.timestamp);
+          }
         }
         _localResources.removeWhere((r) => r.id == id);
         if (notify) await _processLocalData();
       }
     } else if (op.type == 'RESET_DATA') {
       bool shouldReset = true;
-      if (_useLocalDatabase) {
-        try {
-          final maxLocal = await _localRepository.getMaxLastUpdated();
-          // If we have local data newer than the reset timestamp, we ignore the reset.
-          // This allows "offline first" workflows where local data dominates older server resets.
-          if (maxLocal > op.timestamp) {
-            print('SyncClient: Ignoring RESET_DATA (ts=${op.timestamp}) because local data is newer (max=$maxLocal)');
-            shouldReset = false;
-            _latestIgnoredResetTimestamp = op.timestamp;
-            return; // CRITICAL: Stop processing to avoid wiping in memory lists below
-          }
-        } catch (e) {
-          print('Error checking max local timestamp: $e');
-        }
-      }
-
       if (shouldReset) {
         if (_useLocalDatabase) {
           await _localRepository.deleteAllDependencies();
@@ -3066,6 +3253,16 @@ class GanttViewModel extends ChangeNotifier {
       _recalculateStackingAndNotify();
     }
   }
+
+  Future<void> handleDependenciesSynced(List<LegacyGanttTaskDependency> dependencies) async {
+    if (dependencies.isEmpty) return;
+    _dependencies.addAll(dependencies);
+    if (_useLocalDatabase) {
+      await _localRepository.insertDependencies(dependencies);
+    }
+    _recalculateStackingAndNotify();
+  }
+
 
   Future<void> handleBatchTaskUpdate(List<(LegacyGanttTask, DateTime, DateTime)> updates) async {
     debugPrint(
@@ -3427,6 +3624,7 @@ class GanttViewModel extends ChangeNotifier {
         _gridScrollController.jumpTo(predictedNewMaxScroll);
         _ganttScrollController.jumpTo(predictedNewMaxScroll);
         item.isExpanded = isExpanded ?? !item.isExpanded;
+        _cachedFlatGridData = null; // Invalidate
         _cachedVisibleFlatGridData = null; // Invalidate
         if (_useLocalDatabase) {
           _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
@@ -3455,6 +3653,7 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     item.isExpanded = !item.isExpanded;
+    _cachedFlatGridData = null; // Invalidate
     _cachedVisibleFlatGridData = null; // Invalidate
 
     if (_useLocalDatabase) {
@@ -3908,6 +4107,7 @@ class GanttViewModel extends ChangeNotifier {
     _conflictIndicators = processedData.conflictIndicators;
     _gridData = processedData.gridData;
     _cachedFlatGridData = null;
+    _cachedVisibleFlatGridData = null;
     _rowMaxStackDepth = processedData.rowMaxStackDepth;
     _eventMap = processedData.eventMap;
 

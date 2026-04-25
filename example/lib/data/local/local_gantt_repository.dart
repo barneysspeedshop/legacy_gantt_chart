@@ -315,6 +315,21 @@ class LocalGanttRepository {
     });
   }
 
+  Future<void> deleteTasks(List<String> taskIds, Hlc timestamp) async {
+    if (taskIds.isEmpty) return;
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      final batch = db.batch();
+      for (final taskId in taskIds) {
+        batch.execute(
+          'UPDATE tasks SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
+          [timestamp.toString(), timestamp.toString(), taskId],
+        );
+      }
+      await batch.commit();
+    });
+  }
+
   Future<void> insertDependencies(List<LegacyGanttTaskDependency> dependencies) async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
@@ -441,6 +456,21 @@ class LocalGanttRepository {
     });
   }
 
+  Future<void> deleteDependencies(List<(String, String)> deps, Hlc timestamp) async {
+    if (deps.isEmpty) return;
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      final batch = db.batch();
+      for (final dep in deps) {
+        batch.execute(
+          'UPDATE dependencies SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE from_id = ? AND to_id = ? AND (last_updated IS NULL OR last_updated < ?)',
+          [timestamp.toString(), timestamp.toString(), dep.$1, dep.$2, timestamp.toString()],
+        );
+      }
+      await batch.commit();
+    });
+  }
+
   Future<void> deleteAllTasks() async {
     await _lock.synchronized(() async {
       final db = await GanttDb.db;
@@ -468,9 +498,9 @@ class LocalGanttRepository {
       name: row['name'] as String?,
       color: _parseColor(row['color'] as String?),
       textColor: _parseColor(row['text_color'] as String?),
-      stackIndex: (row['stack_index'] as int?) ?? 0,
-      isSummary: (row['is_summary'] as int?) == 1,
-      isMilestone: (row['is_milestone'] as int?) == 1,
+      stackIndex: (row['stack_index'] as num?)?.toInt() ?? 0,
+      isSummary: (row['is_summary'] as num?)?.toInt() == 1,
+      isMilestone: (row['is_milestone'] as num?)?.toInt() == 1,
       resourceId: row['resource_id'] as String?,
       originalId:
           row['resource_id'] as String?, // Keep for compatibility if needed, but resource_id is the canonical field now
@@ -478,12 +508,12 @@ class LocalGanttRepository {
       baselineStart: row['baseline_start'] != null ? DateTime.tryParse(row['baseline_start'] as String) : null,
       baselineEnd: row['baseline_end'] != null ? DateTime.tryParse(row['baseline_end'] as String) : null,
       notes: row['notes'] as String?,
-      usesWorkCalendar: (row['uses_work_calendar'] as int?) == 1,
+      usesWorkCalendar: (row['uses_work_calendar'] as num?)?.toInt() == 1,
       parentId: row['parent_id'] as String?,
-      isAutoScheduled: (row['is_auto_scheduled'] as int?) != 0,
-      propagatesMoveToChildren: (row['propagates_move_to_children'] as int?) != 0,
-      resizePolicy: ResizePolicy.values[(row['resize_policy'] as int?) ?? 0],
-      isTimeRangeHighlight: (row['is_time_range_highlight'] as int?) == 1,
+      isAutoScheduled: (row['is_auto_scheduled'] as num?)?.toInt() != 0,
+      propagatesMoveToChildren: (row['propagates_move_to_children'] as num?)?.toInt() != 0,
+      resizePolicy: ResizePolicy.values[(row['resize_policy'] as num?)?.toInt() ?? 0],
+      isTimeRangeHighlight: (row['is_time_range_highlight'] as num?)?.toInt() == 1,
       lastUpdated: _parseHlc(row['last_updated']),
       lastUpdatedBy: row['last_updated_by'] as String?,
     );
@@ -492,8 +522,9 @@ class LocalGanttRepository {
   LegacyGanttTaskDependency _rowToDependency(Map<String, Object?> row) => LegacyGanttTaskDependency(
         predecessorTaskId: row['from_id'] as String,
         successorTaskId: row['to_id'] as String,
-        type: DependencyType.values[(row['type'] as int?) ?? 0],
-        lag: row['lag_ms'] != null ? Duration(milliseconds: row['lag_ms'] as int) : null,
+        type: DependencyType.values[(row['type'] as num?)?.toInt() ?? 0],
+        lag: row['lag_ms'] != null ? Duration(milliseconds: (row['lag_ms'] as num).toInt()) : null,
+        lastUpdated: _parseHlc(row['last_updated']),
       );
 
   Color? _parseColor(String? hex) {
@@ -633,13 +664,27 @@ class LocalGanttRepository {
     });
   }
 
+  Future<void> deleteResources(List<String> resourceIds, Hlc timestamp) async {
+    if (resourceIds.isEmpty) return;
+    await _lock.synchronized(() async {
+      final db = await GanttDb.db;
+      final batch = db.batch();
+      for (final id in resourceIds) {
+        batch.execute('UPDATE resources SET is_deleted = 1, deleted_at = ?, last_updated = ? WHERE id = ?',
+            [timestamp.toString(), timestamp.toString(), id]);
+      }
+      await batch.commit();
+    });
+  }
+
   LocalResource _rowToResource(Map<String, Object?> row) => LocalResource(
         id: row['id'] as String,
         name: row['name'] as String?,
         parentId: row['parent_id'] as String?,
-        isExpanded:
-            (row['is_expanded'] is String ? int.tryParse(row['is_expanded'] as String) : row['is_expanded'] as int?) ==
-                1,
+        isExpanded: (row['is_expanded'] is String
+                ? int.tryParse(row['is_expanded'] as String)
+                : (row['is_expanded'] as num?)?.toInt()) ==
+            1,
         lastUpdated: _parseHlc(row['last_updated']),
         sortOrder: row['sort_order'] is String
             ? double.tryParse(row['sort_order'] as String)

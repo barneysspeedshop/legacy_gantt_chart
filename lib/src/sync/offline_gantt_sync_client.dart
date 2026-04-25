@@ -296,9 +296,13 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       }
     }
 
-    await _queueOperation(operation);
-
-    _flushQueue();
+    // When connected, send directly to avoid the expensive queue round-trip.
+    if (_innerClient != null && _isConnected) {
+      await _innerClient!.sendOperation(operation);
+    } else {
+      await _queueOperation(operation);
+      _flushQueue();
+    }
   }
 
   Future<void> clearQueue() async {
@@ -328,11 +332,15 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
 
     if (opsToQueue.isNotEmpty) {
-      // Simplified: Always queue and then flush.
-      // The _performFlush handles batching automatically.
-      // This avoids complex and race-prone bundling logic here.
-      await _queueOperations(opsToQueue);
-      _flushQueue();
+      // When connected, send directly to avoid the expensive
+      // sqlite_crdt queue round-trip (especially slow on web).
+      if (_innerClient != null && _isConnected) {
+        print('OfflineClient: Sending ${opsToQueue.length} operations directly (connected)');
+        await _innerClient!.sendOperations(opsToQueue);
+      } else {
+        await _queueOperations(opsToQueue);
+        _flushQueue();
+      }
     }
   }
 

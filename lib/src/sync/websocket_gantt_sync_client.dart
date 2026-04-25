@@ -15,6 +15,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   final _connectionStateController = StreamController<bool>.broadcast();
   final _inboundProgressController = StreamController<SyncProgress>.broadcast();
   final _outboundPendingCountController = StreamController<int>.broadcast();
+  StreamSubscription? _subscription;
 
   int _totalToSync = 0;
   int _processedSyncOps = 0;
@@ -100,7 +101,8 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
         'lastSyncedTimestamp': lastSyncedTimestamp?.toString(),
       }));
 
-      _channel!.stream.listen(
+      _subscription?.cancel();
+      _subscription = _channel!.stream.listen(
         (message) async {
           try {
             final envelope = (await decodeJsonInBackground(message as String)) as Map<String, dynamic>;
@@ -108,6 +110,8 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               print('Server error received: ${envelope['error']}');
               return;
             }
+
+            _lastOperationReceivedAt = DateTime.now();
 
             final type = envelope['type'] as String?;
             if (type == null) {
@@ -144,6 +148,14 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
                 print('Sync Metadata received: total=$_totalToSync');
                 _inboundProgressController.add(SyncProgress(processed: 0, total: _totalToSync));
               }
+              // Forward to operation stream so GanttViewModel can defer
+              // expensive processing until all sync batches arrive.
+              _operationController.add(Operation(
+                type: 'SYNC_METADATA',
+                data: dataMap ?? {},
+                timestamp: Hlc(millis: DateTime.now().millisecondsSinceEpoch, counter: 0, nodeId: 'server-sync'),
+                actorId: 'server-sync',
+              ));
               return;
             }
 
@@ -298,6 +310,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
   final Map<String, Completer<Map<String, String>>> _merkleNodeCompleters = {};
 
+  int _pendingRecoveryCount = 0;
+  DateTime _lastOperationReceivedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   Future<Map<String, String>> _getMerkleNodeChildren(String prefix) async {
     final completer = Completer<Map<String, String>>();
     _merkleNodeCompleters[prefix] = completer;
@@ -311,10 +326,36 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }
 
   void _getEntitiesInPrefix(String prefix) {
+    _pendingRecoveryCount++;
     _channel!.sink.add(jsonEncode({
       'type': 'GET_ENTITIES_IN_RANGE',
       'data': {'prefix': prefix},
     }));
+  }
+
+  Future<void> _waitForRecoveries() async {
+    if (_pendingRecoveryCount == 0) return;
+
+    print('Merkle Sync: Waiting for $_pendingRecoveryCount recovery requests...');
+
+    try {
+      // We wait for all requests to be followed by some period of inactivity (quiescence)
+      // or at least a hard timeout.
+      int attempts = 0;
+      while (attempts < 50) {
+        // 10 second hard limit (50 * 200ms)
+        await Future.delayed(const Duration(milliseconds: 200));
+        final elapsed = DateTime.now().difference(_lastOperationReceivedAt);
+        if (elapsed > const Duration(seconds: 2)) {
+          // If we haven't received anything for 2 seconds, assume the server is done
+          // (or at least that this batch is over)
+          break;
+        }
+        attempts++;
+      }
+    } finally {
+      _pendingRecoveryCount = 0;
+    }
   }
 
   @override
@@ -329,6 +370,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
     print('Merkle Sync: Root mismatch, starting traversal');
     await _traverseMerkleNode('', localTree);
+    await _waitForRecoveries();
   }
 
   Future<void> _traverseMerkleNode(String prefix, MerkleTree localTree) async {
@@ -342,9 +384,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     final localNode = localTree.getNode(prefix);
     final localChildrenHashes = localNode?.children.map((k, v) => MapEntry(k, v.hash)) ?? {};
 
-    for (final remoteChildEntry in remoteChildrenRaw.entries) {
-      final childPrefix = remoteChildEntry.key;
-      final remoteHash = remoteChildEntry.value;
+    final allKeys = {...remoteChildrenRaw.keys, ...localChildrenHashes.keys};
+    for (final childPrefix in allKeys) {
+      final remoteHash = remoteChildrenRaw[childPrefix];
       final localHash = localChildrenHashes[childPrefix];
 
       if (localHash != remoteHash) {
@@ -434,6 +476,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> dispose() async {
+    await _subscription?.cancel();
     await _channel?.sink.close();
     await _operationController.close();
     await _connectionStateController.close();

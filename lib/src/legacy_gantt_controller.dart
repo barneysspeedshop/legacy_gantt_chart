@@ -290,6 +290,24 @@ class LegacyGanttController extends ChangeNotifier {
     }
   }
 
+  /// Adds multiple dependencies to the controller's list in a single update.
+  void addDependencies(List<LegacyGanttTaskDependency> newDependencies) {
+    bool changed = false;
+    final dependenciesCopy = List<LegacyGanttTaskDependency>.from(_dependencies);
+
+    for (final dep in newDependencies) {
+      if (!dependenciesCopy.contains(dep)) {
+        dependenciesCopy.add(dep);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _dependencies = dependenciesCopy;
+      notifyListeners();
+    }
+  }
+
   /// Sets the currently active tool.
   void setTool(GanttTool tool) {
     if (_currentTool != tool) {

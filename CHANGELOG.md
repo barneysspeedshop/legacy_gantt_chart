@@ -1,9 +1,14 @@
-## 8.0.0-rc.1
+## 8.0.0
 
-* **BREAKING CHANGE**: Upgraded `legacy_gantt_protocol` to `2.0.0`.
+* **BREAKING CHANGE**: Upgraded `legacy_gantt_protocol` to `^2.1.0`.
 * **BREAKING CHANGE**: Updated `LegacyGanttTaskDependency.lastUpdated` from `int` to `Hlc` to align with the new synchronization protocol.
 * **BREAKING CHANGE**: Updated `GanttSyncClient.syncWithMerkle` signature to require a `MerkleTree` object instead of root hash and depth.
 * **FEAT**: Enhanced `WebSocketGanttSyncClient` and `OfflineGanttSyncClient` to support the improved Merkle Tree synchronization logic.
+* **PERFORMANCE**: `OfflineGanttSyncClient` now bypasses the database queue and sends operations directly over the wire when an active connection exists, significantly improving performance on web platforms.
+* **FIX**: Fixed a memory leak in `WebSocketGanttSyncClient` by properly disposing of stream subscriptions.
+* **FIX**: Added a quiescent wait period (`_waitForRecoveries`) to `WebSocketGanttSyncClient` during Merkle sync traversals to prevent premature completions.
+* **FIX**: Rerouted `SYNC_METADATA` through the internal operation controller so `LegacyGanttViewModel` defers expensive layout processing until the sync batch completes.
+* **FIX**: Improved `notifyListeners` safety and timer cleanup in `LegacyGanttViewModel`.
 
 ## 7.4.0
 

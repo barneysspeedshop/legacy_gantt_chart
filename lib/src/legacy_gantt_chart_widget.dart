@@ -201,6 +201,11 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// A callback that is invoked when a new dependency is created via the Draw Dependencies tool.
   final Function(LegacyGanttTaskDependency dependency)? onDependencyAdd;
 
+  /// A callback that is invoked when a batch of dependencies is synced from a remote source.
+  ///
+  /// This allows for efficient bulk database operations during large data synchronizations.
+  final Function(List<LegacyGanttTaskDependency> dependencies)? onDependenciesSynced;
+
   /// Callback when a task is secondary tapped (e.g. right click).
   final Function(LegacyGanttTask task, Offset position)? onTaskSecondaryTap;
 
@@ -406,6 +411,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.onEmptySpaceClick,
     this.onTaskDrawEnd,
     this.onDependencyAdd,
+    this.onDependenciesSynced,
     this.onTaskSecondaryTap,
     this.onTaskLongPress,
     this.resizeTooltipBackgroundColor,
@@ -689,6 +695,12 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
                 widget.controller!.addDependency(dependency);
               }
               widget.onDependencyAdd?.call(dependency);
+            },
+            onDependenciesSynced: (dependencies) {
+              if (widget.controller != null) {
+                widget.controller!.addDependencies(dependencies);
+              }
+              widget.onDependenciesSynced?.call(dependencies);
             },
             onPressTask: widget.onPressTask,
             onTaskHover: widget.onTaskHover,
