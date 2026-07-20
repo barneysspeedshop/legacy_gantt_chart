@@ -1512,6 +1512,8 @@ class _GanttViewState extends State<GanttView> {
                                                       // These properties define which interactive features are enabled.
                                                       enableDragAndDrop: vm.dragAndDropEnabled,
                                                       enableResize: vm.resizeEnabled,
+                                                      enableDragEdgeAutoScroll: true,
+                                                      horizontalScrollController: vm.ganttHorizontalScrollController,
 
                                                       // This callback is triggered when a task is moved to a new row,
                                                       // or moved to a new time in the same row. We use it to trigger

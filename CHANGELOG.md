@@ -1,3 +1,8 @@
+## 8.1.0
+
+* **FEAT**: Added `enableDragEdgeAutoScroll` to `LegacyGanttChartWidget`. When the chart is embedded in a horizontal scroll view (via `horizontalScrollController`), dragging or resizing a task into the edge zone of the viewport now auto-scrolls the timeline, allowing tasks to be dragged to dates outside the currently visible range.
+* **FIX**: Scrolling the horizontal scroll view while a task drag/resize is active (e.g. with a second finger on touch devices) is now compensated into the drag, so the task bar keeps following the pointer instead of staying at its old date.
+
 ## 8.0.0
 
 * **BREAKING CHANGE**: Upgraded `legacy_gantt_protocol` to `^2.1.0`.

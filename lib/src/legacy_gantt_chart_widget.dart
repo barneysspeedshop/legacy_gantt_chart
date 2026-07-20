@@ -177,6 +177,17 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// reported through [onTaskMove].
   final bool enableVerticalTaskDrag;
 
+  /// Automatically scrolls [horizontalScrollController] when a task drag or
+  /// resize approaches the horizontal edge of the scroll viewport.
+  ///
+  /// This allows tasks to be dragged to dates outside the currently visible
+  /// range, e.g. with a mouse where no second pointer is available to scroll
+  /// during the drag. The scrolled distance is compensated into the drag, so
+  /// the task keeps following the pointer. Requires
+  /// [horizontalScrollController] to be attached to the surrounding
+  /// horizontal scroll view.
+  final bool enableDragEdgeAutoScroll;
+
   /// A callback function invoked when a user double-taps or double-clicks on a task bar.
   ///
   /// Provides the [LegacyGanttTask] that was double-tapped.
@@ -423,6 +434,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.showEmptyRows = false,
     this.onBulkTaskUpdate,
     this.enableVerticalTaskDrag = false,
+    this.enableDragEdgeAutoScroll = false,
     this.height,
     this.loadingIndicatorType = GanttLoadingIndicatorType.circular,
     this.loadingIndicatorPosition = GanttLoadingIndicatorPosition.top,
@@ -684,6 +696,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             enableDragAndDrop: widget.enableDragAndDrop,
             enableResize: widget.enableResize,
             enableVerticalTaskDrag: widget.enableVerticalTaskDrag,
+            enableDragEdgeAutoScroll: widget.enableDragEdgeAutoScroll,
             onTaskUpdate: widget.onTaskUpdate,
             onTaskMove: widget.onTaskMove,
             onTaskDoubleClick: widget.onTaskDoubleClick,

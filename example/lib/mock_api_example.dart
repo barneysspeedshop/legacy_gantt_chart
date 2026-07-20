@@ -947,6 +947,7 @@ class _GanttViewState extends State<GanttView> {
                                                 focusedTaskId: vm.focusedTaskId,
                                                 onFocusChange: vm.setFocusedTaskId,
                                                 horizontalScrollController: vm.ganttHorizontalScrollController,
+                                                enableDragEdgeAutoScroll: true,
 
                                                 // --- Date Range ---
                                                 gridMin: vm.visibleStartDate?.millisecondsSinceEpoch.toDouble(),

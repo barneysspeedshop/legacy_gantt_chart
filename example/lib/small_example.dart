@@ -197,6 +197,8 @@ class _SimpleGanttViewState extends State<SimpleGanttView> {
                               // --- Interactivity ---
                               enableDragAndDrop: true,
                               enableResize: true,
+                              enableDragEdgeAutoScroll: true,
+                              horizontalScrollController: _horizontalScrollController,
                               taskContentBuilder: (task) {
                                 final onTaskColor = Theme.of(context).colorScheme.onPrimary;
                                 final secondaryTextColor = onTaskColor.withValues(alpha: 0.8);

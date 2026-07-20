@@ -143,6 +143,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Whether tasks can be resized from their start or end handles.
   final bool enableResize;
 
+  /// Whether the chart automatically scrolls [ganttHorizontalScrollController]
+  /// when a task drag or resize approaches the horizontal edge of the
+  /// viewport. This allows tasks to be dragged to dates outside the currently
+  /// visible range. Requires [ganttHorizontalScrollController] to be attached
+  /// to the surrounding horizontal scroll view.
+  final bool enableDragEdgeAutoScroll;
+
   /// Whether auto-scheduling is enabled globally.
   bool enableAutoScheduling;
 
@@ -535,6 +542,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.enableDragAndDrop = false,
     this.enableResize = false,
     this.enableVerticalTaskDrag = false,
+    this.enableDragEdgeAutoScroll = false,
     this.enableAutoScheduling = true,
     this.onTaskUpdate,
     this.onTaskMove,
@@ -1011,6 +1019,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
   DragMode _dragMode = DragMode.none;
   PanType _panType = PanType.none;
   double _dragStartGlobalX = 0.0;
+  double _dragStartScrollOffset = 0.0;
+  DragUpdateDetails? _lastHorizontalPanDetails;
+  double _lastHorizontalPanScrollOffset = 0.0;
+  Timer? _dragEdgeAutoScrollTimer;
+  double _dragEdgeAutoScrollStepPerTick = 0.0;
+  static const double _dragEdgeAutoScrollZoneWidth = 48.0;
+  static const double _dragEdgeAutoScrollMaxStepPerTick = 24.0;
   DateTime? _originalTaskStart;
   DateTime? _originalTaskEnd;
   MouseCursor _cursor = SystemMouseCursors.basic;
@@ -1351,6 +1366,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _syncSubscription?.cancel();
     _ghostUpdateThrottle?.cancel();
     _syncProcessTimer?.cancel();
+    _dragEdgeAutoScrollTimer?.cancel();
     super.dispose();
   }
 
@@ -1470,6 +1486,25 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
   }
 
+  double get _currentHorizontalScrollOffset {
+    final controller = ganttHorizontalScrollController;
+    if (controller == null || !controller.hasClients || !controller.position.hasPixels) {
+      return 0.0;
+    }
+    return controller.position.pixels;
+  }
+
+  /// The amount the horizontal scroll view has been scrolled since the active
+  /// drag started. Added to the pointer delta so a task keeps following the
+  /// pointer while the viewport scrolls underneath it (edge auto-scroll or a
+  /// second-finger scroll on touch devices).
+  double get _horizontalScrollDeltaSinceDragStart => _currentHorizontalScrollOffset - _dragStartScrollOffset;
+
+  void _markDragStart(double globalDx) {
+    _dragStartGlobalX = globalDx;
+    _dragStartScrollOffset = _currentHorizontalScrollOffset;
+  }
+
   /// Gesture handler for the start of a pan gesture. Determines if the pan is
   /// for vertical scrolling, moving a task, or resizing a task.
 
@@ -1481,7 +1516,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
       _initialTouchY = details.globalPosition.dy;
-      _dragStartGlobalX = details.globalPosition.dx;
+      _markDragStart(details.globalPosition.dx);
 
       if (hit.task.isAutoScheduled == true && hit.task.isSummary && hit.part == TaskPart.body) {
         return;
@@ -1507,7 +1542,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
       _initialTouchY = details.globalPosition.dy;
-      _dragStartGlobalX = details.globalPosition.dx;
+      _markDragStart(details.globalPosition.dx);
       _dragMode = DragMode.none;
       if (!isDisposed) notifyListeners();
     }
@@ -1517,7 +1552,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (_panType == PanType.vertical) return;
     if (_panType == PanType.none) {
       _panType = PanType.horizontal;
-      _dragStartGlobalX = details.globalPosition.dx; // Re-sync start
+      _markDragStart(details.globalPosition.dx); // Re-sync start
     }
 
     if (_panType == PanType.horizontal) {
@@ -1826,6 +1861,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _resetDragState() {
+    _stopDragEdgeAutoScroll();
+    _dragStartScrollOffset = 0;
     _dragMode = DragMode.none;
     _panType = PanType.none;
     _draggedTask = null;
@@ -1929,7 +1966,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _panType = PanType.horizontal;
       _initialTranslateY = _translateY;
       _initialTouchY = details.globalPosition.dy;
-      _dragStartGlobalX = details.globalPosition.dx;
+      _markDragStart(details.globalPosition.dx);
       _draggedTask = overrideTask;
       _originalTaskStart = overrideTask.start;
       _originalTaskEnd = overrideTask.end;
@@ -1984,7 +2021,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _hoveredRowId = rowId;
         _ghostTaskStart = time;
         _ghostTaskEnd = time;
-        _dragStartGlobalX = details.globalPosition.dx;
+        _markDragStart(details.globalPosition.dx);
         _draggedTask = LegacyGanttTask(
           id: 'drawing_ghost',
           rowId: rowId,
@@ -2002,7 +2039,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _initialTranslateY = _translateY;
     _initialTouchY = details.globalPosition.dy;
     _initialLocalPosition = details.localPosition;
-    _dragStartGlobalX = details.globalPosition.dx;
+    _markDragStart(details.globalPosition.dx);
   }
 
   void onPanUpdate(DragUpdateDetails details) {
@@ -2566,7 +2603,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   void _handleHorizontalPan(DragUpdateDetails details) {
-    final pixelDelta = details.globalPosition.dx - _dragStartGlobalX;
+    _lastHorizontalPanDetails = details;
+    _lastHorizontalPanScrollOffset = _currentHorizontalScrollOffset;
+
+    final pixelDelta = details.globalPosition.dx - _dragStartGlobalX + _horizontalScrollDeltaSinceDragStart;
     final durationDelta = _pixelToDuration(pixelDelta);
     DateTime newStart = _originalTaskStart!;
     DateTime newEnd = _originalTaskEnd!;
@@ -2733,7 +2773,103 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _bulkGhostTasks.clear();
     }
 
+    _updateDragEdgeAutoScroll(details);
+
     if (!isDisposed) notifyListeners();
+  }
+
+  /// Starts, adjusts or stops the edge auto-scroll timer depending on how
+  /// close the pointer is to the horizontal edges of the scroll viewport.
+  ///
+  /// [details.localPosition] is in content coordinates (the chart may be laid
+  /// out wider than the viewport inside a horizontal scroll view), so it is
+  /// translated into viewport coordinates via the current scroll offset.
+  void _updateDragEdgeAutoScroll(DragUpdateDetails details) {
+    if (!enableDragEdgeAutoScroll || _draggedTask == null) {
+      _stopDragEdgeAutoScroll();
+      return;
+    }
+
+    final controller = ganttHorizontalScrollController;
+    if (controller == null || !controller.hasClients) {
+      _stopDragEdgeAutoScroll();
+      return;
+    }
+
+    final position = controller.position;
+    if (!position.hasViewportDimension || !position.hasPixels) {
+      _stopDragEdgeAutoScroll();
+      return;
+    }
+
+    final viewportDx = details.localPosition.dx - position.pixels;
+    final viewportWidth = position.viewportDimension;
+
+    double step = 0;
+    if (viewportDx <= _dragEdgeAutoScrollZoneWidth) {
+      final intensity = ((_dragEdgeAutoScrollZoneWidth - viewportDx) / _dragEdgeAutoScrollZoneWidth).clamp(0.0, 1.0);
+      step = -_dragEdgeAutoScrollMaxStepPerTick * intensity;
+    } else if (viewportDx >= viewportWidth - _dragEdgeAutoScrollZoneWidth) {
+      final intensity = ((viewportDx - (viewportWidth - _dragEdgeAutoScrollZoneWidth)) / _dragEdgeAutoScrollZoneWidth)
+          .clamp(0.0, 1.0);
+      step = _dragEdgeAutoScrollMaxStepPerTick * intensity;
+    }
+
+    _dragEdgeAutoScrollStepPerTick = step;
+    if (step == 0) {
+      _stopDragEdgeAutoScrollTimer();
+      return;
+    }
+
+    _dragEdgeAutoScrollTimer ??= Timer.periodic(const Duration(milliseconds: 16), _onDragEdgeAutoScrollTick);
+  }
+
+  void _onDragEdgeAutoScrollTick(Timer _) {
+    final lastDetails = _lastHorizontalPanDetails;
+    final controller = ganttHorizontalScrollController;
+    if (isDisposed ||
+        lastDetails == null ||
+        _draggedTask == null ||
+        _dragEdgeAutoScrollStepPerTick == 0 ||
+        controller == null ||
+        !controller.hasClients) {
+      _stopDragEdgeAutoScroll();
+      return;
+    }
+
+    final position = controller.position;
+    final target =
+        (position.pixels + _dragEdgeAutoScrollStepPerTick).clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (target == position.pixels) {
+      return;
+    }
+
+    controller.jumpTo(target);
+
+    // The pointer is stationary at the edge while the content scrolls
+    // underneath it. Re-run the pan handler with the pointer's position
+    // translated into the new content coordinates so the ghost keeps
+    // following the pointer.
+    final scrollDelta = target - _lastHorizontalPanScrollOffset;
+    _handleHorizontalPan(DragUpdateDetails(
+      sourceTimeStamp: lastDetails.sourceTimeStamp,
+      globalPosition: lastDetails.globalPosition,
+      localPosition: lastDetails.localPosition.translate(scrollDelta, 0),
+    ));
+    if (_ghostTaskStart != null && _ghostTaskEnd != null && _draggedTask != null) {
+      _sendGhostUpdate(_draggedTask!.id, _ghostTaskStart!, _ghostTaskEnd!);
+    }
+  }
+
+  void _stopDragEdgeAutoScrollTimer() {
+    _dragEdgeAutoScrollTimer?.cancel();
+    _dragEdgeAutoScrollTimer = null;
+    _dragEdgeAutoScrollStepPerTick = 0;
+  }
+
+  void _stopDragEdgeAutoScroll() {
+    _stopDragEdgeAutoScrollTimer();
+    _lastHorizontalPanDetails = null;
   }
 
   Duration _pixelToDuration(double pixels) {
