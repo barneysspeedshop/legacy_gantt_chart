@@ -1,3 +1,5 @@
+
+
 # Legacy Gantt Chart
 
 [![Pub Version](https://img.shields.io/pub/v/legacy_gantt_chart)](https://pub.dev/packages/legacy_gantt_chart)
@@ -119,7 +121,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  legacy_gantt_chart: ^5.0.0
+  legacy_gantt_chart: ^7.0.0
 ```
 
 Then, you can install the package using the command-line:
