@@ -1,3 +1,7 @@
+## 8.1.1
+
+* **FIX**: Fix for an issue that caused the `Today` line to translate out of view when scrolling vertically.
+
 ## 8.1.0
 
 * **FEAT**: Added `enableDragEdgeAutoScroll` to `LegacyGanttChartWidget`. When the chart is embedded in a horizontal scroll view (via `horizontalScrollController`), dragging or resizing a task into the edge zone of the viewport now auto-scrolls the timeline, allowing tasks to be dragged to dates outside the currently visible range.

@@ -1,0 +1,44 @@
+# Agent file-edit permissions for THIS project folder.
+# Path: <opened-project>/.rope_notes/permissions.toml (not ~/.rope_notes/)
+#
+# Without this file, agent edits are denied until you add allow patterns below.
+
+[permissions]
+# Glob patterns for paths the agent may create or modify.
+allow = ["**"]
+
+# Web fetch execution policy. Options:
+#   never           — absolute network isolation
+#   allowlistOnly   — only domains in webFetchAllowlist are reachable
+#   alwaysPrompt    — every fetch requires manual user approval per session
+#   contextual      — auto-allow if the domain is in the user's instruction
+#                    (default, matches legacy intent-matching behaviour)
+# web_fetch_policy = "contextual"
+# web_fetch_allowlist = ["example.com"]
+
+# Bash execution policy. Options:
+#   never           — deny all shell (same as deny_bash = true)
+#   allowAll        — any command except the hardcoded safety blocklist
+#                     (sensitive paths still denied unless overridden below)
+#   allowlistOnly   — only executables in bash_allowlist (default)
+# deny_bash = false
+# bash_policy = "allowlistOnly"
+# Default allowlist omits cat/echo/head/tail — prefer read_file / write.
+# Prefer copy_file / move_file / delete_file / create_directory over bash cp/mv/rm/mkdir.
+# Re-add them explicitly if you need shell readers:
+# bash_allowlist = ["dart", "flutter", "git", "cargo", "grep", "rg", "ls", "cat", "echo", "head", "tail"]
+# Opt out of sensitive-path denylist only (/etc/shadow, ~/.ssh, .env, …).
+# Destructive patterns (rm -rf /, sed -i, …) stay blocked either way.
+# bash_allow_sensitive_paths = true
+
+[directories]
+# Only paths under these directories are accessible (`.` = project root).
+allow = ["."]
+deny = [".git"]
+
+[tool_permissions]
+# Rust tool-loop inspectors (Phase 4). Names may be bare (`bash`) or namespaced
+# (`developer__bash`). Orthogonal to path globs above.
+# always_allow = ["read_file", "list_directory", "grep", "search_string", "graph_repositories", "graph_query", "graph_path", "graph_explain", "graph_neighbors", "graph_report", "graph_diff", "graph_communities", "graph_god_nodes", "graph_health"]
+# ask_before = ["bash", "shell"]
+# never_allow = []

@@ -1,0 +1,14 @@
+active_tab = 3
+open_files = ["pubspec.yaml", "CHANGELOG.md", "example/lib/data/local/local_gantt_repository.dart", "/home/patrick/IdeaProjects/legacy_gantt_sync/legacy_gantt_protocol/lib/src/generated/gantt_protocol.pb.dart"]
+file_retention_trash_max_entries = 32
+file_retention_trash_max_age_days = 30
+file_retention_backup_generations = 0
+file_save_preserve_inode = true
+preferences_tab_active = false
+preferences_tab_open = false
+preferences_section = "appearance"
+open_file_viewports = '{"pubspec.yaml":{"v":0.0,"h":0.0},"CHANGELOG.md":{"v":0.0,"h":0.0},"example/lib/data/local/local_gantt_repository.dart":{"v":11277.130747438274,"h":0.0},"/home/patrick/IdeaProjects/legacy_gantt_sync/legacy_gantt_protocol/lib/src/generated/gantt_protocol.pb.dart":{"v":0.0,"h":0.0}}'
+open_file_cursors = '{"pubspec.yaml":{"c":201,"s":201,"e":201},"CHANGELOG.md":{"c":118,"s":118,"e":118},"example/lib/data/local/local_gantt_repository.dart":{"c":26853,"s":26853,"e":26853},"/home/patrick/IdeaProjects/legacy_gantt_sync/legacy_gantt_protocol/lib/src/generated/gantt_protocol.pb.dart":{"c":12311,"s":12311,"e":12311}}'
+browser_v_scroll = 232.0
+browser_h_scroll = 32.86645408221409
+welcome_setup_completed = true

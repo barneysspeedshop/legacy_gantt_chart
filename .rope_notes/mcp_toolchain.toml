@@ -1,0 +1,5 @@
+# Generated — device Dart/Flutter paths for agent MCP spawn
+# Not synced; rewritten when the SDK is located.
+dart = "/home/patrick/IdeaProjects/flutter/bin/cache/dart-sdk/bin/dart"
+dart_sdk = "/home/patrick/IdeaProjects/flutter/bin/cache/dart-sdk"
+path_prepend = "/home/patrick/IdeaProjects/flutter/bin/cache/dart-sdk/bin"
