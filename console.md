@@ -68,3 +68,19 @@ Graph ready — 1679 nodes, 3301 edges, 100 communities. Serving on-disk graph w
 
 Graph ready — 1679 nodes, 3301 edges, 100 communities. Graph context is available to the agent.
 
+### [13:54:28.467] • INTERNAL GRAPH
+
+Indexing project graph…
+
+### [13:54:28.467] • INTERNAL GRAPH
+
+Graph ready — 1679 nodes, 3301 edges, 100 communities. Serving on-disk graph while a rebuild runs.
+
+### [13:54:29.013] • INTERNAL GRAPH
+
+Graph ready — 1679 nodes, 3301 edges, 100 communities. Serving on-disk graph while a rebuild runs.
+
+### [13:54:29.364] • INTERNAL GRAPH
+
+Graph ready — 1679 nodes, 3301 edges, 100 communities. Graph context is available to the agent.
+

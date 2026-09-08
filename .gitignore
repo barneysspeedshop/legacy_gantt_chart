@@ -151,3 +151,4 @@ pubspec.lock
 /web/lib/
 example/.flutter-plugins-dependencies
 .flutter-plugins-dependencies
+.rope_notes/
