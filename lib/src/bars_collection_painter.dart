@@ -683,15 +683,17 @@ class BarsCollectionPainter extends CustomPainter {
     final now = nowLineDate ?? DateTime.now();
     final double x = scale(now);
     if (x < 0 || x > size.width) return;
+    final double top = -translateY;
+    final double bottom = size.height - translateY;
     final paint = Paint()
       ..color = theme.nowLineColor
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    canvas.drawLine(Offset(x, top), Offset(x, bottom), paint);
     final path = Path();
-    path.moveTo(x - 6.0, 0);
-    path.lineTo(x + 6.0, 0);
-    path.lineTo(x, 6.0);
+    path.moveTo(x - 6.0, top);
+    path.lineTo(x + 6.0, top);
+    path.lineTo(x, top + 6.0);
     path.close();
     canvas.drawPath(path, Paint()..color = theme.nowLineColor);
   }
