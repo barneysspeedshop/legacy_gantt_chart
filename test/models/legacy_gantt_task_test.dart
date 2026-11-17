@@ -77,6 +77,23 @@ void main() {
       expect(json['color'], 'ffff0000');
     });
 
+    for (final argb in [0x000000ff, 0x00123456, 0x80123456, 0xff123456]) {
+      test('color alpha survives task serialization for $argb', () {
+        final task = LegacyGanttTask(
+          id: 'color-task', rowId: 'row-1',
+          start: DateTime.utc(2026), end: DateTime.utc(2026, 1, 2),
+          color: Color(argb), textColor: Color(argb),
+        );
+        final wire = task.toProtocolTask();
+        final metadata = jsonDecode(wire.metadataJson) as Map<String, dynamic>;
+        expect(metadata['color'], argb.toRadixString(16).padLeft(8, '0'));
+        final restored = LegacyGanttTask.fromProtocolTask(wire);
+        expect(restored.color, Color(argb));
+        expect(restored.textColor, Color(argb));
+        expect(restored.contentHash, task.contentHash);
+      });
+    }
+
     test('LegacyGanttTaskSegment JSON serialization and deserialization', () {
       final segment = LegacyGanttTaskSegment(
         start: DateTime.utc(2023, 1, 1),

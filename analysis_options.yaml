@@ -36,3 +36,6 @@ linter:
 
 formatter:
   page_width: 120
+analyzer:
+  exclude:
+    - build/**

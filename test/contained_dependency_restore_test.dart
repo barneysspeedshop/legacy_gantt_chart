@@ -194,4 +194,43 @@ void main() {
     expect(task.id, taskId);
     expect(task.isSummary, isTrue, reason: 'Task with ganttType="project" should have isSummary=true');
   });
+  test('retained tombstones reject stale edits after visible task count changes', () async {
+    final client = MockGanttSyncClient();
+    final viewModel = LegacyGanttViewModel(
+      syncClient: client,
+      data: [],
+      conflictIndicators: [],
+      dependencies: [],
+      visibleRows: [],
+      rowMaxStackDepth: {},
+      rowHeight: 32,
+    );
+    addTearDown(() async {
+      viewModel.dispose();
+      await client.dispose();
+    });
+    Operation op(String type, String id, int millis) => Operation(
+      type: type,
+      data: {
+        'id': id,
+        'rowId': 'row',
+        'name': id,
+        'start': '2026-11-17T00:00:00.000Z',
+        'end': '2026-11-18T00:00:00.000Z',
+      },
+      timestamp: Hlc.fromIntTimestamp(millis),
+      actorId: 'remote',
+    );
+    client.emit(op('UPDATE_TASK', 'deleted', 1000));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(viewModel.data.map((task) => task.id), ['deleted']);
+    client.emit(op('DELETE_TASK', 'deleted', 3000));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(viewModel.data, isEmpty);
+    client.emit(op('UPDATE_TASK', 'other', 4000));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    client.emit(op('UPDATE_TASK', 'deleted', 2000));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(viewModel.data.map((task) => task.id), ['other']);
+  });
 }

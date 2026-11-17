@@ -25,10 +25,7 @@ void main() {
         isDeleted: true,
       );
 
-      final updated = original.copyWith(
-        name: 'Updated',
-        isExpanded: true,
-      );
+      final updated = original.copyWith(name: 'Updated', isExpanded: true);
 
       expect(updated.id, 'r1');
       expect(updated.name, 'Updated');
@@ -100,6 +97,46 @@ void main() {
       final resource = LegacyGanttResource(id: 'r1', name: 'Hash Test');
       expect(resource.contentHash, isNotEmpty);
       expect(resource.contentHash, equals(resource.toProtocolResource().contentHash));
+    });
+
+    for (final deleted in [false, true]) {
+      test('metadata extensions survive resource protocol round trips (deleted: $deleted)', () {
+        final protocol = ProtocolResource(
+          id: 'r-extra',
+          name: 'Equipment',
+          type: 'tool',
+          isDeleted: deleted,
+          metadataJson: jsonEncode({
+            'ganttType': 'tool',
+            'isExpanded': false,
+            'category': 'equipment',
+            'custom': {'rate': 3},
+            'labels': ['shared'],
+          }),
+        );
+        final resource = LegacyGanttResource.fromProtocolResource(protocol);
+        expect(resource.contentHash, protocol.contentHash);
+        expect(resource.copyWith().contentHash, protocol.contentHash);
+        final edited = resource.copyWith(name: 'Updated Equipment');
+        final metadata = jsonDecode(edited.toProtocolResource().metadataJson) as Map<String, dynamic>;
+        expect(metadata['category'], 'equipment');
+        expect(metadata['custom'], {'rate': 3});
+        expect(metadata['labels'], ['shared']);
+        expect(metadata['isExpanded'], isFalse);
+        expect(metadata['ganttType'], 'tool');
+        expect(LegacyGanttResource.fromJson(resource.toJson()).contentHash, protocol.contentHash);
+        expect(() => resource.extraMetadata['category'] = 'changed', throwsUnsupportedError);
+        expect(() => (resource.extraMetadata['custom'] as Map)['rate'] = 4, throwsUnsupportedError);
+        expect(() => (resource.extraMetadata['labels'] as List).add('changed'), throwsUnsupportedError);
+      });
+    }
+
+    test('omitted resource scalars retain hashes through public defaults', () {
+      final protocol = ProtocolResource(id: 'resource');
+      final resource = LegacyGanttResource.fromProtocolResource(protocol);
+      expect(resource.ganttType, 'person');
+      expect(resource.isExpanded, isTrue);
+      expect(resource.contentHash, protocol.contentHash);
     });
 
     test('toString returns a descriptive string', () {

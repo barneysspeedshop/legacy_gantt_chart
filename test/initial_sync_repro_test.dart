@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+// ignore: avoid_relative_lib_imports
+import '../example/lib/data/local/gantt_db.dart';
 // ignore: avoid_relative_lib_imports
 import '../example/lib/view_models/gantt_view_model.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -38,15 +41,24 @@ class FakeGanttSyncClient implements GanttSyncClient {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
 
   group('GanttViewModel Initial Sync 0-Duration Reproduction', () {
     late GanttViewModel viewModel;
     late FakeGanttSyncClient fakeSyncClient;
 
-    setUp(() {
+    setUp(() async {
+      await GanttDb.reset();
+      GanttDb.overridePath = ':memory:';
       fakeSyncClient = FakeGanttSyncClient();
       viewModel = GanttViewModel(useLocalDatabase: false);
       viewModel.setSyncClient(fakeSyncClient);
+    });
+
+    tearDown(() async {
+      viewModel.dispose();
+      await GanttDb.reset();
     });
 
     test('Initial Sync should correctly parse underscored keys and numeric strings', () async {

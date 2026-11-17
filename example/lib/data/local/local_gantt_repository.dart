@@ -723,7 +723,7 @@ class LocalGanttRepository {
 
   Future<Hlc?> getLastServerSyncTimestamp() async {
     final db = await GanttDb.db;
-    final res = await db.query('SELECT meta_value FROM sync_metadata WHERE meta_key = ?', ['last_server_sync']);
+    final res = await db.query('SELECT meta_value FROM sync_metadata WHERE meta_key = ? AND is_deleted = 0', ['last_server_sync']);
     if (res.isNotEmpty && res.first['meta_value'] != null) {
       return Hlc.parse(res.first['meta_value'] as String);
     }

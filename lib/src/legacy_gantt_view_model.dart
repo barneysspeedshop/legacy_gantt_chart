@@ -727,9 +727,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (ops.isEmpty) return;
 
     // Initialize or keep persistent cache of protocol tasks
-    if (_cachedProtocolTasks == null || _cachedProtocolTasks!.length != _tasks.length) {
-      _cachedProtocolTasks = _tasks.map((t) => t.toProtocolTask()).toList();
+    final retained = {for (final task in _cachedProtocolTasks ?? <ProtocolTask>[]) task.id: task};
+    for (final task in _tasks) {
+      final existing = retained[task.id];
+      if (existing == null || task.lastUpdated > existing.parsedLastUpdated) {
+        retained[task.id] = task.toProtocolTask();
+      }
     }
+    _cachedProtocolTasks = retained.values.toList();
 
     final mergedProtocolTasks = _crdtEngine.mergeTasks(_cachedProtocolTasks!, ops);
 
@@ -737,7 +742,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     // we can optimize the mapping.
     final taskMap = {for (var t in _tasks) t.id: t};
 
-    _tasks = mergedProtocolTasks.map((pt) {
+    _tasks = mergedProtocolTasks.where((task) => !task.isDeleted).map((pt) {
       final original = taskMap[pt.id];
       if (original != null) {
         // copyWithProtocol is much faster than fromProtocolTask as it preserves

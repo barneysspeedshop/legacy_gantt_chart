@@ -26,3 +26,16 @@ test_failure_click.log
 # Large Web Assets (Example)
 example/web/sqflite_sw.js
 example/web/sqlite3.wasm
+
+# Local development configuration and operator credentials.
+**/pubspec_overrides.yaml
+**/.rope_notes/
+**/.yoyo/
+**/.kiro/
+**/.env*
+**/keys/
+**/secrets/
+*.pem
+*.key
+*.p12
+*.pfx

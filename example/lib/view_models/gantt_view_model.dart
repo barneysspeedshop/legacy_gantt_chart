@@ -6,6 +6,7 @@ import 'package:legacy_gantt_chart/offline_sync.dart';
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 
 import '../data/models.dart';
@@ -14,6 +15,8 @@ import '../services/gantt_schedule_service.dart';
 import '../ui/dialogs/create_task_dialog.dart';
 import '../ui/gantt_grid_data.dart';
 import '../data/local/gantt_db.dart';
+import '../data/local/protocol_state_store.dart';
+import '../data/local/persisted_gantt_sync_client.dart';
 
 /// An enum to manage the different theme presets demonstrated in the example.
 enum ThemePreset {
@@ -33,6 +36,74 @@ enum TimelineAxisFormat {
 
 class GanttViewModel extends ChangeNotifier {
   final LocalGanttRepository _localRepository = LocalGanttRepository();
+  ProtocolStateStore? _canonicalState;
+  int _syncGeneration = 0;
+  Future<void> _incomingOperationChain = Future.value();
+  ProtocolStateStore get _protocolState => _canonicalState ??= ProtocolStateStore(GanttDb.db, scope: 'local');
+
+  Future<void> _bindProtocolScope(String scope) async {
+    final db = await GanttDb.db;
+    final rows = await db.query("SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0");
+    final previousScope = rows.firstOrNull?['meta_value'];
+    final pending = await db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id');
+    if (previousScope != null && previousScope != scope && pending.isNotEmpty) {
+      throw StateError('Synchronize pending changes with their original tenant before switching servers or tenants.');
+    }
+    if (previousScope != null && previousScope != scope) {
+      _syncGeneration++;
+      await _syncOperationsSubscription?.cancel();
+      await _connectionStateSubscription?.cancel();
+      await _incomingOperationChain;
+      if (_syncClient is OfflineGanttSyncClient) {
+        await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
+      }
+      await db.transaction((transaction) async {
+        await transaction.execute('DELETE FROM dependencies');
+        await transaction.execute('DELETE FROM tasks');
+        await transaction.execute('DELETE FROM resources');
+        await transaction.execute("DELETE FROM sync_metadata WHERE meta_key = 'last_server_sync'");
+      });
+      _operationBuffer.clear();
+      _isMerkleSyncing = false;
+      _initialSyncExpected = 0;
+      _initialSyncReceived = 0;
+      _dependencies.clear();
+      _ganttTasks.clear();
+      _allGanttTasks.clear();
+      _localResources.clear();
+      _gridData.clear();
+      _rowMaxStackDepth.clear();
+      _connectedUsers.clear();
+      _eventMap.clear();
+      _apiResponse = null;
+      _cachedFlatGridData = null;
+      _cachedVisibleFlatGridData = null;
+      _conflictIndicators.clear();
+      _latestIgnoredResetTimestamp = null;
+      _syncToController();
+      notifyListeners();
+    }
+    final state = ProtocolStateStore(GanttDb.db, scope: scope);
+    await state.applyOperations(
+      pending
+          .map(
+            (row) => Operation(
+              type: row['type'] as String,
+              data: jsonDecode(row['data'] as String) as Map<String, dynamic>,
+              timestamp: Hlc.parse(row['timestamp'] as String),
+              actorId: row['actor_id'] as String,
+            ),
+          )
+          .toList(),
+      local: true,
+    );
+    await db.execute('INSERT OR REPLACE INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)', [
+      'canonical_scope',
+      scope,
+    ]);
+    _canonicalState = state;
+  }
+
   bool _useLocalDatabase = false;
   StreamSubscription<List<LegacyGanttTask>>? _tasksSubscription;
   StreamSubscription<List<LegacyGanttTaskDependency>>? _dependenciesSubscription;
@@ -242,6 +313,11 @@ class GanttViewModel extends ChangeNotifier {
     _shouldAutoSeed = true;
     notifyListeners();
     await _localRepository.init();
+    final db = await GanttDb.db;
+    final storedScope = await db.query("SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0");
+    if (storedScope.isNotEmpty) {
+      _canonicalState = ProtocolStateStore(GanttDb.db, scope: storedScope.single['meta_value'] as String);
+    }
 
     _tasksSubscription?.cancel();
     _dependenciesSubscription?.cancel();
@@ -276,7 +352,7 @@ class GanttViewModel extends ChangeNotifier {
       notifyListeners();
     });
 
-    _syncClient ??= OfflineGanttSyncClient(GanttDb.db);
+    _syncClient ??= PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
     controller.setSyncClient(_syncClient!);
 
     _pendingSeedReset = true;
@@ -552,7 +628,7 @@ class GanttViewModel extends ChangeNotifier {
             'notes': newTask.notes,
             'parentId': newTask.parentId,
             'last_updated_by': newTask.lastUpdatedBy,
-          }
+          },
         },
         timestamp: _currentHlc,
         actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
@@ -2406,12 +2482,21 @@ class GanttViewModel extends ChangeNotifier {
       );
 
       final wsUri = parsedUri.replace(scheme: parsedUri.scheme == 'https' ? 'wss' : 'ws', path: '/ws');
+      final scopeUri = Uri(
+        scheme: wsUri.scheme, host: wsUri.host, port: wsUri.hasPort ? wsUri.port : null, path: wsUri.path,
+      );
+      await _bindProtocolScope(jsonEncode([scopeUri.toString(), tenantId]));
       WebSocketGanttSyncClient? wsClientToConnect;
 
       if (syncClientFactory != null) {
-        _syncClient = syncClientFactory!(uri: wsUri, authToken: token);
-        if (_syncClient is WebSocketGanttSyncClient) {
-          wsClientToConnect = _syncClient as WebSocketGanttSyncClient;
+        final client = syncClientFactory!(uri: wsUri, authToken: token);
+        if (client is WebSocketGanttSyncClient) {
+          wsClientToConnect = client;
+          final offlineClient = PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
+          await offlineClient.setInnerClient(client);
+          _syncClient = offlineClient;
+        } else {
+          _syncClient = client;
         }
       } else {
         final wsClient = WebSocketGanttSyncClient(
@@ -2427,7 +2512,7 @@ class GanttViewModel extends ChangeNotifier {
           if (_syncClient is WebSocketGanttSyncClient) {
             await (_syncClient as WebSocketGanttSyncClient).dispose();
           }
-          final offlineClient = OfflineGanttSyncClient(GanttDb.db);
+          final offlineClient = PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
           await offlineClient.setInnerClient(wsClient);
           _syncClient = offlineClient;
         }
@@ -2458,9 +2543,8 @@ class GanttViewModel extends ChangeNotifier {
         });
       }
 
-      Future<void> opChain = Future.value();
       _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
-        opChain = opChain.then((_) => _handleIncomingOperation(op)).catchError((e) {
+        _incomingOperationChain = _incomingOperationChain.then((_) => _handleIncomingOperation(op)).catchError((e) {
           print('Error processing operation in chain: $e');
         });
       });
@@ -2484,17 +2568,16 @@ class GanttViewModel extends ChangeNotifier {
 
   Future<void> _performMerkleSync() async {
     if (_syncClient == null) return;
+    final generation = _syncGeneration;
+    final client = _syncClient!;
+    final state = _protocolState;
     print('Initiating Merkle Sync...');
 
     // We compute the local tree based on the currently loaded data
     // OR we could force a fresh fetch from DB if needed, but watch streams keep this up-to-date.
     try {
-      final pTasks = _allGanttTasks.map((t) => t.toProtocolTask()).toList();
-      final pDeps = _dependencies.map((d) => d.toProtocolDependency()).toList();
-      final pRes = _localResources.map((r) => r.toProtocolResource()).toList();
-
-      final crdtEngine = CRDTEngine();
-      final localTree = crdtEngine.computeMerkleTree(pTasks, dependencies: pDeps, resources: pRes);
+      final localTree = await state.computeMerkleTree();
+      if (generation != _syncGeneration) return;
 
       print('Local Merkle Root is ${localTree.root.hash}');
 
@@ -2502,14 +2585,16 @@ class GanttViewModel extends ChangeNotifier {
       _operationBuffer.clear();
 
       try {
-        await _syncClient!.syncWithMerkle(localTree: localTree);
+        await client.syncWithMerkle(localTree: localTree);
       } finally {
-        await finalizeMerkleSync();
-        _isMerkleSyncing = false;
+        if (generation == _syncGeneration) {
+          await finalizeMerkleSync();
+          _isMerkleSyncing = false;
+        }
       }
     } catch (e) {
       print('Failed to perform Merkle Sync: $e');
-      _isMerkleSyncing = false;
+      if (generation == _syncGeneration) _isMerkleSyncing = false;
     }
   }
 
@@ -2564,8 +2649,9 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> disconnectSync() async {
-    _syncOperationsSubscription?.cancel();
-    _connectionStateSubscription?.cancel();
+    await _syncOperationsSubscription?.cancel();
+    await _connectionStateSubscription?.cancel();
+    await _incomingOperationChain;
 
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
@@ -2587,6 +2673,7 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
+    await _protocolState.applyOperations([op]);
     if (op.type == 'SYNC_METADATA') {
       final total = (op.data['totalOperations'] as int?) ?? 0;
       if (total > 0) {
