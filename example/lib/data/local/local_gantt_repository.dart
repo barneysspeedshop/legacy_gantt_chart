@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -779,8 +780,8 @@ class LocalResource {
         name: name ?? 'Unnamed',
         type: 'person',
         parentId: parentId,
-        metadata: {'isExpanded': isExpanded},
-        lastUpdated: lastUpdated,
+        metadataJson: jsonEncode({'isExpanded': isExpanded}),
+        lastUpdated: lastUpdated?.toString(),
         isDeleted: false,
       );
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -96,10 +97,10 @@ void main() {
       final taskWithHex = LegacyGanttTask.fromProtocolTask(ProtocolTask(
         id: '1',
         rowId: 'r1',
-        start: DateTime(2023),
-        end: DateTime(2023),
-        lastUpdated: Hlc.zero,
-        metadata: {'color': '#ff0000'},
+        start: DateTime(2023).toUtc().toIso8601String(),
+        end: DateTime(2023).toUtc().toIso8601String(),
+        lastUpdated: Hlc.zero.toString(),
+        metadataJson: jsonEncode({'color': '#ff0000'}),
       ));
       expect(taskWithHex.color, equals(const Color(0xFFFF0000)));
 
@@ -115,10 +116,10 @@ void main() {
       final taskWithInvalid = LegacyGanttTask.fromProtocolTask(ProtocolTask(
         id: '1',
         rowId: 'r1',
-        start: DateTime(2023),
-        end: DateTime(2023),
-        lastUpdated: Hlc.zero,
-        metadata: {'color': 'invalid'},
+        start: DateTime(2023).toUtc().toIso8601String(),
+        end: DateTime(2023).toUtc().toIso8601String(),
+        lastUpdated: Hlc.zero.toString(),
+        metadataJson: jsonEncode({'color': 'invalid'}),
       ));
       expect(taskWithInvalid.color, isNull);
     });
@@ -201,9 +202,9 @@ void main() {
       final pt = ProtocolTask(
         id: '1',
         rowId: 'r1',
-        start: DateTime(2023),
-        end: DateTime(2023, 1, 2),
-        lastUpdated: Hlc.zero,
+        start: DateTime(2023).toUtc().toIso8601String(),
+        end: DateTime(2023, 1, 2).toUtc().toIso8601String(),
+        lastUpdated: Hlc.zero.toString(),
         name: 'Updated via Protocol',
       );
 

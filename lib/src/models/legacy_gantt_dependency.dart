@@ -1,3 +1,4 @@
+import 'package:fixnum/fixnum.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:flutter/foundation.dart';
 
@@ -49,48 +50,18 @@ class LegacyGanttTaskDependency {
   ProtocolDependency toProtocolDependency() => ProtocolDependency(
         predecessorTaskId: predecessorTaskId,
         successorTaskId: successorTaskId,
-        type: _mapTypeToProtocol(type),
-        lag: lag,
-        lastUpdated: lastUpdated,
+        type: type.name,
+        lag: lag == null ? null : Int64(lag!.inMilliseconds),
+        lastUpdated: lastUpdated?.toString(),
       );
 
   factory LegacyGanttTaskDependency.fromProtocolDependency(ProtocolDependency pd) => LegacyGanttTaskDependency(
         predecessorTaskId: pd.predecessorTaskId,
         successorTaskId: pd.successorTaskId,
-        type: _mapTypeFromProtocol(pd.type),
-        lag: pd.lag,
-        lastUpdated: pd.lastUpdated,
+        type: DependencyType.values.byName(pd.type),
+        lag: pd.hasLag() ? Duration(milliseconds: pd.lag.toInt()) : null,
+        lastUpdated: pd.lastUpdated.isEmpty ? null : pd.parsedLastUpdated,
       );
-
-  static ProtocolDependencyType _mapTypeToProtocol(DependencyType type) {
-    switch (type) {
-      case DependencyType.finishToStart:
-        return ProtocolDependencyType.finishToStart;
-      case DependencyType.startToStart:
-        return ProtocolDependencyType.startToStart;
-      case DependencyType.finishToFinish:
-        return ProtocolDependencyType.finishToFinish;
-      case DependencyType.startToFinish:
-        return ProtocolDependencyType.startToFinish;
-      case DependencyType.contained:
-        return ProtocolDependencyType.contained;
-    }
-  }
-
-  static DependencyType _mapTypeFromProtocol(ProtocolDependencyType type) {
-    switch (type) {
-      case ProtocolDependencyType.finishToStart:
-        return DependencyType.finishToStart;
-      case ProtocolDependencyType.startToStart:
-        return DependencyType.startToStart;
-      case ProtocolDependencyType.finishToFinish:
-        return DependencyType.finishToFinish;
-      case ProtocolDependencyType.startToFinish:
-        return DependencyType.startToFinish;
-      case ProtocolDependencyType.contained:
-        return DependencyType.contained;
-    }
-  }
 
   @override
   bool operator ==(Object other) =>

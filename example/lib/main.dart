@@ -20,7 +20,7 @@ import 'ui/dialogs/create_task_dialog.dart';
 
 import 'platform/platform_init.dart'
     if (dart.library.io) 'platform/platform_init_io.dart'
-    if (dart.library.html) 'platform/platform_init_web.dart';
+    if (dart.library.js_interop) 'platform/platform_init_web.dart';
 import 'package:csv/csv.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart'; // For compute
@@ -101,10 +101,10 @@ class _GanttViewState extends State<GanttView> {
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
-    _uriController = TextEditingController(text: 'https://api.gantt-sync.com');
+    _uriController = TextEditingController(text: 'http://localhost:8080');
     _tenantIdController = TextEditingController(text: 'legacy');
-    _usernameController = TextEditingController(text: 'patrick');
-    _passwordController = TextEditingController(text: 'password');
+    _usernameController = TextEditingController();
+    _passwordController = TextEditingController();
   }
 
   final GanttNaturalLanguageService _nlService = GanttNaturalLanguageService();
@@ -773,14 +773,9 @@ class _GanttViewState extends State<GanttView> {
                       backgroundColor: ganttTheme.resizeTooltipBackgroundColor,
                       foregroundColor: ganttTheme.resizeTooltipFontColor,
                     ),
-                    onPressed: () {
-                      vm.optimizeSchedule();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Optimization request sent')),
-                      );
-                    },
+                    onPressed: null,
                     icon: const Icon(Icons.auto_awesome),
-                    label: const Text('Optimize Schedule'),
+                    label: const Text('Optimize Schedule (unavailable)'),
                   ),
                 ],
               ),
@@ -1859,10 +1854,10 @@ class _GanttViewState extends State<GanttView> {
                                               padding: const EdgeInsets.symmetric(vertical: 8.0),
                                               color: Theme.of(context).cardColor,
                                               child: scrubber.LegacyGanttTimelineScrubber(
-                                                totalStartDate: vm.totalStartDate!,
-                                                totalEndDate: vm.totalEndDate!,
-                                                visibleStartDate: vm.visibleStartDate!,
-                                                visibleEndDate: vm.visibleEndDate!,
+                                                totalStartDate: vm.totalStartDate,
+                                                totalEndDate: vm.totalEndDate,
+                                                visibleStartDate: vm.visibleStartDate,
+                                                visibleEndDate: vm.visibleEndDate,
                                                 onWindowChanged: vm.onScrubberWindowChanged,
                                                 visibleRows: vm.visibleGanttRows.map((row) => row.id).toList(),
                                                 rowMaxStackDepth: vm.rowMaxStackDepth,

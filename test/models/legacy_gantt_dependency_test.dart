@@ -95,8 +95,8 @@ void main() {
         final protocolDep = dependency.toProtocolDependency();
         expect(protocolDep.predecessorTaskId, dependency.predecessorTaskId);
         expect(protocolDep.successorTaskId, dependency.successorTaskId);
-        expect(protocolDep.lag, dependency.lag);
-        expect(protocolDep.lastUpdated, dependency.lastUpdated);
+        expect(protocolDep.lag.toInt(), 3600000);
+        expect(protocolDep.lastUpdated, '1970-01-01T00:00:00.999Z-0000-test');
 
         final backAgain = LegacyGanttTaskDependency.fromProtocolDependency(protocolDep);
         expect(backAgain, equals(dependency));

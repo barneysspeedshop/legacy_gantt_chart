@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
-import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:stream_channel/stream_channel.dart';
 
@@ -75,64 +74,36 @@ void main() {
       );
     });
 
-    tearDown(() {
+    tearDown(() async {
+      await client.dispose();
       incomingController.close();
       outgoingController.close();
     });
 
-    test('sendOperations sends BATCH_UPDATE message', () async {
-      // Connect first
-      client.connect('test_tenant');
-
-      // Drain implicit initial messages (auth/subscribe)
-      // We expect 1 message if no auth token: subscribe.
-      // Wait, client.sendOperations checks if _channel is not null.
-      // It is set synchronously in connect.
-
-      final ops = [
-        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
-        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
-      ];
-
-      await client.sendOperations(ops);
-
-      // We need to capture the stream.
-      // Since it's broadcast, we can listen now. But messages might have been emitted?
-      // No, we await sendOperations.
-      // But sendOperations adds to sink synchronously.
-      // We should listen BEFORE calling sendOperations.
-    });
-
     test('sendOperations sends BATCH_UPDATE message verification', () async {
       // Setup listener
-      final emissions = <String>[];
-      final subscription = outgoingController.stream.listen((data) => emissions.add(data.toString()));
+      final batchMessage = outgoingController.stream
+          .map((frame) => ProtocolMessage.fromBuffer(frame as List<int>))
+          .firstWhere((message) => message.type == 'BATCH_UPDATE');
 
       client.connect('test_tenant');
       // Should have 'subscribe'
 
       final ops = [
-        Operation(type: 'INSERT', data: {'id': '1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
-        Operation(type: 'UPDATE', data: {'id': '2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
+        Operation(type: 'INSERT_TASK', data: {'id': '1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
+        Operation(type: 'UPDATE_TASK', data: {'id': '2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
       ];
 
       await client.sendOperations(ops);
 
-      // Wait a bit for stream?
-      await Future.delayed(const Duration(milliseconds: 10));
-
-      // 0: Subscribe
-      // 1: BATCH_UPDATE
-      // Note: order might vary but subscribe is in connect.
-
-      final batchMsg = emissions.firstWhere((msg) => msg.contains('BATCH_UPDATE'));
-      final decoded = jsonDecode(batchMsg);
-
-      expect(decoded['type'], equals('BATCH_UPDATE'));
-      expect(decoded['data']['operations'], hasLength(2));
-      expect(decoded['data']['operations'][0]['type'], equals('INSERT_TASK'));
-
-      await subscription.cancel();
+      final decoded = ProtobufMapper.toJson(await batchMessage);
+      expect(decoded['type'], 'BATCH_UPDATE');
+      final operations = decoded['data']['operations'] as List;
+      expect(operations, hasLength(2));
+      expect(operations[0]['data']['id'], '1');
+      expect(operations[1]['data']['id'], '2');
+      expect(operations[0]['type'], 'UPDATE_TASK');
+      expect(operations[1]['type'], 'UPDATE_TASK');
     });
 
     test('receiving BATCH_UPDATE emits single batch operation', () async {
@@ -141,7 +112,7 @@ void main() {
       final updateOps = <Operation>[];
       final sub = client.operationStream.listen((op) => updateOps.add(op));
 
-      final batchMsg = jsonEncode({
+      final batchMsg = ProtobufMapper.toProtobuf({
         'type': 'BATCH_UPDATE',
         'data': {
           'operations': [
@@ -161,7 +132,7 @@ void main() {
         },
         'timestamp': Hlc.fromIntTimestamp(200).toString(),
         'actorId': 'server'
-      });
+      }).writeToBuffer();
 
       incomingController.add(batchMsg);
 
@@ -173,7 +144,9 @@ void main() {
       expect(updateOps[0].data['operations'], hasLength(2));
 
       final opsList = updateOps[0].data['operations'] as List;
-      expect(opsList[0]['type'], 'INSERT_TASK');
+      expect(opsList[0]['type'], 'UPDATE_TASK');
+      expect(opsList[0]['data']['id'], '1');
+      expect(opsList[1]['data']['id'], '2');
       expect(opsList[1]['type'], 'UPDATE_TASK');
 
       await sub.cancel();

@@ -164,8 +164,8 @@ void main() {
         data: {
           'id': 't1',
           'rowId': 'r1',
-          'start': DateTime(2023, 1, 2).toIso8601String(),
-          'end': DateTime(2023, 1, 3).toIso8601String(),
+          'start': '2023-01-02T00:00:00.000Z',
+          'end': '2023-01-03T00:00:00.000Z',
         },
         timestamp: Hlc.fromIntTimestamp(100),
         actorId: 'remote',
@@ -175,7 +175,8 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 50)); // Wait for stream listener and operation buffer
 
       // Task should be updated
-      expect(viewModel.data.first.start, DateTime(2023, 1, 2));
+      expect(viewModel.data.first.start, DateTime.utc(2023, 1, 2));
+      expect(viewModel.data.first.end, DateTime.utc(2023, 1, 3));
     });
 
     test('sync client integration - sends operation on drag end', () {
@@ -231,6 +232,10 @@ void main() {
       // So it should work!
       expect(mockSyncClient.sentOperations, isNotEmpty);
       expect(mockSyncClient.sentOperations.any((op) => op.type == 'UPDATE_TASK'), isTrue);
+      final renderedTask = viewModel.tasksByRow['r1']!.single;
+      expect(renderedTask.start.isAfter(task1.start), isTrue);
+      expect(renderedTask.start, viewModel.data.single.start);
+      expect(renderedTask.end, viewModel.data.single.end);
     });
   });
 
@@ -353,7 +358,7 @@ void main() {
         visibleRows: [row1],
         rowMaxStackDepth: {'r1': 1},
         rowHeight: 50.0,
-        onEmptySpaceClick: (_, __) {},
+        onEmptySpaceClick: (_, _) {},
       );
       viewModel.updateLayout(1000, 500);
       viewModel.updateVisibleRange(DateTime(2023, 1, 1, 0).millisecondsSinceEpoch.toDouble(),

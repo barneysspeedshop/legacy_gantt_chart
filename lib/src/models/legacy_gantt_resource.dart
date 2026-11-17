@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 /// Represents a resource (person or job) in the Gantt chart.
@@ -46,19 +47,24 @@ class LegacyGanttResource {
         isDeleted: isDeleted ?? this.isDeleted,
       );
 
-  ProtocolResource toProtocolResource() =>
-      ProtocolResource(id: id, name: name, parentId: parentId, type: ganttType, isDeleted: isDeleted, metadata: {
+  ProtocolResource toProtocolResource() => ProtocolResource(
+      id: id,
+      name: name,
+      parentId: parentId,
+      type: ganttType,
+      isDeleted: isDeleted,
+      metadataJson: jsonEncode({
         'isExpanded': isExpanded,
         'ganttType': ganttType, // Keep ganttType in metadata too if ProtocolResource uses 'type'
-      });
+      }));
 
   factory LegacyGanttResource.fromProtocolResource(ProtocolResource pr) => LegacyGanttResource(
         id: pr.id,
         name: pr.name,
-        parentId: pr.parentId,
-        ganttType: pr.metadata['ganttType'] ?? pr.type,
+        parentId: pr.parentId.isEmpty ? null : pr.parentId,
+        ganttType: ProtobufMapper.metadataFromJson({'metadataJson': pr.metadataJson})['ganttType'] ?? pr.type,
         isDeleted: pr.isDeleted,
-        isExpanded: pr.metadata['isExpanded'] == true,
+        isExpanded: ProtobufMapper.metadataFromJson({'metadataJson': pr.metadataJson})['isExpanded'] == true,
       );
 
   /// Calculates a deterministic hash of the resource's content for Merkle Tree synchronization.

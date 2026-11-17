@@ -1,6 +1,6 @@
 name: legacy_gantt_chart
 description: A flexible and performant Gantt chart widget for Flutter. Supports interactive drag-and-drop, resizing, dynamic data loading, and extensive theming.
-version: 8.1.1
+version: 9.0.0
 license: MIT
 homepage: https://github.com/barneysspeedshop/legacy_gantt_chart
 repository: https://github.com/barneysspeedshop/legacy_gantt_chart
@@ -14,16 +14,16 @@ topics:
   - timeline
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.10.0"
+  sdk: ^3.10.0
+  flutter: ">=3.38.0"
 
 dependencies:
   flutter:
     sdk: flutter
   intl: ^0.20.2
   provider: ^6.1.5+1
-  legacy_gantt_protocol: ^2.1.0
-  legacy_timeline_scrubber: ^2.0.0
+  legacy_gantt_protocol: ^3.0.0
+  legacy_timeline_scrubber: ^3.0.0
   sqlite_crdt: ^3.0.0
   shelf: ^1.4.2
   shelf_router: ^1.1.4
@@ -34,6 +34,7 @@ dependencies:
   sqflite_common_ffi: ^2.4.0
   collection: ^1.19.1
   crypto: ^3.0.7
+  fixnum: ^1.1.1
 
 dev_dependencies:
   flutter_test:

@@ -10,9 +10,9 @@ If you find a bug or have a feature request, please open an issue on our [GitHub
 
 If you want to contribute code, please feel free to fork the repository and submit a Pull Request.
 
-## License Assignment
+## Contribution License
 
-By submitting a Pull Request to this repository, you agree to assign the copyright of your contribution to the project maintainer (Patrick Legacy / Barney's Speed Shop). This ensures that the maintainer retains 100% title of the codebase and can continue to manage and license the project effectively.
+Contributions are accepted under the project's MIT License. Contributors retain copyright to their work; no copyright assignment is required.
 
 ### Code Style
 

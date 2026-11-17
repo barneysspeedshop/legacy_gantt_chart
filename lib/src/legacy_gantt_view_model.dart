@@ -1685,14 +1685,24 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
 
     if (opsToSend.isNotEmpty && syncClient != null) {
-      syncClient!.sendOperations(opsToSend);
       _safeMergeTasks(opsToSend);
     }
 
-    if (localStateChanged && taskGrouper != null) {
-      final conflicts = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
-      conflictIndicators = conflicts;
+    if (localStateChanged) {
+      if (taskGrouper != null) {
+        conflictIndicators = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
+      }
+      _rebuildTasksByRow();
+      _calculateDomains();
+      _recalculateCriticalPath();
+      _baseResourceBuckets = aggregateResourceLoad(_tasks,
+          start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
+          end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
       notifyListeners();
+    }
+
+    if (opsToSend.isNotEmpty && syncClient != null) {
+      syncClient!.sendOperations(opsToSend);
     }
   }
 

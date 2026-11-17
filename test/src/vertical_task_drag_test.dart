@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -39,14 +41,18 @@ void main() {
       return vm;
     }
 
-    test('emits onTaskMove with the target row when vertical dragging is enabled', () {
+    test('renders the target row on release while persistence is still pending', () {
       (LegacyGanttTask, DateTime, DateTime, String)? moveEvent;
       var updateCalls = 0;
+      final persistence = Completer<void>();
 
       final vm = createViewModel(
         enableVerticalTaskDrag: true,
-        onTaskMove: (task, start, end, rowId) => moveEvent = (task, start, end, rowId),
-        onTaskUpdate: (_, __, ___) => updateCalls++,
+        onTaskMove: (task, start, end, rowId) async {
+          moveEvent = (task, start, end, rowId);
+          await persistence.future;
+        },
+        onTaskUpdate: (_, _, _) => updateCalls++,
       );
 
       final draggedTask = vm.data.single;
@@ -74,6 +80,14 @@ void main() {
       expect(moveEvent!.$1.id, draggedTask.id);
       expect(moveEvent!.$4, 'row-2');
       expect(updateCalls, 0);
+      expect(persistence.isCompleted, isFalse);
+      expect(vm.tasksByRow['row-1'] ?? [], isEmpty);
+      expect(vm.tasksByRow['row-2']!.single.id, 'task-1');
+      expect(vm.tasksByRow['row-2']!.single.start, moveEvent!.$2);
+      expect(vm.tasksByRow['row-2']!.single.end, moveEvent!.$3);
+
+      persistence.complete();
+      vm.dispose();
     });
 
     test('keeps the task on its original row when vertical dragging is disabled', () {

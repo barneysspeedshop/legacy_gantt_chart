@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_resource.dart';
 
@@ -56,7 +58,7 @@ void main() {
       expect(protocolResource.parentId, original.parentId);
       expect(protocolResource.type, original.ganttType);
       expect(protocolResource.isDeleted, original.isDeleted);
-      expect(protocolResource.metadata['isExpanded'], original.isExpanded);
+      expect((jsonDecode(protocolResource.metadataJson) as Map<String, dynamic>)['isExpanded'], original.isExpanded);
 
       final restored = LegacyGanttResource.fromProtocolResource(protocolResource);
       expect(restored.id, original.id);

@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../utils/json_isolate.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 class WebSocketGanttSyncClient implements GanttSyncClient {
@@ -95,17 +94,17 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       _channel = _channelFactory(finalUri);
       _isClockSynced = false;
 
-      _channel!.sink.add(jsonEncode({
+      _channel!.sink.add(ProtobufMapper.toProtobuf({
         'type': 'subscribe',
         'channel': tenantId,
         'lastSyncedTimestamp': lastSyncedTimestamp?.toString(),
-      }));
+      }).writeToBuffer());
 
       _subscription?.cancel();
       _subscription = _channel!.stream.listen(
         (message) async {
           try {
-            final envelope = (await decodeJsonInBackground(message as String)) as Map<String, dynamic>;
+            final envelope = ProtobufMapper.toJson(ProtocolMessage.fromBuffer(message as List<int>));
             if (envelope.containsKey('error')) {
               print('Server error received: ${envelope['error']}');
               return;
@@ -264,7 +263,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
             _operationController.add(op);
           } catch (e) {
             print('Error parsing operation: $e');
-            print('Raw message was: $message');
+            print('WebSocket operation could not be decoded');
           }
         },
         onDone: () {
@@ -272,12 +271,12 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
           _connectionStateController.add(false);
         },
         onError: (error) {
-          print('WebSocket error: $error');
+          print('WebSocket transport error');
           _connectionStateController.add(false);
         },
       );
     } catch (e) {
-      print('WebSocket connection failed: $e');
+      print('WebSocket connection failed');
       _connectionStateController.add(false);
       rethrow;
     }
@@ -302,9 +301,9 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       throw Exception('Not connected');
     }
     _merkleRootCompleter = Completer<String>();
-    _channel!.sink.add(jsonEncode({
+    _channel!.sink.add(ProtobufMapper.toProtobuf({
       'type': 'GET_MERKLE_ROOT',
-    }));
+    }).writeToBuffer());
     return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
   }
 
@@ -317,20 +316,20 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     final completer = Completer<Map<String, String>>();
     _merkleNodeCompleters[prefix] = completer;
 
-    _channel!.sink.add(jsonEncode({
+    _channel!.sink.add(ProtobufMapper.toProtobuf({
       'type': 'GET_MERKLE_NODE',
       'data': {'prefix': prefix},
-    }));
+    }).writeToBuffer());
 
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
   void _getEntitiesInPrefix(String prefix) {
     _pendingRecoveryCount++;
-    _channel!.sink.add(jsonEncode({
+    _channel!.sink.add(ProtobufMapper.toProtobuf({
       'type': 'GET_ENTITIES_IN_RANGE',
       'data': {'prefix': prefix},
-    }));
+    }).writeToBuffer());
   }
 
   Future<void> _waitForRecoveries() async {
@@ -426,7 +425,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       'actorId': operation.actorId,
     };
 
-    final encodedEnvelope = jsonEncode(envelope);
+    final encodedEnvelope = ProtobufMapper.toProtobuf(envelope).writeToBuffer();
     _channel!.sink.add(encodedEnvelope);
   }
 
@@ -470,7 +469,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       'actorId': operations.first.actorId,
     };
 
-    final encodedEnvelope = jsonEncode(batchEnvelope);
+    final encodedEnvelope = ProtobufMapper.toProtobuf(batchEnvelope).writeToBuffer();
     print('WebSocketClient Sending Batch: ${operations.length} ops');
     _channel!.sink.add(encodedEnvelope);
   }

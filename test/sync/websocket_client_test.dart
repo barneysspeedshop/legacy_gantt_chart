@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -72,7 +72,7 @@ void main() {
       // Expect 1 message: subscribe (auth is in handshake)
       // 1. Subscribe Message (Auth verified in handshake)
       final subMsgFuture = expectLater(outgoingController.stream, emits(predicate((subMsg) {
-        final subJson = jsonDecode(subMsg as String);
+        final subJson = ProtobufMapper.toJson(ProtocolMessage.fromBuffer(subMsg as List<int>));
         return subJson['type'] == 'subscribe' && subJson['channel'] == 'tenant-123';
       })));
 
@@ -107,7 +107,7 @@ void main() {
       };
 
       // Emit incoming message
-      incomingController.add(jsonEncode(envelope));
+      incomingController.add(ProtobufMapper.toProtobuf(envelope).writeToBuffer());
 
       final receivedOp = await client.operationStream.first;
       expect(receivedOp.type, 'UPDATE_TASK');
@@ -138,7 +138,7 @@ void main() {
       };
 
       // Emit incoming message
-      incomingController.add(jsonEncode(envelope));
+      incomingController.add(ProtobufMapper.toProtobuf(envelope).writeToBuffer());
 
       final receivedOp = await client.operationStream.first;
       expect(receivedOp.type, 'UPDATE_TASK');
@@ -157,7 +157,7 @@ void main() {
       client.connect('tenant-123');
 
       final envelope = {'type': 'SUBSCRIBE_SUCCESS', 'channel': 'tenant-123'};
-      incomingController.add(jsonEncode(envelope));
+      incomingController.add(ProtobufMapper.toProtobuf(envelope).writeToBuffer());
     });
 
     test('wraps outgoing operation in envelope', () async {
@@ -174,7 +174,7 @@ void main() {
 
       final op = Operation(
         type: 'UPDATE',
-        data: {'foo': 'bar'},
+        data: {'id': 'task-1', 'name': 'Changed task'},
         timestamp: Hlc.fromIntTimestamp(12345),
         actorId: 'me',
       );
@@ -184,10 +184,13 @@ void main() {
       final messages = await messagesFuture;
       expect(messages.length, 2);
 
-      final envelopeJson = jsonDecode(messages[1] as String); // Second message
+      final envelopeJson =
+          ProtobufMapper.toJson(ProtocolMessage.fromBuffer(messages[1] as List<int>)); // Second message
       expect(envelopeJson['type'], equals('UPDATE_TASK'));
       expect(envelopeJson['actorId'], equals('me'));
-      expect(envelopeJson['data']['foo'], equals('bar'));
+      expect(envelopeJson['data']['id'], equals('task-1'));
+      expect(envelopeJson['data']['name'], equals('Changed task'));
+      expect(messages[1], isA<List<int>>());
     });
 
     test('wraps INSERT operation correctly', () async {
@@ -203,7 +206,7 @@ void main() {
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
-      final envelope = jsonDecode(messages[1] as String);
+      final envelope = ProtobufMapper.toJson(ProtocolMessage.fromBuffer(messages[1] as List<int>));
       expect(envelope['type'], 'INSERT_TASK');
     });
 
@@ -220,7 +223,7 @@ void main() {
       await client.sendOperation(op);
 
       final messages = await messagesFuture;
-      final envelope = jsonDecode(messages[1] as String);
+      final envelope = ProtobufMapper.toJson(ProtocolMessage.fromBuffer(messages[1] as List<int>));
       expect(envelope['type'], 'DELETE_TASK');
     });
 

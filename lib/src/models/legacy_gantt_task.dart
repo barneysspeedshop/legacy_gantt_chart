@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
@@ -210,23 +211,23 @@ class LegacyGanttTask {
       );
 
   factory LegacyGanttTask.fromProtocolTask(ProtocolTask pt) {
-    final meta = pt.metadata;
+    final meta = ProtobufMapper.metadataFromJson({'metadataJson': pt.metadataJson});
     return LegacyGanttTask(
       id: pt.id,
       rowId: pt.rowId,
-      start: pt.start,
-      end: pt.end,
-      name: pt.name,
+      start: DateTime.parse(pt.start),
+      end: DateTime.parse(pt.end),
+      name: pt.name.isEmpty ? null : pt.name,
       completion: pt.completion,
       isSummary: pt.isSummary || meta['ganttType'] == 'summary' || meta['ganttType'] == 'project',
       isMilestone: pt.isMilestone || meta['isMilestone'] == true,
-      resourceId: pt.resourceId,
-      parentId: pt.parentId ?? meta['parentId'],
-      notes: pt.notes ?? meta['notes'],
+      resourceId: pt.resourceId.isEmpty ? null : pt.resourceId,
+      parentId: pt.parentId.isEmpty ? meta['parentId'] : pt.parentId,
+      notes: pt.notes.isEmpty ? meta['notes'] : pt.notes,
       isDeleted: pt.isDeleted,
-      lastUpdated: pt.lastUpdated,
-      lastUpdatedBy: pt.lastUpdatedBy,
-      fieldTimestamps: pt.fieldTimestamps,
+      lastUpdated: pt.parsedLastUpdated,
+      lastUpdatedBy: pt.lastUpdatedBy.isEmpty ? null : pt.lastUpdatedBy,
+      fieldTimestamps: pt.fieldTimestamps.map((key, value) => MapEntry(key, Hlc.parse(value))),
       color: _parseColor(meta['color']),
       textColor: _parseColor(meta['textColor']),
       stackIndex: meta['stackIndex'] ?? 0,
@@ -251,8 +252,8 @@ class LegacyGanttTask {
   ProtocolTask toProtocolTask() => ProtocolTask(
         id: id,
         rowId: rowId,
-        start: start,
-        end: end,
+        start: start.toUtc().toIso8601String(),
+        end: end.toUtc().toIso8601String(),
         name: name,
         completion: completion,
         isSummary: isSummary,
@@ -261,10 +262,10 @@ class LegacyGanttTask {
         parentId: parentId,
         notes: notes,
         isDeleted: isDeleted,
-        lastUpdated: lastUpdated,
+        lastUpdated: lastUpdated.toString(),
         lastUpdatedBy: lastUpdatedBy,
-        fieldTimestamps: fieldTimestamps,
-        metadata: {
+        fieldTimestamps: fieldTimestamps.entries.map((entry) => MapEntry(entry.key, entry.value.toString())),
+        metadataJson: jsonEncode({
           'color': _colorToHex(color)?.toRadixString(16),
           'textColor': _colorToHex(textColor)?.toRadixString(16),
           'stackIndex': stackIndex,
@@ -280,28 +281,13 @@ class LegacyGanttTask {
           'baselineStart': baselineStart?.toUtc().toIso8601String(),
           'baselineEnd': baselineEnd?.toUtc().toIso8601String(),
           'hasCellBuilder': cellBuilder != null,
-        },
+        }),
       );
 
   factory LegacyGanttTask.fromJson(Map<String, dynamic> json) {
-    final meta = <String, dynamic>{
-      'color': json['color'],
-      'textColor': json['textColor'],
-      'stackIndex': json['stackIndex'],
-      'originalId': json['originalId'],
-      'isTimeRangeHighlight': json['isTimeRangeHighlight'],
-      'isOverlapIndicator': json['isOverlapIndicator'],
-      'segments': json['segments'],
-      'usesWorkCalendar': json['usesWorkCalendar'],
-      'load': json['load'],
-      'isAutoScheduled': json['isAutoScheduled'],
-      'propagatesMoveToChildren': json['propagatesMoveToChildren'],
-      'resizePolicy': json['resizePolicy'],
-      'baselineStart': json['baselineStart'],
-      'baselineEnd': json['baselineEnd'],
-    };
+    final meta = ProtobufMapper.metadataFromJson(json);
 
-    final pt = ProtocolTask.fromJson({
+    final pt = ProtobufMapper.taskFromJson({
       ...json,
       'lastUpdatedBy': json['lastUpdatedBy'] ?? json['last_updated_by'], // Support both snake and camel for safety
       'metadata': meta, // ProtocolTask.fromJson looks for 'metadata'
@@ -312,10 +298,9 @@ class LegacyGanttTask {
 
   Map<String, dynamic> toJson() {
     final pt = toProtocolTask();
-    final json = pt.toJson();
-    final meta = json['metadata'] as Map<String, dynamic>? ?? {};
-    json.remove('metadata');
-    return {...json, ...meta};
+    final json = ProtobufMapper.taskToJson(pt);
+    json.remove('metadataJson');
+    return json;
   }
 
   String get contentHash => toProtocolTask().contentHash;
@@ -373,23 +358,23 @@ class LegacyGanttTask {
       lastUpdated.hashCode;
 
   LegacyGanttTask copyWithProtocol(ProtocolTask pt) {
-    final meta = pt.metadata;
+    final meta = ProtobufMapper.metadataFromJson({'metadataJson': pt.metadataJson});
     return LegacyGanttTask(
       id: pt.id,
       rowId: pt.rowId,
-      start: pt.start,
-      end: pt.end,
-      name: pt.name,
+      start: DateTime.parse(pt.start),
+      end: DateTime.parse(pt.end),
+      name: pt.name.isEmpty ? null : pt.name,
       completion: pt.completion,
       isSummary: pt.isSummary || meta['ganttType'] == 'summary' || meta['ganttType'] == 'project',
       isMilestone: pt.isMilestone,
-      resourceId: pt.resourceId,
-      parentId: pt.parentId,
-      notes: pt.notes,
+      resourceId: pt.resourceId.isEmpty ? null : pt.resourceId,
+      parentId: pt.parentId.isEmpty ? null : pt.parentId,
+      notes: pt.notes.isEmpty ? null : pt.notes,
       isDeleted: pt.isDeleted,
-      lastUpdated: pt.lastUpdated,
-      lastUpdatedBy: pt.lastUpdatedBy,
-      fieldTimestamps: pt.fieldTimestamps,
+      lastUpdated: pt.parsedLastUpdated,
+      lastUpdatedBy: pt.lastUpdatedBy.isEmpty ? null : pt.lastUpdatedBy,
+      fieldTimestamps: pt.fieldTimestamps.map((key, value) => MapEntry(key, Hlc.parse(value))),
       color: _parseColor(meta['color']),
       textColor: _parseColor(meta['textColor']),
       stackIndex: meta['stackIndex'] ?? 0,
