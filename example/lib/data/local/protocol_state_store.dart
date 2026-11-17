@@ -49,7 +49,13 @@ class ProtocolStateStore {
           final dependency = ProtobufMapper.dependencyFromJson(operation.data);
           final key = _dependencyKey(dependency);
           final existing = state.dependencies[key];
-          if (existing != null && existing.parsedLastUpdated > operation.timestamp) continue;
+          if (existing != null &&
+              (existing.parsedLastUpdated > operation.timestamp ||
+                  (existing.type == 'DELETE' &&
+                      operation.type != 'DELETE_DEPENDENCY' &&
+                      operation.timestamp <= existing.parsedLastUpdated))) {
+            continue;
+          }
           state.dependencies[key] = operation.type == 'DELETE_DEPENDENCY'
               ? ((operation.data.containsKey('lag') ? dependency : existing ?? dependency).deepCopy()
                   ..type = 'DELETE'

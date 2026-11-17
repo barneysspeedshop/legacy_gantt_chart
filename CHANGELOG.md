@@ -5,7 +5,7 @@
 * Preserve transparent task colors with eight-digit ARGB serialization.
 * Retain immutable task and resource metadata extensions through protocol round trips and edits.
 
-* **BREAKING**: Depend on legacy_gantt_protocol ^3.0.0 and legacy_timeline_scrubber ^3.0.0 and send/receive binary Protobuf WebSocket frames. Upgrade the production server at the same time.
+* **BREAKING**: Depend on legacy_gantt_protocol ^3.0.1 and legacy_timeline_scrubber ^3.0.0 and send/receive binary Protobuf WebSocket frames. Upgrade the production server at the same time.
 * Require Dart 3.10 and Flutter 3.38 or newer. Chart domain dates and clocks remain DateTime and Hlc.
 * Refresh local layout immediately when committing dragged tasks, before sending updates.
 * Build the persistent web example using the supported JavaScript/CanvasKit target.
