@@ -24,12 +24,8 @@ class CriticalPathResult {
     this.taskStats = const {},
   });
 
-  factory CriticalPathResult.empty() => CriticalPathResult(
-        criticalTaskIds: {},
-        criticalDependencies: {},
-        projectEndDate: DateTime.now(),
-        taskStats: {},
-      );
+  factory CriticalPathResult.empty() =>
+      CriticalPathResult(criticalTaskIds: {}, criticalDependencies: {}, projectEndDate: DateTime.now(), taskStats: {});
 }
 
 /// Holds calculated CPM statistics for a task.

@@ -1,22 +1,27 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+
 import 'models/legacy_gantt_dependency.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/remote_cursor.dart';
 import 'models/remote_ghost.dart';
+
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 import 'legacy_gantt_controller.dart';
 import 'models/work_calendar.dart';
 import 'utils/legacy_gantt_conflict_detector.dart';
 import 'utils/critical_path_calculator.dart';
+
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
 import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
+
 import 'sync/websocket_gantt_sync_client.dart';
 import 'models/dependency_drag_status.dart';
 
@@ -334,10 +339,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _safeMergeTasks(taskOps);
 
       if (taskGrouper != null) {
-        final conflicts = LegacyGanttConflictDetector().run(
-          tasks: _tasks,
-          taskGrouper: taskGrouper!,
-        );
+        final conflicts = LegacyGanttConflictDetector().run(tasks: _tasks, taskGrouper: taskGrouper!);
         conflictIndicators = conflicts;
       }
       _rebuildTasksByRow();
@@ -367,37 +369,34 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     if (_bulkGhostTasks.isNotEmpty) {
       payload['ghosts'] = _bulkGhostTasks.entries
-          .map((e) => {
-                'taskId': e.key,
-                'start': e.value.$1.millisecondsSinceEpoch,
-                'end': e.value.$2.millisecondsSinceEpoch,
-              })
+          .map(
+            (e) => {
+              'taskId': e.key,
+              'start': e.value.$1.millisecondsSinceEpoch,
+              'end': e.value.$2.millisecondsSinceEpoch,
+            },
+          )
           .toList();
     }
 
     _ghostUpdateThrottle = Timer(_ghostThrottleDuration, () {
-      syncClient!.sendOperation(Operation(
-        type: 'GHOST_UPDATE',
-        data: payload,
-        timestamp: _currentTimestamp,
-        actorId: 'me',
-      ));
+      syncClient!.sendOperation(
+        Operation(type: 'GHOST_UPDATE', data: payload, timestamp: _currentTimestamp, actorId: 'me'),
+      );
     });
   }
 
   void _clearGhostUpdate(String taskId) {
     _ghostUpdateThrottle?.cancel();
     if (syncClient != null) {
-      syncClient!.sendOperation(Operation(
-        type: 'GHOST_UPDATE',
-        data: {
-          'taskId': taskId,
-          'start': null,
-          'end': null,
-        },
-        timestamp: _currentTimestamp,
-        actorId: 'me',
-      ));
+      syncClient!.sendOperation(
+        Operation(
+          type: 'GHOST_UPDATE',
+          data: {'taskId': taskId, 'start': null, 'end': null},
+          timestamp: _currentTimestamp,
+          actorId: 'me',
+        ),
+      );
     }
   }
 
@@ -573,8 +572,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this._showSlack = false,
     this.projectTimezoneAbbreviation,
     this.projectTimezoneOffset,
-  })  : rowMaxStackDepth = Map.of(rowMaxStackDepth),
-        _tasks = List.from(data) {
+  }) : rowMaxStackDepth = Map.of(rowMaxStackDepth),
+       _tasks = List.from(data) {
     _baseResourceBuckets = aggregateResourceLoad(_tasks, workCalendar: _workCalendar);
 
     _focusedTaskId = initialFocusedTaskId;
@@ -660,8 +659,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
       if (op.type == 'INSERT_DEPENDENCY') {
         final data = op.data;
         final typeStr = data['type'] as String? ?? 'finishToStart';
-        final depType =
-            DependencyType.values.firstWhere((e) => e.name == typeStr, orElse: () => DependencyType.finishToStart);
+        final depType = DependencyType.values.firstWhere(
+          (e) => e.name == typeStr,
+          orElse: () => DependencyType.finishToStart,
+        );
         final newDep = LegacyGanttTaskDependency(
           predecessorTaskId: data['predecessorTaskId'],
           successorTaskId: data['successorTaskId'],
@@ -689,8 +690,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
         final data = op.data;
         final taskId = data['taskId'];
         if (taskId != null) {
-          final toRemove =
-              currentDependencies.where((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId).toList();
+          final toRemove = currentDependencies
+              .where((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId)
+              .toList();
           if (toRemove.isNotEmpty) {
             currentDependencies.removeAll(toRemove);
             changed = true;
@@ -861,9 +863,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _tasks = mergedData;
       _calculateDomains();
       _recalculateCriticalPath();
-      _baseResourceBuckets = aggregateResourceLoad(_tasks,
-          start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
-          end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
+      _baseResourceBuckets = aggregateResourceLoad(
+        _tasks,
+        start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
+        end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null,
+      );
       _rebuildTasksByRow();
       notifyListeners();
     } else {}
@@ -925,8 +929,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   /// Sends a single CLEAR_DEPENDENCIES operation if a sync client is connected.
   void clearDependenciesForTask(LegacyGanttTask task) {
     bool changed = false;
-    final dependenciesToRemove =
-        dependencies.where((d) => d.predecessorTaskId == task.id || d.successorTaskId == task.id).toList();
+    final dependenciesToRemove = dependencies
+        .where((d) => d.predecessorTaskId == task.id || d.successorTaskId == task.id)
+        .toList();
 
     if (dependenciesToRemove.isNotEmpty) {
       dependencies = List.from(dependencies)..removeWhere((d) => dependenciesToRemove.contains(d));
@@ -934,12 +939,14 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
 
     if (syncClient != null) {
-      syncClient!.sendOperation(Operation(
-        type: 'CLEAR_DEPENDENCIES',
-        data: {'taskId': task.id},
-        timestamp: _currentTimestamp,
-        actorId: syncClient?.actorId ?? 'user',
-      ));
+      syncClient!.sendOperation(
+        Operation(
+          type: 'CLEAR_DEPENDENCIES',
+          data: {'taskId': task.id},
+          timestamp: _currentTimestamp,
+          actorId: syncClient?.actorId ?? 'user',
+        ),
+      );
     }
 
     if (changed) {
@@ -957,30 +964,31 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
     _lastCursorSync = now;
 
-    syncClient!.sendOperation(Operation(
-      type: 'CURSOR_MOVE',
-      data: {
-        'time': time.millisecondsSinceEpoch,
-        'rowId': rowId,
-      },
-      timestamp: _currentTimestamp,
-      actorId: syncClient?.actorId ?? 'user',
-    ));
+    syncClient!.sendOperation(
+      Operation(
+        type: 'CURSOR_MOVE',
+        data: {'time': time.millisecondsSinceEpoch, 'rowId': rowId},
+        timestamp: _currentTimestamp,
+        actorId: syncClient?.actorId ?? 'user',
+      ),
+    );
   }
 
   void _sendDependencyOp(String type, LegacyGanttTaskDependency dep) {
     if (syncClient == null) return;
-    syncClient!.sendOperation(Operation(
-      type: type,
-      data: {
-        'predecessorTaskId': dep.predecessorTaskId,
-        'successorTaskId': dep.successorTaskId,
-        'type': dep.type.name,
-        'lag': dep.lag?.inMilliseconds,
-      },
-      timestamp: _currentTimestamp,
-      actorId: syncClient?.actorId ?? 'user',
-    ));
+    syncClient!.sendOperation(
+      Operation(
+        type: type,
+        data: {
+          'predecessorTaskId': dep.predecessorTaskId,
+          'successorTaskId': dep.successorTaskId,
+          'type': dep.type.name,
+          'lag': dep.lag?.inMilliseconds,
+        },
+        timestamp: _currentTimestamp,
+        actorId: syncClient?.actorId ?? 'user',
+      ),
+    );
   }
 
   void updateFocusedTask(String? newFocusedTaskId) {
@@ -1262,8 +1270,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       // Capture the visible start date BEFORE recalculating so we can restore
       // the correct scroll position afterward (free-scroll path only — the
       // scrubber-driven path is handled inside _updateVisibleExtentFromScroll).
-      final visibleStartBeforeResize =
-          _visibleExtent.isNotEmpty && _gridMin == null && _gridMax == null ? _visibleExtent.first : null;
+      final visibleStartBeforeResize = _visibleExtent.isNotEmpty && _gridMin == null && _gridMax == null
+          ? _visibleExtent.first
+          : null;
 
       _width = width;
       _height = height;
@@ -1623,8 +1632,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
   }
 
   int _calculateProjectedStackIndex(String rowId, DateTime start, DateTime end, String draggedTaskId) {
-    final tasksInRow =
-        _tasks.where((t) => t.rowId == rowId && t.id != draggedTaskId && !t.isTimeRangeHighlight).toList();
+    final tasksInRow = _tasks
+        .where((t) => t.rowId == rowId && t.id != draggedTaskId && !t.isTimeRangeHighlight)
+        .toList();
     if (tasksInRow.isEmpty) return 0;
 
     final occupiedIndices = <int>{};
@@ -1666,7 +1676,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       }
 
       final op = Operation(
-          type: 'UPDATE_TASK', data: updatedTask.toJson(), timestamp: now, actorId: syncClient?.actorId ?? 'user');
+        type: 'UPDATE_TASK',
+        data: updatedTask.toJson(),
+        timestamp: now,
+        actorId: syncClient?.actorId ?? 'user',
+      );
       if (updatedRowId != task.rowId) {
         onTaskMove?.call(task, newStart, newEnd, updatedRowId);
       } else if (onBulkTaskUpdate != null) {
@@ -1692,9 +1706,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
       _rebuildTasksByRow();
       _calculateDomains();
       _recalculateCriticalPath();
-      _baseResourceBuckets = aggregateResourceLoad(_tasks,
-          start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
-          end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null);
+      _baseResourceBuckets = aggregateResourceLoad(
+        _tasks,
+        start: _visibleExtent.isNotEmpty ? _visibleExtent.first : null,
+        end: _visibleExtent.isNotEmpty ? _visibleExtent.last : null,
+      );
       notifyListeners();
     }
 
@@ -1781,8 +1797,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
       final backwardDeps = dependencies.where((d) => d.successorTaskId == currentTask.id).toList();
       for (final dep in backwardDeps) {
-        final predecessor =
-            _tasks.firstWhere((t) => t.id == dep.predecessorTaskId, orElse: () => LegacyGanttTask.empty());
+        final predecessor = _tasks.firstWhere(
+          (t) => t.id == dep.predecessorTaskId,
+          orElse: () => LegacyGanttTask.empty(),
+        );
         if (predecessor.id.isEmpty || predecessor.isAutoScheduled == false) continue;
 
         final (_, predEnd) = getNewPosition(predecessor);
@@ -1961,11 +1979,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
     _calculateRowOffsets();
   }
 
-  void onPanStart(
-    DragStartDetails details, {
-    LegacyGanttTask? overrideTask,
-    TaskPart? overridePart,
-  }) {
+  void onPanStart(DragStartDetails details, {LegacyGanttTask? overrideTask, TaskPart? overridePart}) {
     if (overrideTask != null) {
       if (overrideTask.isAutoScheduled == true && overrideTask.isSummary && overridePart == TaskPart.body) {
         return;
@@ -2029,13 +2043,7 @@ class LegacyGanttViewModel extends ChangeNotifier {
         _ghostTaskStart = time;
         _ghostTaskEnd = time;
         _markDragStart(details.globalPosition.dx);
-        _draggedTask = LegacyGanttTask(
-          id: 'drawing_ghost',
-          rowId: rowId,
-          start: time,
-          end: time,
-          name: 'New Task',
-        );
+        _draggedTask = LegacyGanttTask(id: 'drawing_ghost', rowId: rowId, start: time, end: time, name: 'New Task');
         _ghostTaskRowId = rowId;
         notifyListeners();
       }
@@ -2391,8 +2399,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
     final rowId = visibleRows[rowIndex].id;
 
-    final totalDomainDurationMs =
-        (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
+    final totalDomainDurationMs = (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch)
+        .toDouble();
     if (totalDomainDurationMs <= 0 || _width <= 0) return (rowId, null);
 
     final timeRatio = localPosition.dx / _width;
@@ -2415,8 +2423,9 @@ class LegacyGanttViewModel extends ChangeNotifier {
       final double rowBottom = rowTop + rowHeightTotal;
 
       if (rect.top < rowBottom && rect.bottom > rowTop) {
-        final tasksInRow =
-            data.where((t) => t.rowId == row.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator && !t.isSummary);
+        final tasksInRow = data.where(
+          (t) => t.rowId == row.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator && !t.isSummary,
+        );
 
         for (final task in tasksInRow) {
           final double taskLeft = _totalScale(task.start);
@@ -2467,8 +2476,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
         if (rowTop < currentOffset) {
           scrollController!.animateTo(rowTop, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
         } else if (rowBottom > currentOffset + viewportHeight) {
-          scrollController!.animateTo(rowBottom - viewportHeight,
-              duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+          scrollController!.animateTo(
+            rowBottom - viewportHeight,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
         }
       }
     }
@@ -2535,11 +2547,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     final pointerYWithinRow = pointerYRelativeToBarsArea - rowTopY;
     final tappedStackIndex = max(0, (pointerYWithinRow / rowHeight).floor());
     final tasksInTappedStack = data
-        .where((task) =>
-            task.rowId == row.id &&
-            task.stackIndex == tappedStackIndex &&
-            !task.isTimeRangeHighlight &&
-            !task.isOverlapIndicator)
+        .where(
+          (task) =>
+              task.rowId == row.id &&
+              task.stackIndex == tappedStackIndex &&
+              !task.isTimeRangeHighlight &&
+              !task.isOverlapIndicator,
+        )
         .toList()
         .reversed;
 
@@ -2591,8 +2605,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
 
   void _handleVerticalPan(DragUpdateDetails details) {
     final newTranslateY = _initialTranslateY + (details.globalPosition.dy - _initialTouchY);
-    final double contentHeight =
-        visibleRows.fold<double>(0.0, (prev, row) => prev + rowHeight * (rowMaxStackDepth[row.id] ?? 1));
+    final double contentHeight = visibleRows.fold<double>(
+      0.0,
+      (prev, row) => prev + rowHeight * (rowMaxStackDepth[row.id] ?? 1),
+    );
     final double availableHeightForBars = _height - timeAxisHeight;
     final double maxNegativeTranslateY = max(0.0, contentHeight - availableHeightForBars);
     final clampedTranslateY = min(0.0, max(-maxNegativeTranslateY, newTranslateY));
@@ -2737,8 +2753,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
               childNewEnd = _workCalendar!.addWorkingDays(newStart, newChildEndOffset);
             } else {
               final startRatio =
-                  (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
-                      .clamp(0.0, 1.0);
+                  (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration).clamp(
+                    0.0,
+                    1.0,
+                  );
               final endRatio = (child.end.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
                   .clamp(0.0, 1.0);
 
@@ -2747,8 +2765,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
             }
           } else {
             final startRatio =
-                (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
-                    .clamp(0.0, 1.0);
+                (child.start.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration).clamp(
+                  0.0,
+                  1.0,
+                );
             final endRatio = (child.end.difference(_originalTaskStart!).inMilliseconds.toDouble() / originalDuration)
                 .clamp(0.0, 1.0);
 
@@ -2845,8 +2865,10 @@ class LegacyGanttViewModel extends ChangeNotifier {
     }
 
     final position = controller.position;
-    final target =
-        (position.pixels + _dragEdgeAutoScrollStepPerTick).clamp(position.minScrollExtent, position.maxScrollExtent);
+    final target = (position.pixels + _dragEdgeAutoScrollStepPerTick).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
     if (target == position.pixels) {
       return;
     }
@@ -2858,11 +2880,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     // translated into the new content coordinates so the ghost keeps
     // following the pointer.
     final scrollDelta = target - _lastHorizontalPanScrollOffset;
-    _handleHorizontalPan(DragUpdateDetails(
-      sourceTimeStamp: lastDetails.sourceTimeStamp,
-      globalPosition: lastDetails.globalPosition,
-      localPosition: lastDetails.localPosition.translate(scrollDelta, 0),
-    ));
+    _handleHorizontalPan(
+      DragUpdateDetails(
+        sourceTimeStamp: lastDetails.sourceTimeStamp,
+        globalPosition: lastDetails.globalPosition,
+        localPosition: lastDetails.localPosition.translate(scrollDelta, 0),
+      ),
+    );
     if (_ghostTaskStart != null && _ghostTaskEnd != null && _draggedTask != null) {
       _sendGhostUpdate(_draggedTask!.id, _ghostTaskStart!, _ghostTaskEnd!);
     }
@@ -2884,8 +2908,8 @@ class LegacyGanttViewModel extends ChangeNotifier {
     if (totalContentWidth <= 0) {
       return Duration.zero;
     }
-    final totalDomainDurationMs =
-        (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch).toDouble();
+    final totalDomainDurationMs = (_totalDomain.last.millisecondsSinceEpoch - _totalDomain.first.millisecondsSinceEpoch)
+        .toDouble();
     final durationMs = (pixels / totalContentWidth) * totalDomainDurationMs;
     return Duration(milliseconds: durationMs.round());
   }

@@ -13,12 +13,7 @@ class LegacyGanttRow {
   /// The ID of the user who last updated this row.
   final String? lastUpdatedBy;
 
-  const LegacyGanttRow({
-    required this.id,
-    this.label,
-    this.lastUpdated,
-    this.lastUpdatedBy,
-  });
+  const LegacyGanttRow({required this.id, this.label, this.lastUpdated, this.lastUpdatedBy});
 
   /// The display label for the row (e.g., resource name).
   final String? label;

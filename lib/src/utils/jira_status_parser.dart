@@ -6,10 +6,7 @@ class JiraStatusResult {
   /// The calculated end date of the task (start date + sum of subsequent durations).
   final DateTime end;
 
-  const JiraStatusResult({
-    required this.start,
-    required this.end,
-  });
+  const JiraStatusResult({required this.start, required this.end});
 
   @override
   String toString() => 'JiraStatusResult(start: $start, end: $end)';
@@ -70,10 +67,7 @@ class JiraStatusParser {
       final isActive = lastDurationMs == 0;
 
       if (isActive) {
-        return JiraStatusResult(
-          start: startDate,
-          end: DateTime.now(),
-        );
+        return JiraStatusResult(start: startDate, end: DateTime.now());
       }
 
       // Sum all subsequent durations (after the first one)
@@ -84,10 +78,7 @@ class JiraStatusParser {
 
       final endDate = startDate.add(Duration(milliseconds: totalSubsequentDurationMs));
 
-      return JiraStatusResult(
-        start: startDate,
-        end: endDate,
-      );
+      return JiraStatusResult(start: startDate, end: endDate);
     } catch (_) {
       // Catch any unexpected parsing errors (e.g. range errors)
       return null;

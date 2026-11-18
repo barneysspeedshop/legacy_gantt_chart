@@ -48,20 +48,20 @@ class LegacyGanttTaskDependency {
   });
 
   ProtocolDependency toProtocolDependency() => ProtocolDependency(
-        predecessorTaskId: predecessorTaskId,
-        successorTaskId: successorTaskId,
-        type: type.name,
-        lag: lag == null ? null : Int64(lag!.inMilliseconds),
-        lastUpdated: lastUpdated?.toString(),
-      );
+    predecessorTaskId: predecessorTaskId,
+    successorTaskId: successorTaskId,
+    type: type.name,
+    lag: lag == null ? null : Int64(lag!.inMilliseconds),
+    lastUpdated: lastUpdated?.toString(),
+  );
 
   factory LegacyGanttTaskDependency.fromProtocolDependency(ProtocolDependency pd) => LegacyGanttTaskDependency(
-        predecessorTaskId: pd.predecessorTaskId,
-        successorTaskId: pd.successorTaskId,
-        type: DependencyType.values.byName(pd.type),
-        lag: pd.hasLag() ? Duration(milliseconds: pd.lag.toInt()) : null,
-        lastUpdated: pd.lastUpdated.isEmpty ? null : pd.parsedLastUpdated,
-      );
+    predecessorTaskId: pd.predecessorTaskId,
+    successorTaskId: pd.successorTaskId,
+    type: DependencyType.values.byName(pd.type),
+    lag: pd.hasLag() ? Duration(milliseconds: pd.lag.toInt()) : null,
+    lastUpdated: pd.lastUpdated.isEmpty ? null : pd.parsedLastUpdated,
+  );
 
   @override
   bool operator ==(Object other) =>

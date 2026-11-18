@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+
 import 'models/legacy_gantt_row.dart';
 import 'models/remote_cursor.dart';
 
@@ -65,16 +66,9 @@ class CursorPainter extends CustomPainter {
 
     final textSpan = TextSpan(
       text: label,
-      style: TextStyle(
-        color: Colors.white,
-        fontSize: 10,
-        backgroundColor: color.withValues(alpha: 0.8),
-      ),
+      style: TextStyle(color: Colors.white, fontSize: 10, backgroundColor: color.withValues(alpha: 0.8)),
     );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    );
+    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
     textPainter.layout();
     textPainter.paint(canvas, position.translate(10, 10));
   }

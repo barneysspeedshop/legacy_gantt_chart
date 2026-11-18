@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 /// Decodes JSON in a background isolate to avoid jank on the UI thread.

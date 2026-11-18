@@ -27,9 +27,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # Uncomment this step to verify the use of 'dart format' on each commit.
-      # - name: Verify formatting
-      #   run: flutter format --output=none --set-exit-if-changed .
+      - name: Verify published library formatting
+        run: dart format --output=none --set-exit-if-changed lib
 
       # Consider passing '--fatal-infos' for slightly stricter analysis.
       - name: Analyze project source
@@ -46,3 +45,12 @@ jobs:
           cd example
           flutter pub get
           flutter test
+
+      - name: Install package scoring tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y webp
+          dart pub global activate pana 0.23.19
+
+      - name: Verify full pub score
+        run: dart pub global run pana --exit-code-threshold 0 .

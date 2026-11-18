@@ -84,21 +84,20 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   void connect(String tenantId, {Hlc? lastSyncedTimestamp}) {
     var finalUri = uri;
     if (authToken != null) {
-      finalUri = uri.replace(queryParameters: {
-        ...uri.queryParameters,
-        'token': authToken,
-      });
+      finalUri = uri.replace(queryParameters: {...uri.queryParameters, 'token': authToken});
     }
 
     try {
       _channel = _channelFactory(finalUri);
       _isClockSynced = false;
 
-      _channel!.sink.add(ProtobufMapper.toProtobuf({
-        'type': 'subscribe',
-        'channel': tenantId,
-        'lastSyncedTimestamp': lastSyncedTimestamp?.toString(),
-      }).writeToBuffer());
+      _channel!.sink.add(
+        ProtobufMapper.toProtobuf({
+          'type': 'subscribe',
+          'channel': tenantId,
+          'lastSyncedTimestamp': lastSyncedTimestamp?.toString(),
+        }).writeToBuffer(),
+      );
 
       _subscription?.cancel();
       _subscription = _channel!.stream.listen(
@@ -149,12 +148,14 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               }
               // Forward to operation stream so GanttViewModel can defer
               // expensive processing until all sync batches arrive.
-              _operationController.add(Operation(
-                type: 'SYNC_METADATA',
-                data: dataMap ?? {},
-                timestamp: Hlc(millis: DateTime.now().millisecondsSinceEpoch, counter: 0, nodeId: 'server-sync'),
-                actorId: 'server-sync',
-              ));
+              _operationController.add(
+                Operation(
+                  type: 'SYNC_METADATA',
+                  data: dataMap ?? {},
+                  timestamp: Hlc(millis: DateTime.now().millisecondsSinceEpoch, counter: 0, nodeId: 'server-sync'),
+                  actorId: 'server-sync',
+                ),
+              );
               return;
             }
 
@@ -254,12 +255,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
 
             _lastHlc = _lastHlc.receive(parsedTimestamp, correctedTimestamp);
 
-            final op = Operation(
-              type: type,
-              data: opData,
-              timestamp: parsedTimestamp,
-              actorId: actorId as String,
-            );
+            final op = Operation(type: type, data: opData, timestamp: parsedTimestamp, actorId: actorId as String);
             _operationController.add(op);
           } catch (e) {
             print('Error parsing operation: $e');
@@ -301,9 +297,7 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       throw Exception('Not connected');
     }
     _merkleRootCompleter = Completer<String>();
-    _channel!.sink.add(ProtobufMapper.toProtobuf({
-      'type': 'GET_MERKLE_ROOT',
-    }).writeToBuffer());
+    _channel!.sink.add(ProtobufMapper.toProtobuf({'type': 'GET_MERKLE_ROOT'}).writeToBuffer());
     return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
   }
 
@@ -316,20 +310,24 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     final completer = Completer<Map<String, String>>();
     _merkleNodeCompleters[prefix] = completer;
 
-    _channel!.sink.add(ProtobufMapper.toProtobuf({
-      'type': 'GET_MERKLE_NODE',
-      'data': {'prefix': prefix},
-    }).writeToBuffer());
+    _channel!.sink.add(
+      ProtobufMapper.toProtobuf({
+        'type': 'GET_MERKLE_NODE',
+        'data': {'prefix': prefix},
+      }).writeToBuffer(),
+    );
 
     return completer.future.timeout(const Duration(seconds: 10));
   }
 
   void _getEntitiesInPrefix(String prefix) {
     _pendingRecoveryCount++;
-    _channel!.sink.add(ProtobufMapper.toProtobuf({
-      'type': 'GET_ENTITIES_IN_RANGE',
-      'data': {'prefix': prefix},
-    }).writeToBuffer());
+    _channel!.sink.add(
+      ProtobufMapper.toProtobuf({
+        'type': 'GET_ENTITIES_IN_RANGE',
+        'data': {'prefix': prefix},
+      }).writeToBuffer(),
+    );
   }
 
   Future<void> _waitForRecoveries() async {
@@ -395,7 +393,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   }
 
   @override
-
   /// In this simple implementation, the server sends history immediately upon connection
   /// as individual messages. So we don't fetch a snapshot explicitly.
   /// Returns empty list as stream handles history.

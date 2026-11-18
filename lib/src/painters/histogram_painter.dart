@@ -1,4 +1,5 @@
 import 'package:flutter/rendering.dart';
+
 import '../models/resource_bucket.dart';
 import '../models/legacy_gantt_theme.dart';
 
@@ -8,12 +9,7 @@ class HistogramPainter extends CustomPainter {
   final List<DateTime> visibleExtent;
   final LegacyGanttTheme theme;
 
-  HistogramPainter({
-    required this.buckets,
-    required this.totalScale,
-    required this.visibleExtent,
-    required this.theme,
-  });
+  HistogramPainter({required this.buckets, required this.totalScale, required this.visibleExtent, required this.theme});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -43,10 +39,7 @@ class HistogramPainter extends CustomPainter {
         paint.color = theme.barColorPrimary.withValues(alpha: 0.5);
       }
 
-      canvas.drawRect(
-        Rect.fromLTWH(startX, size.height - barHeight, width, barHeight),
-        paint,
-      );
+      canvas.drawRect(Rect.fromLTWH(startX, size.height - barHeight, width, barHeight), paint);
     }
   }
 

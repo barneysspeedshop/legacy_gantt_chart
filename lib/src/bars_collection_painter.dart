@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+
 import 'models/legacy_gantt_row.dart';
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
@@ -381,8 +382,9 @@ class BarsCollectionPainter extends CustomPainter {
               );
 
               final barPaint = Paint()
-                ..color = (segment.color ?? task.color ?? theme.barColorPrimary)
-                    .withValues(alpha: isBeingDragged ? 0.3 : 1.0);
+                ..color = (segment.color ?? task.color ?? theme.barColorPrimary).withValues(
+                  alpha: isBeingDragged ? 0.3 : 1.0,
+                );
               canvas.drawRRect(segmentRRect, barPaint);
 
               if (task.usesWorkCalendar) {
@@ -475,7 +477,8 @@ class BarsCollectionPainter extends CustomPainter {
           );
 
           final isSummaryConflict = data.any(
-              (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start));
+            (t) => t.rowId == task.rowId && t.isSummary && t.start.isBefore(task.end) && t.end.isAfter(task.start),
+          );
 
           _drawConflictIndicator(canvas, barRRect, isSummaryConflict);
         }
@@ -527,11 +530,12 @@ class BarsCollectionPainter extends CustomPainter {
             final double overallWidth = max(0, taskEndX - taskStartX);
             final textSpan = TextSpan(text: task.name, style: theme.taskTextStyle);
             final textPainter = TextPainter(
-                text: textSpan,
-                textAlign: TextAlign.left,
-                textDirection: TextDirection.ltr,
-                maxLines: 1,
-                ellipsis: '...');
+              text: textSpan,
+              textAlign: TextAlign.left,
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+              ellipsis: '...',
+            );
             textPainter.layout(minWidth: 0, maxWidth: max(0, overallWidth - 8));
 
             final textOffset = Offset(taskStartX + 4, barTop + (rowHeight - textPainter.height) / 2);
@@ -545,11 +549,12 @@ class BarsCollectionPainter extends CustomPainter {
               final whiteTextStyle = theme.taskTextStyle.copyWith(color: Colors.white);
               final whiteTextSpan = TextSpan(text: task.name, style: whiteTextStyle);
               final whiteTextPainter = TextPainter(
-                  text: whiteTextSpan,
-                  textAlign: TextAlign.left,
-                  textDirection: TextDirection.ltr,
-                  maxLines: 1,
-                  ellipsis: '...');
+                text: whiteTextSpan,
+                textAlign: TextAlign.left,
+                textDirection: TextDirection.ltr,
+                maxLines: 1,
+                ellipsis: '...',
+              );
               whiteTextPainter.layout(minWidth: 0, maxWidth: max(0, overallWidth - 8));
 
               for (final conflict in overlappingConflicts) {
@@ -597,13 +602,23 @@ class BarsCollectionPainter extends CustomPainter {
 
           if (originalTask.isMilestone) {
             _drawMilestone(
-                canvas, originalTask, scale(ghostTaskStart!), barTop + barVerticalCenterOffset, barHeight, true);
+              canvas,
+              originalTask,
+              scale(ghostTaskStart!),
+              barTop + barVerticalCenterOffset,
+              barHeight,
+              true,
+            );
           } else {
             final double startX = scale(ghostTaskStart!);
             final double endX = scale(ghostTaskEnd!);
             final RRect barRRect = RRect.fromRectAndRadius(
               Rect.fromLTWH(
-                  min(startX, endX), barTop + barVerticalCenterOffset, max(0, (endX - startX).abs()), barHeight),
+                min(startX, endX),
+                barTop + barVerticalCenterOffset,
+                max(0, (endX - startX).abs()),
+                barHeight,
+              ),
               theme.barCornerRadius,
             );
             final barPaint = Paint()..color = (originalTask.color ?? theme.ghostBarColor).withValues(alpha: 0.7);
@@ -636,8 +651,9 @@ class BarsCollectionPainter extends CustomPainter {
               final double rectW = max(0, max(barStartX, barEndX) - rectX);
               if (rectW > 0 && rectX < size.width) {
                 canvas.drawRect(
-                    Rect.fromLTWH(rectX, rowOffsets[i], rectW, rowHeight * (rowMaxStackDepth[visibleRows[i].id] ?? 1)),
-                    Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2));
+                  Rect.fromLTWH(rectX, rowOffsets[i], rectW, rowHeight * (rowMaxStackDepth[visibleRows[i].id] ?? 1)),
+                  Paint()..color = theme.summaryBarColor.withValues(alpha: 0.2),
+                );
               }
             }
           }
@@ -651,8 +667,9 @@ class BarsCollectionPainter extends CustomPainter {
           final double barStartX = scale(item.start);
           final double barEndX = scale(item.end);
           final RRect barRRect = RRect.fromRectAndRadius(
-              Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, max(0, barEndX - barStartX), barHeight),
-              theme.barCornerRadius);
+            Rect.fromLTWH(barStartX, barTop + barVerticalCenterOffset, max(0, barEndX - barStartX), barHeight),
+            theme.barCornerRadius,
+          );
           final userColor = ghost.userColor != null
               ? (Color(int.parse(ghost.userColor!.replaceAll('#', '0xff'))))
               : Colors.primaries[ghost.userId.hashCode % Colors.primaries.length];
@@ -707,7 +724,10 @@ class BarsCollectionPainter extends CustomPainter {
     canvas.clipRRect(rrect);
     for (double i = -rrect.height; i < rrect.width; i += 16.0) {
       canvas.drawLine(
-          Offset(rrect.left + i, rrect.top), Offset(rrect.left + i + rrect.height, rrect.bottom), patternPaint);
+        Offset(rrect.left + i, rrect.top),
+        Offset(rrect.left + i + rrect.height, rrect.bottom),
+        patternPaint,
+      );
     }
     canvas.restore();
   }
@@ -717,7 +737,9 @@ class BarsCollectionPainter extends CustomPainter {
   void _drawConflictIndicator(Canvas canvas, RRect rrect, bool isSummaryConflict) {
     final indicatorHeight = rrect.height * 0.4;
     final indicatorRRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(rrect.left, rrect.bottom - indicatorHeight, rrect.width, indicatorHeight), theme.barCornerRadius);
+      Rect.fromLTWH(rrect.left, rrect.bottom - indicatorHeight, rrect.width, indicatorHeight),
+      theme.barCornerRadius,
+    );
     canvas.drawRRect(indicatorRRect, Paint()..color = theme.backgroundColor);
     canvas.drawRRect(indicatorRRect, Paint()..color = theme.conflictBarColor.withValues(alpha: 0.4));
     _drawAngledPattern(canvas, indicatorRRect, theme.conflictBarColor, 1.0);
@@ -745,11 +767,12 @@ class BarsCollectionPainter extends CustomPainter {
     }
     if (task.id == hoveredTaskForDependency) {
       canvas.drawRRect(
-          rrect.inflate(2.0),
-          Paint()
-            ..color = theme.dependencyLineColor
-            ..strokeWidth = 2.0
-            ..style = PaintingStyle.stroke);
+        rrect.inflate(2.0),
+        Paint()
+          ..color = theme.dependencyLineColor
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke,
+      );
     }
   }
 
@@ -774,8 +797,8 @@ class BarsCollectionPainter extends CustomPainter {
     Color lineColor = dependencyDragStatus == DependencyDragStatus.cycle
         ? Colors.red
         : (dependencyDragStatus == DependencyDragStatus.inadmissible
-            ? Colors.orange
-            : (dependencyDragStatus == DependencyDragStatus.admissible ? Colors.green : theme.dependencyLineColor));
+              ? Colors.orange
+              : (dependencyDragStatus == DependencyDragStatus.admissible ? Colors.green : theme.dependencyLineColor));
     final paint = Paint()
       ..color = lineColor
       ..strokeWidth = 2.0
@@ -826,11 +849,12 @@ class BarsCollectionPainter extends CustomPainter {
     }
     path.lineTo(s.left, s.center.dy);
     canvas.drawPath(
-        path,
-        Paint()
-          ..color = theme.dependencyLineColor
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke);
+      path,
+      Paint()
+        ..color = theme.dependencyLineColor
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   void _drawStartToStartDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
@@ -843,11 +867,12 @@ class BarsCollectionPainter extends CustomPainter {
       ..lineTo(p.left - 10, s.center.dy)
       ..lineTo(s.left, s.center.dy);
     canvas.drawPath(
-        path,
-        Paint()
-          ..color = criticalDependencies.contains(dependency) ? theme.criticalPathColor : theme.dependencyLineColor
-          ..strokeWidth = criticalDependencies.contains(dependency) ? 2.0 : 1.5
-          ..style = PaintingStyle.stroke);
+      path,
+      Paint()
+        ..color = criticalDependencies.contains(dependency) ? theme.criticalPathColor : theme.dependencyLineColor
+        ..strokeWidth = criticalDependencies.contains(dependency) ? 2.0 : 1.5
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   void _drawFinishToFinishDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
@@ -860,11 +885,12 @@ class BarsCollectionPainter extends CustomPainter {
       ..lineTo(p.right + 10, s.center.dy)
       ..lineTo(s.right, s.center.dy);
     canvas.drawPath(
-        path,
-        Paint()
-          ..color = theme.dependencyLineColor
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke);
+      path,
+      Paint()
+        ..color = theme.dependencyLineColor
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   void _drawStartToFinishDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
@@ -884,11 +910,12 @@ class BarsCollectionPainter extends CustomPainter {
     }
     path.lineTo(s.right, s.center.dy);
     canvas.drawPath(
-        path,
-        Paint()
-          ..color = theme.dependencyLineColor
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke);
+      path,
+      Paint()
+        ..color = theme.dependencyLineColor
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
   }
 
   void _drawContainedDependency(Canvas canvas, LegacyGanttTaskDependency dependency) {
@@ -966,8 +993,10 @@ class BarsCollectionPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final iconOffset =
-        Offset(highlightRect.center.dx - textPainter.width / 2, highlightRect.center.dy - textPainter.height / 2);
+    final iconOffset = Offset(
+      highlightRect.center.dx - textPainter.width / 2,
+      highlightRect.center.dy - textPainter.height / 2,
+    );
     textPainter.paint(canvas, iconOffset);
   }
 

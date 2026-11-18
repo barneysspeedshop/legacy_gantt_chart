@@ -9,12 +9,7 @@ class ResourceHistogramWidget extends StatelessWidget {
   final double height;
   final LegacyGanttTheme? theme;
 
-  const ResourceHistogramWidget({
-    super.key,
-    required this.viewModel,
-    this.height = 150,
-    this.theme,
-  });
+  const ResourceHistogramWidget({super.key, required this.viewModel, this.height = 150, this.theme});
 
   @override
   Widget build(BuildContext context) {
@@ -31,18 +26,14 @@ class ResourceHistogramWidget extends StatelessWidget {
             padding: const EdgeInsets.all(4.0),
             child: Text(
               'Resource Usage',
-              style: (theme?.axisTextStyle ?? Theme.of(context).textTheme.labelSmall)
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: (theme?.axisTextStyle ?? Theme.of(context).textTheme.labelSmall)?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           Expanded(
             child: resources.isEmpty
-                ? Center(
-                    child: Text(
-                      'No resources',
-                      style: theme?.axisTextStyle,
-                    ),
-                  )
+                ? Center(child: Text('No resources', style: theme?.axisTextStyle))
                 : ListView.builder(
                     itemExtent: 30.0,
                     itemCount: resources.length,

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:synchronized/synchronized.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
+
 import 'websocket_gantt_sync_client.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
@@ -122,8 +124,9 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void> _updatePendingCount() async {
     if (!_isDbReady) return;
     try {
-      final result =
-          await _lock.synchronized(() => _db.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0'));
+      final result = await _lock.synchronized(
+        () => _db.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0'),
+      );
       final count = result.firstOrNull?['COUNT(*)'] as int? ?? result.firstOrNull?.values.first as int? ?? 0;
       _outboundPendingCountController.add(count);
     } catch (e) {
@@ -160,7 +163,8 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       List<Map<String, Object?>> rows;
       try {
         rows = await _lock.synchronized(
-            () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'));
+          () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'),
+        );
       } catch (e) {
         print('OfflineClient: Error querying queue: $e');
         break;
@@ -196,12 +200,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             data['end_date'] = data.remove('end');
           }
 
-          opsToSend.add(Operation(
-            type: type,
-            data: data,
-            timestamp: timestamp,
-            actorId: actorId,
-          ));
+          opsToSend.add(Operation(type: type, data: data, timestamp: timestamp, actorId: actorId));
           idsToDelete.add(id);
         } catch (e) {
           print('OfflineClient: Failed to convert queued op id $id: $e');
@@ -220,8 +219,9 @@ class OfflineGanttSyncClient implements GanttSyncClient {
             await _innerClient!.sendOperations(opsToSend);
           }
 
-          await _lock
-              .synchronized(() => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete));
+          await _lock.synchronized(
+            () => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete),
+          );
           print('OfflineClient: Successfully deleted ${idsToDelete.length} operations from queue.');
 
           // CRITICAL: Update pending count immediately after delete so listeners see progress
@@ -348,15 +348,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     if (!_isDbReady) await _dbInitFuture;
     print('OfflineClient: Queuing operation ${operation.type}');
     await _lock.synchronized(() async {
-      await _db.execute(
-        'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-        [
-          operation.type,
-          jsonEncode(operation.data),
-          operation.timestamp.toString(),
-          operation.actorId,
-        ],
-      );
+      await _db.execute('INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)', [
+        operation.type,
+        jsonEncode(operation.data),
+        operation.timestamp.toString(),
+        operation.actorId,
+      ]);
     });
     _updatePendingCount();
   }
@@ -367,15 +364,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     await _lock.synchronized(() async {
       final batch = _db.batch();
       for (final operation in operations) {
-        batch.execute(
-          'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-          [
-            operation.type,
-            jsonEncode(operation.data),
-            operation.timestamp.toString(),
-            operation.actorId,
-          ],
-        );
+        batch.execute('INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)', [
+          operation.type,
+          jsonEncode(operation.data),
+          operation.timestamp.toString(),
+          operation.actorId,
+        ]);
       }
       await batch.commit();
     });

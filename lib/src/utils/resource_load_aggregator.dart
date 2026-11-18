@@ -53,11 +53,7 @@ Map<String, List<ResourceBucket>> aggregateResourceLoad(
   final Map<String, List<ResourceBucket>> result = {};
   resourceDailyLoad.forEach((resourceId, dailyMap) {
     final buckets = dailyMap.entries
-        .map((entry) => ResourceBucket(
-              date: entry.key,
-              resourceId: resourceId,
-              totalLoad: entry.value,
-            ))
+        .map((entry) => ResourceBucket(date: entry.key, resourceId: resourceId, totalLoad: entry.value))
         .toList();
 
     buckets.sort((a, b) => a.date.compareTo(b.date));

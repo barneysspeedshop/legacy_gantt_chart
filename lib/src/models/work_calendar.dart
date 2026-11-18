@@ -17,10 +17,7 @@ class WorkCalendar {
   /// These dates should be normalized to midnight (00:00:00).
   final Set<DateTime> holidays;
 
-  const WorkCalendar({
-    this.weekendDays = const {DateTime.saturday, DateTime.sunday},
-    this.holidays = const {},
-  });
+  const WorkCalendar({this.weekendDays = const {DateTime.saturday, DateTime.sunday}, this.holidays = const {}});
 
   /// Returns true if the given [date] is a working day.
   bool isWorkingDay(DateTime date) {
