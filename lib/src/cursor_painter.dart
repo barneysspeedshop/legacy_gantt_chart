@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'models/legacy_gantt_row.dart';
 import 'models/remote_cursor.dart';
 

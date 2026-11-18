@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'models/legacy_gantt_dependency.dart';
@@ -534,11 +534,11 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onDependencyAdd,
     this.onDependenciesSynced,
     required this.rowHeight,
-    double? axisHeight,
-    double? gridMin,
-    double? gridMax,
-    double? totalGridMin,
-    double? totalGridMax,
+    this._axisHeight,
+    this._gridMin,
+    this._gridMax,
+    this._totalGridMin,
+    this._totalGridMax,
     this.enableDragAndDrop = false,
     this.enableResize = false,
     this.enableVerticalTaskDrag = false,
@@ -568,21 +568,13 @@ class LegacyGanttViewModel extends ChangeNotifier {
     this.onSelectionChanged,
     this.onBulkTaskUpdate,
     this.resizeTooltipDateFormatString = 'MMM d',
-    WorkCalendar? workCalendar,
-    bool rollUpMilestones = false,
-    bool showSlack = false,
+    this._workCalendar,
+    this._rollUpMilestones = false,
+    this._showSlack = false,
     this.projectTimezoneAbbreviation,
     this.projectTimezoneOffset,
   })  : rowMaxStackDepth = Map.of(rowMaxStackDepth),
-        _tasks = List.from(data),
-        _rollUpMilestones = rollUpMilestones,
-        _showSlack = showSlack,
-        _workCalendar = workCalendar,
-        _gridMin = gridMin,
-        _gridMax = gridMax,
-        _totalGridMin = totalGridMin,
-        _totalGridMax = totalGridMax,
-        _axisHeight = axisHeight {
+        _tasks = List.from(data) {
     _baseResourceBuckets = aggregateResourceLoad(_tasks, workCalendar: _workCalendar);
 
     _focusedTaskId = initialFocusedTaskId;

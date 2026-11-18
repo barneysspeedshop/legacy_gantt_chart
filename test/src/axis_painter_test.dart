@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/src/axis_painter.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_theme.dart';

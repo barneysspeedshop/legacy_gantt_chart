@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:collection/collection.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'immutable_metadata.dart';

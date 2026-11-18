@@ -1,3 +1,11 @@
+## 10.0.0
+
+* The examples use standalone Material context menu 3.0.0 directly, without a compatibility bridge.
+
+* **BREAKING**: Migrate the chart, tests, and example from Flutter's deprecated `package:flutter/material.dart` library to the official `material_ui: ^1.11.1` package. Applications using the chart must provide the standalone Material dependency and update Material types in their integrations.
+* **BREAKING**: Require Dart 3.13 and Flutter 3.47 or newer, and upgrade `legacy_timeline_scrubber` to ^4.0.0.
+* Update example integrations to `legacy_tree_grid` ^0.15.0.
+
 ## 9.0.0
 
 * Preserve arbitrary task protocol metadata through conversion and edits. The task constructor is no longer const so it can defensively freeze metadata.

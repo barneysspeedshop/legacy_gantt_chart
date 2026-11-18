@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_chart/src/legacy_gantt_controller.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_theme.dart';
 

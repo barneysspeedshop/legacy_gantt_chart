@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/legacy_gantt_theme.dart';
 import '../legacy_gantt_view_model.dart';

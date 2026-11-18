@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 /// A dialog to manage (remove) dependencies for a task.
