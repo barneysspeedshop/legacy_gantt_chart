@@ -16,7 +16,7 @@ dependencies:
   google_generative_ai: ^0.4.7
   http: ^1.6.0
   intl: ^0.20.2
-  legacy_context_menu: ^2.1.2
+  legacy_context_menu: ^3.0.0
   legacy_gantt_chart:
     path: ../
   legacy_gantt_protocol: ^3.0.1

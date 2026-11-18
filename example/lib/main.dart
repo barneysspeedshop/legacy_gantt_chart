@@ -60,9 +60,6 @@ class MyApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
         ),
         themeMode: ThemeMode.system,
-        // legacy_context_menu still consumes Flutter's legacy Material API.
-        // ignore: deprecated_member_use
-        builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
         home: const GanttView(),
       );
 }
