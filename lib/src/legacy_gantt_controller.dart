@@ -1,10 +1,13 @@
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
+
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_dependency.dart';
+
 import 'package:legacy_gantt_chart/src/models/resource_bucket.dart';
 import 'package:legacy_gantt_chart/src/utils/resource_load_aggregator.dart';
+
 import 'widgets/legacy_gantt_inspector.dart';
 
 /// A controller to programmatically manage a [LegacyGanttChartWidget].
@@ -103,12 +106,12 @@ class LegacyGanttController extends ChangeNotifier {
     List<LegacyGanttTaskDependency>? initialDependencies,
     this.tasksAsync,
     this.holidaysAsync,
-  })  : _visibleStartDate = initialVisibleStartDate,
-        _visibleEndDate = initialVisibleEndDate,
-        _tasks = initialTasks ?? const [],
-        _conflictIndicators = initialConflictIndicators ?? const [],
-        _holidays = initialHolidays ?? const [],
-        _dependencies = initialDependencies ?? const [] {
+  }) : _visibleStartDate = initialVisibleStartDate,
+       _visibleEndDate = initialVisibleEndDate,
+       _tasks = initialTasks ?? const [],
+       _conflictIndicators = initialConflictIndicators ?? const [],
+       _holidays = initialHolidays ?? const [],
+       _dependencies = initialDependencies ?? const [] {
     if (tasksAsync != null) {
       if (initialTasks != null && initialTasks.isNotEmpty) {
         debugPrint('Warning: `initialTasks` are ignored when `tasksAsync` is provided.');
@@ -350,26 +353,19 @@ class LegacyGanttController extends ChangeNotifier {
   void openInspector(BuildContext context, String taskId) {
     final task = _tasks.firstWhereOrNull((t) => t.id == taskId);
     if (task == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task not found in current view.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task not found in current view.')));
       return;
     }
 
     if (_auditEngine == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Audit Engine not available. Connect to a sync client first.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Audit Engine not available. Connect to a sync client first.')));
       return;
     }
 
     showDialog(
       context: context,
-      builder: (context) => LegacyGanttInspector(
-        taskId: taskId,
-        task: task,
-        auditEngine: _auditEngine!,
-      ),
+      builder: (context) => LegacyGanttInspector(taskId: taskId, task: task, auditEngine: _auditEngine!),
     );
   }
 }

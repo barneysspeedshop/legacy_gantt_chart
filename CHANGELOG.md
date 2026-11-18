@@ -1,3 +1,7 @@
+## 10.0.1
+
+* Apply Dart3.13 formatting to library sources and enforce it in CI so formatter differences do not reduce pub points.
+
 ## 10.0.0
 
 * The examples use standalone Material context menu 3.0.0 directly, without a compatibility bridge.

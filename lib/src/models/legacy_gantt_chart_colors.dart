@@ -1,5 +1,6 @@
 // packages/gantt_chart/lib/src/models/gantt_chart_colors.dart
 import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 
 /// Defines the color scheme for the Gantt chart.
@@ -29,13 +30,12 @@ class LegacyGanttChartColors {
     Color? barColorSecondary,
     Color? textColor,
     Color? backgroundColor,
-  }) =>
-      LegacyGanttChartColors(
-        barColorPrimary: barColorPrimary ?? this.barColorPrimary,
-        barColorSecondary: barColorSecondary ?? this.barColorSecondary,
-        textColor: textColor ?? this.textColor,
-        backgroundColor: backgroundColor ?? this.backgroundColor,
-      );
+  }) => LegacyGanttChartColors(
+    barColorPrimary: barColorPrimary ?? this.barColorPrimary,
+    barColorSecondary: barColorSecondary ?? this.barColorSecondary,
+    textColor: textColor ?? this.textColor,
+    backgroundColor: backgroundColor ?? this.backgroundColor,
+  );
 
   @override
   bool operator ==(Object other) {
@@ -48,10 +48,5 @@ class LegacyGanttChartColors {
   }
 
   @override
-  int get hashCode => Object.hash(
-        barColorPrimary,
-        barColorSecondary,
-        textColor,
-        backgroundColor,
-      );
+  int get hashCode => Object.hash(barColorPrimary, barColorSecondary, textColor, backgroundColor);
 }

@@ -1,10 +1,12 @@
 import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:legacy_gantt_chart/src/models/legacy_gantt_dependency.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+
 import 'models/legacy_gantt_task.dart';
 import 'models/legacy_gantt_theme.dart';
 import 'models/legacy_gantt_row.dart';
@@ -12,6 +14,7 @@ import 'axis_painter.dart';
 import 'legacy_gantt_controller.dart';
 import 'legacy_gantt_view_model.dart';
 import 'bars_collection_painter.dart';
+
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
 import 'cursor_painter.dart';
@@ -274,7 +277,8 @@ class LegacyGanttChartWidget extends StatefulWidget {
     List<DateTime> totalDomain,
     LegacyGanttTheme theme,
     double totalContentWidth,
-  )? timelineAxisHeaderBuilder;
+  )?
+  timelineAxisHeaderBuilder;
 
   /// Optional builder to render a custom widget when the data set is empty.
   /// Replaces the default "No data to display" text.
@@ -359,7 +363,7 @@ class LegacyGanttChartWidget extends StatefulWidget {
   /// to allow for different widgets for the start and end handles. If this is `null`, no
   /// external handles are shown for focused tasks.
   final Widget Function(LegacyGanttTask task, TaskPart part, LegacyGanttViewModel vm, double handleWidth)?
-      focusedTaskResizeHandleBuilder;
+  focusedTaskResizeHandleBuilder;
 
   /// The width of the floating resize handles that appear on a focused task.
   /// This value is passed to the [focusedTaskResizeHandleBuilder]. Defaults to `24.0`.
@@ -457,17 +461,19 @@ class LegacyGanttChartWidget extends StatefulWidget {
     this.showNowLine = false,
     this.nowLineDate,
     this.showSlack = false,
-  })  : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
-        assert(controller == null || dependencies == null),
-        assert(taskBarBuilder == null || taskContentBuilder == null),
-        assert(controller == null || conflictIndicators == null),
-        assert(controller == null ||
-            (data == null &&
-                tasksFuture == null &&
-                holidays == null &&
-                holidaysFuture == null &&
-                gridMin == null &&
-                gridMax == null));
+  }) : assert(controller != null || ((data != null && tasksFuture == null) || (data == null && tasksFuture != null))),
+       assert(controller == null || dependencies == null),
+       assert(taskBarBuilder == null || taskContentBuilder == null),
+       assert(controller == null || conflictIndicators == null),
+       assert(
+         controller == null ||
+             (data == null &&
+                 tasksFuture == null &&
+                 holidays == null &&
+                 holidaysFuture == null &&
+                 gridMin == null &&
+                 gridMax == null),
+       );
 
   @override
   State<LegacyGanttChartWidget> createState() => _LegacyGanttChartWidgetState();
@@ -547,116 +553,120 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       return widget.emptyStateBuilder!(context);
     }
     return Center(
-      child: Text(
-        'No data to display.',
-        style: TextStyle(color: theme.textColor),
-      ),
+      child: Text('No data to display.', style: TextStyle(color: theme.textColor)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final LegacyGanttTheme effectiveTheme =
-        (widget.theme ?? LegacyGanttTheme.fromTheme(theme)).copyWith(weekendColor: widget.weekendColor);
+    final LegacyGanttTheme effectiveTheme = (widget.theme ?? LegacyGanttTheme.fromTheme(theme)).copyWith(
+      weekendColor: widget.weekendColor,
+    );
 
     if (widget.controller != null) {
-      return _wrap(AnimatedBuilder(
-        animation: widget.controller!,
-        builder: (context, child) {
-          final controller = widget.controller!;
-          final tasks = controller.tasks;
-          final holidays = controller.holidays;
-          final dependencies = controller.dependencies;
-          final conflictIndicators = controller.conflictIndicators;
-          final allItems = [...tasks, ...holidays]; // Conflicts are handled separately
+      return _wrap(
+        AnimatedBuilder(
+          animation: widget.controller!,
+          builder: (context, child) {
+            final controller = widget.controller!;
+            final tasks = controller.tasks;
+            final holidays = controller.holidays;
+            final dependencies = controller.dependencies;
+            final conflictIndicators = controller.conflictIndicators;
+            final allItems = [...tasks, ...holidays]; // Conflicts are handled separately
 
-          if (_internalViewModel != null) {
-            _internalViewModel!.updateData(allItems);
-            _internalViewModel!.updateDependencies(dependencies);
-            _internalViewModel!.updateConflictIndicators(conflictIndicators);
-            _internalViewModel!.updateVisibleRows(widget.visibleRows);
-            _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
-            _internalViewModel!.updateRowHeight(widget.rowHeight);
-            _internalViewModel!.updateAxisHeight(widget.axisHeight);
-            _internalViewModel!.updateVisibleRange(controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
-                controller.visibleEndDate.millisecondsSinceEpoch.toDouble());
-          }
-
-          if (controller.isOverallLoading && allItems.isEmpty && !widget.showEmptyRows) {
-            if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
-              return const Center(child: CircularProgressIndicator());
-            } else {
-              return SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator());
+            if (_internalViewModel != null) {
+              _internalViewModel!.updateData(allItems);
+              _internalViewModel!.updateDependencies(dependencies);
+              _internalViewModel!.updateConflictIndicators(conflictIndicators);
+              _internalViewModel!.updateVisibleRows(widget.visibleRows);
+              _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+              _internalViewModel!.updateRowHeight(widget.rowHeight);
+              _internalViewModel!.updateAxisHeight(widget.axisHeight);
+              _internalViewModel!.updateVisibleRange(
+                controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
+                controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
+              );
             }
-          }
 
-          if (allItems.isEmpty && !controller.isOverallLoading && !widget.showEmptyRows) {
-            return _buildEmptyView(context, effectiveTheme);
-          }
+            if (controller.isOverallLoading && allItems.isEmpty && !widget.showEmptyRows) {
+              if (widget.loadingIndicatorType == GanttLoadingIndicatorType.circular) {
+                return const Center(child: CircularProgressIndicator());
+              } else {
+                return SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator());
+              }
+            }
 
-          return Stack(
-            children: [
-              _buildChart(
-                context,
-                allItems,
-                dependencies,
-                conflictIndicators,
-                effectiveTheme,
-                gridMin: controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
-                gridMax: controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
-                currentTool: controller.currentTool,
-              ),
-              if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.linear)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.top ? 0 : null,
-                  bottom: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.bottom ? 0 : null,
-                  child: SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator()),
+            if (allItems.isEmpty && !controller.isOverallLoading && !widget.showEmptyRows) {
+              return _buildEmptyView(context, effectiveTheme);
+            }
+
+            return Stack(
+              children: [
+                _buildChart(
+                  context,
+                  allItems,
+                  dependencies,
+                  conflictIndicators,
+                  effectiveTheme,
+                  gridMin: controller.visibleStartDate.millisecondsSinceEpoch.toDouble(),
+                  gridMax: controller.visibleEndDate.millisecondsSinceEpoch.toDouble(),
+                  currentTool: controller.currentTool,
                 ),
-              if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
-                Positioned.fill(
-                  child: Container(
-                    color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
-                    child: const Center(child: CircularProgressIndicator()),
+                if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.linear)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.top ? 0 : null,
+                    bottom: widget.loadingIndicatorPosition == GanttLoadingIndicatorPosition.bottom ? 0 : null,
+                    child: SizedBox(height: widget.linearProgressHeight, child: const LinearProgressIndicator()),
                   ),
-                ),
-            ],
-          );
-        },
-      ));
+                if (controller.isLoading && widget.loadingIndicatorType == GanttLoadingIndicatorType.circular)
+                  Positioned.fill(
+                    child: Container(
+                      color: effectiveTheme.backgroundColor.withValues(alpha: 0.5),
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      );
     }
 
     if (widget.tasksFuture != null || widget.holidaysFuture != null) {
-      return _wrap(FutureBuilder<List<dynamic>>(
-        future: Future.wait([
-          widget.tasksFuture ?? Future.value(<LegacyGanttTask>[]),
-          widget.holidaysFuture ?? Future.value(<LegacyGanttTask>[])
-        ]),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          final tasks = (snapshot.data?[0] as List<LegacyGanttTask>?) ?? [];
-          final holidays = (snapshot.data?[1] as List<LegacyGanttTask>?) ?? [];
-          final allItems = [...tasks, ...holidays];
-          final conflictIndicators = widget.conflictIndicators ?? [];
-          if (allItems.isEmpty && !widget.showEmptyRows) {
-            return _buildEmptyView(context, effectiveTheme);
-          }
-          if (_internalViewModel != null) {
-            _internalViewModel!.updateVisibleRows(widget.visibleRows);
-            _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
-            _internalViewModel!.updateRowHeight(widget.rowHeight);
-            _internalViewModel!.updateAxisHeight(widget.axisHeight);
-          }
-          return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
-        },
-      ));
+      return _wrap(
+        FutureBuilder<List<dynamic>>(
+          future: Future.wait([
+            widget.tasksFuture ?? Future.value(<LegacyGanttTask>[]),
+            widget.holidaysFuture ?? Future.value(<LegacyGanttTask>[]),
+          ]),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
+            final tasks = (snapshot.data?[0] as List<LegacyGanttTask>?) ?? [];
+            final holidays = (snapshot.data?[1] as List<LegacyGanttTask>?) ?? [];
+            final allItems = [...tasks, ...holidays];
+            final conflictIndicators = widget.conflictIndicators ?? [];
+            if (allItems.isEmpty && !widget.showEmptyRows) {
+              return _buildEmptyView(context, effectiveTheme);
+            }
+            if (_internalViewModel != null) {
+              _internalViewModel!.updateVisibleRows(widget.visibleRows);
+              _internalViewModel!.updateRowMaxStackDepth(widget.rowMaxStackDepth);
+              _internalViewModel!.updateRowHeight(widget.rowHeight);
+              _internalViewModel!.updateAxisHeight(widget.axisHeight);
+            }
+            return _wrap(_buildChart(context, allItems, widget.dependencies ?? [], conflictIndicators, effectiveTheme));
+          },
+        ),
+      );
     } else {
       final tasks = widget.data ?? [];
       final holidays = widget.holidays ?? [];
@@ -675,329 +685,341 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
     }
   }
 
-  Widget _buildChart(BuildContext context, List<LegacyGanttTask> tasks, List<LegacyGanttTaskDependency> dependencies,
-          List<LegacyGanttTask> conflictIndicators, LegacyGanttTheme effectiveTheme,
-          {double? gridMin, double? gridMax, GanttTool currentTool = GanttTool.move}) =>
-      ChangeNotifierProvider<LegacyGanttViewModel>(
-        key: ValueKey(widget.syncClient),
-        create: (context) {
-          _internalViewModel = LegacyGanttViewModel(
-            data: tasks,
-            conflictIndicators: conflictIndicators,
-            dependencies: dependencies,
-            visibleRows: widget.visibleRows,
-            rowMaxStackDepth: widget.rowMaxStackDepth,
-            rowHeight: widget.rowHeight,
-            axisHeight: widget.axisHeight,
-            gridMin: gridMin ?? widget.gridMin,
-            gridMax: gridMax ?? widget.gridMax,
-            totalGridMin: widget.totalGridMin,
-            totalGridMax: widget.totalGridMax,
-            enableDragAndDrop: widget.enableDragAndDrop,
-            enableResize: widget.enableResize,
-            enableVerticalTaskDrag: widget.enableVerticalTaskDrag,
-            enableDragEdgeAutoScroll: widget.enableDragEdgeAutoScroll,
-            onTaskUpdate: widget.onTaskUpdate,
-            onTaskMove: widget.onTaskMove,
-            onTaskDoubleClick: widget.onTaskDoubleClick,
-            onTaskDelete: widget.onTaskDelete,
-            onEmptySpaceClick: widget.onEmptySpaceClick,
-            onTaskDrawEnd: widget.onTaskDrawEnd,
-            onDependencyAdd: (dependency) {
-              if (widget.controller != null) {
-                widget.controller!.addDependency(dependency);
-              }
-              widget.onDependencyAdd?.call(dependency);
-            },
-            onDependenciesSynced: (dependencies) {
-              if (widget.controller != null) {
-                widget.controller!.addDependencies(dependencies);
-              }
-              widget.onDependenciesSynced?.call(dependencies);
-            },
-            onPressTask: widget.onPressTask,
-            onTaskHover: widget.onTaskHover,
-            onTaskSecondaryTap: widget.onTaskSecondaryTap,
-            onTaskLongPress: widget.onTaskLongPress,
-            taskBarBuilder: widget.taskBarBuilder,
-            resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
-            resizeTooltipDateFormatString: effectiveTheme.resizeTooltipDateFormat,
-            scrollController: widget.scrollController,
-            ganttHorizontalScrollController: widget.horizontalScrollController,
-            onRowRequestVisible: widget.onRowRequestVisible,
-            initialFocusedTaskId: widget.focusedTaskId,
-            onFocusChange: widget.onFocusChange,
-            resizeHandleWidth: widget.resizeHandleWidth,
-            syncClient: widget.syncClient,
-            taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
-            workCalendar: widget.workCalendar,
-            rollUpMilestones: widget.rollUpMilestones,
-            showSlack: widget.showSlack,
-            onBulkTaskUpdate: widget.onBulkTaskUpdate,
-            onSelectionChanged: (ids) {
-              if (widget.controller != null) {
-                widget.controller!.setSelectedTaskIds(ids);
-              }
-            },
-          )
+  Widget _buildChart(
+    BuildContext context,
+    List<LegacyGanttTask> tasks,
+    List<LegacyGanttTaskDependency> dependencies,
+    List<LegacyGanttTask> conflictIndicators,
+    LegacyGanttTheme effectiveTheme, {
+    double? gridMin,
+    double? gridMax,
+    GanttTool currentTool = GanttTool.move,
+  }) => ChangeNotifierProvider<LegacyGanttViewModel>(
+    key: ValueKey(widget.syncClient),
+    create: (context) {
+      _internalViewModel =
+          LegacyGanttViewModel(
+              data: tasks,
+              conflictIndicators: conflictIndicators,
+              dependencies: dependencies,
+              visibleRows: widget.visibleRows,
+              rowMaxStackDepth: widget.rowMaxStackDepth,
+              rowHeight: widget.rowHeight,
+              axisHeight: widget.axisHeight,
+              gridMin: gridMin ?? widget.gridMin,
+              gridMax: gridMax ?? widget.gridMax,
+              totalGridMin: widget.totalGridMin,
+              totalGridMax: widget.totalGridMax,
+              enableDragAndDrop: widget.enableDragAndDrop,
+              enableResize: widget.enableResize,
+              enableVerticalTaskDrag: widget.enableVerticalTaskDrag,
+              enableDragEdgeAutoScroll: widget.enableDragEdgeAutoScroll,
+              onTaskUpdate: widget.onTaskUpdate,
+              onTaskMove: widget.onTaskMove,
+              onTaskDoubleClick: widget.onTaskDoubleClick,
+              onTaskDelete: widget.onTaskDelete,
+              onEmptySpaceClick: widget.onEmptySpaceClick,
+              onTaskDrawEnd: widget.onTaskDrawEnd,
+              onDependencyAdd: (dependency) {
+                if (widget.controller != null) {
+                  widget.controller!.addDependency(dependency);
+                }
+                widget.onDependencyAdd?.call(dependency);
+              },
+              onDependenciesSynced: (dependencies) {
+                if (widget.controller != null) {
+                  widget.controller!.addDependencies(dependencies);
+                }
+                widget.onDependenciesSynced?.call(dependencies);
+              },
+              onPressTask: widget.onPressTask,
+              onTaskHover: widget.onTaskHover,
+              onTaskSecondaryTap: widget.onTaskSecondaryTap,
+              onTaskLongPress: widget.onTaskLongPress,
+              taskBarBuilder: widget.taskBarBuilder,
+              resizeTooltipDateFormat: widget.resizeTooltipDateFormat,
+              resizeTooltipDateFormatString: effectiveTheme.resizeTooltipDateFormat,
+              scrollController: widget.scrollController,
+              ganttHorizontalScrollController: widget.horizontalScrollController,
+              onRowRequestVisible: widget.onRowRequestVisible,
+              initialFocusedTaskId: widget.focusedTaskId,
+              onFocusChange: widget.onFocusChange,
+              resizeHandleWidth: widget.resizeHandleWidth,
+              syncClient: widget.syncClient,
+              taskGrouper: widget.taskGrouper ?? (task) => task.resourceId,
+              workCalendar: widget.workCalendar,
+              rollUpMilestones: widget.rollUpMilestones,
+              showSlack: widget.showSlack,
+              onBulkTaskUpdate: widget.onBulkTaskUpdate,
+              onSelectionChanged: (ids) {
+                if (widget.controller != null) {
+                  widget.controller!.setSelectedTaskIds(ids);
+                }
+              },
+            )
             ..showRemoteCursors = widget.showCursors
             ..showCriticalPath = widget.showCriticalPath;
-          return _internalViewModel!;
-        },
-        child: Consumer<LegacyGanttViewModel>(
-          builder: (context, vm, child) {
-            SchedulerBinding.instance.addPostFrameCallback((_) {
-              if (!vm.isDisposed) {
-                vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
-                vm.updateFocusedTask(widget.focusedTaskId);
-                vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat);
-                vm.updateResizeTooltipDateFormatString(effectiveTheme.resizeTooltipDateFormat);
-                vm.setTool(currentTool);
-              }
-            });
+      return _internalViewModel!;
+    },
+    child: Consumer<LegacyGanttViewModel>(
+      builder: (context, vm, child) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (!vm.isDisposed) {
+            vm.updateVisibleRange(gridMin ?? widget.gridMin, gridMax ?? widget.gridMax);
+            vm.updateFocusedTask(widget.focusedTaskId);
+            vm.updateResizeTooltipDateFormat(widget.resizeTooltipDateFormat);
+            vm.updateResizeTooltipDateFormatString(effectiveTheme.resizeTooltipDateFormat);
+            vm.setTool(currentTool);
+          }
+        });
 
-            return Column(
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints constraints) {
-                      if (constraints.maxWidth == 0 || constraints.maxHeight == 0) {
-                        return const SizedBox.shrink();
-                      }
+        return Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  if (constraints.maxWidth == 0 || constraints.maxHeight == 0) {
+                    return const SizedBox.shrink();
+                  }
 
-                      vm.updateLayout(constraints.maxWidth, constraints.maxHeight);
+                  vm.updateLayout(constraints.maxWidth, constraints.maxHeight);
 
-                      final double totalContentWidth =
-                          vm.totalDomain.isEmpty ? constraints.maxWidth : vm.totalScale(vm.totalDomain.last);
+                  final double totalContentWidth = vm.totalDomain.isEmpty
+                      ? constraints.maxWidth
+                      : vm.totalScale(vm.totalDomain.last);
 
-                      return Column(
-                        children: [
-                          Expanded(
-                            child: Listener(
-                              onPointerDown: vm.onPointerEvent,
-                              onPointerUp: vm.onPointerEvent,
-                              onPointerCancel: vm.onPointerEvent,
-                              onPointerSignal: (event) {
-                                if (event is PointerScrollEvent) {
-                                  if (event.scrollDelta.dx != 0) {
-                                    vm.onHorizontalScroll(event.scrollDelta.dx);
-                                  }
-                                  if (event.scrollDelta.dy != 0) {
-                                    if (vm.scrollController != null && vm.scrollController!.hasClients) {
-                                      final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
-                                      vm.scrollController!.jumpTo(newOffset.clamp(
-                                          vm.scrollController!.position.minScrollExtent,
-                                          vm.scrollController!.position.maxScrollExtent));
-                                    }
-                                  }
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: Listener(
+                          onPointerDown: vm.onPointerEvent,
+                          onPointerUp: vm.onPointerEvent,
+                          onPointerCancel: vm.onPointerEvent,
+                          onPointerSignal: (event) {
+                            if (event is PointerScrollEvent) {
+                              if (event.scrollDelta.dx != 0) {
+                                vm.onHorizontalScroll(event.scrollDelta.dx);
+                              }
+                              if (event.scrollDelta.dy != 0) {
+                                if (vm.scrollController != null && vm.scrollController!.hasClients) {
+                                  final newOffset = vm.scrollController!.offset + event.scrollDelta.dy;
+                                  vm.scrollController!.jumpTo(
+                                    newOffset.clamp(
+                                      vm.scrollController!.position.minScrollExtent,
+                                      vm.scrollController!.position.maxScrollExtent,
+                                    ),
+                                  );
                                 }
-                              },
-                              child: GestureDetector(
-                                onPanStart: (details) => vm.onPanStart(details),
-                                onPanUpdate: (details) => vm.onPanUpdate(details),
-                                onPanEnd: (details) => vm.onPanEnd(details),
-                                onTapDown: (details) => vm.onTapDown(details),
-                                onTap: () => vm.onTap(),
-                                onSecondaryTapUp: (details) =>
-                                    vm.onSecondaryTap(details.localPosition, details.globalPosition),
-                                onLongPressStart: (details) =>
-                                    vm.onLongPress(details.localPosition, details.globalPosition),
-                                onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
-                                child: MouseRegion(
-                                  cursor: vm.cursor,
-                                  onHover: (event) => vm.onHover(event),
-                                  onExit: (event) => vm.onHoverExit(event),
-                                  child: ClipRect(
-                                    child: Stack(
-                                      children: [
-                                        Positioned.fill(
-                                          child: RepaintBoundary(
+                              }
+                            }
+                          },
+                          child: GestureDetector(
+                            onPanStart: (details) => vm.onPanStart(details),
+                            onPanUpdate: (details) => vm.onPanUpdate(details),
+                            onPanEnd: (details) => vm.onPanEnd(details),
+                            onTapDown: (details) => vm.onTapDown(details),
+                            onTap: () => vm.onTap(),
+                            onSecondaryTapUp: (details) =>
+                                vm.onSecondaryTap(details.localPosition, details.globalPosition),
+                            onLongPressStart: (details) =>
+                                vm.onLongPress(details.localPosition, details.globalPosition),
+                            onDoubleTapDown: (details) => vm.onDoubleTap(details.localPosition),
+                            child: MouseRegion(
+                              cursor: vm.cursor,
+                              onHover: (event) => vm.onHover(event),
+                              onExit: (event) => vm.onHoverExit(event),
+                              child: ClipRect(
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: RepaintBoundary(
+                                        child: CustomPaint(
+                                          painter: AxisPainter(
+                                            x: 0,
+                                            y: 0,
+                                            width: totalContentWidth,
+                                            height: constraints.maxHeight,
+                                            scale: vm.totalScale,
+                                            domain: vm.totalDomain,
+                                            visibleDomain: vm.visibleExtent,
+                                            theme: effectiveTheme.copyWith(
+                                              axisTextStyle: const TextStyle(color: Colors.transparent),
+                                            ),
+                                            weekendColor: effectiveTheme.weekendColor,
+                                            weekendDays:
+                                                widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: vm.timeAxisHeight,
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 0,
+                                      child: Stack(
+                                        children: [
+                                          RepaintBoundary(
                                             child: CustomPaint(
-                                              painter: AxisPainter(
-                                                x: 0,
-                                                y: 0,
-                                                width: totalContentWidth,
-                                                height: constraints.maxHeight,
-                                                scale: vm.totalScale,
+                                              size: Size(
+                                                constraints.maxWidth,
+                                                constraints.maxHeight - vm.timeAxisHeight,
+                                              ),
+                                              painter: BarsCollectionPainter(
+                                                tasksByRow: vm.tasksByRow,
+                                                rowVerticalOffsets: vm.rowVerticalOffsets,
+                                                conflictIndicators: vm.conflictIndicators,
+                                                dependencies: vm.dependencies,
+                                                data: vm.data,
                                                 domain: vm.totalDomain,
-                                                visibleDomain: vm.visibleExtent,
-                                                theme: effectiveTheme.copyWith(
-                                                    axisTextStyle: const TextStyle(color: Colors.transparent)),
-                                                weekendColor: effectiveTheme.weekendColor,
-                                                weekendDays:
-                                                    widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
+                                                visibleRows: widget.visibleRows,
+                                                rowMaxStackDepth: widget.rowMaxStackDepth,
+                                                scale: vm.totalScale,
+                                                rowHeight: widget.rowHeight,
+                                                draggedTaskId: vm.draggedTask?.id,
+                                                drawingTask: vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
+                                                ghostTaskStart: vm.ghostTaskStart,
+                                                ghostTaskEnd: vm.ghostTaskEnd,
+                                                ghostTaskRowId: vm.ghostTaskRowId,
+                                                remoteGhosts: vm.remoteGhosts,
+                                                theme: effectiveTheme,
+                                                hoveredRowId: vm.hoveredRowId,
+                                                hoveredDate: vm.hoveredDate,
+                                                cpmStats: vm.cpmStats,
+                                                showSlack: vm.showSlack,
+                                                hasCustomTaskBuilder: widget.taskBarBuilder != null,
+                                                hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
+                                                translateY: vm.translateY,
+                                                selectedTaskIds: vm.selectedTaskIds,
+                                                bulkGhostTasks: vm.bulkGhostTasks,
+                                                rollUpMilestones: widget.rollUpMilestones,
+                                                enableDependencyCreation: vm.currentTool == GanttTool.drawDependencies,
+                                                dependencyDragStartTaskId: vm.dependencyStartTaskId,
+                                                dependencyDragStartIsFromStart:
+                                                    vm.dependencyStartSide == TaskPart.startHandle,
+                                                dependencyDragCurrentPosition: vm.currentDragPosition,
+                                                hoveredTaskForDependency: vm.dependencyHoveredTaskId,
+                                                criticalTaskIds: vm.criticalTaskIds,
+                                                criticalDependencies: vm.criticalDependencies,
+                                                workCalendar: vm.workCalendar,
+                                                showNowLine: widget.showNowLine,
+                                                nowLineDate: widget.nowLineDate,
+                                                dependencyDragStatus: vm.dependencyDragStatus,
+                                                dependencyDragDelayAmount: vm.dependencyDragDelayAmount,
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        Positioned(
-                                          top: vm.timeAxisHeight,
-                                          left: 0,
-                                          right: 0,
-                                          bottom: 0,
-                                          child: Stack(
-                                            children: [
-                                              RepaintBoundary(
+                                          if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
+                                            CustomPaint(
+                                              size: Size(
+                                                constraints.maxWidth,
+                                                constraints.maxHeight - vm.timeAxisHeight,
+                                              ),
+                                              painter: _SelectionBoxPainter(
+                                                rect: vm.selectionRect!,
+                                                borderColor: Theme.of(context).primaryColor,
+                                                fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                                              ),
+                                            ),
+                                          if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
+                                            ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
+                                          ..._buildCustomCellWidgets(vm, vm.data),
+                                          ..._buildFocusedTaskWidgets(
+                                            vm,
+                                            vm.data,
+                                            effectiveTheme,
+                                            widget.focusedTaskResizeHandleBuilder,
+                                            widget.focusedTaskResizeHandleWidth,
+                                            vm.rowVerticalOffsets,
+                                          ),
+                                          if (vm.showRemoteCursors)
+                                            IgnorePointer(
+                                              child: RepaintBoundary(
                                                 child: CustomPaint(
                                                   size: Size(
-                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                                  painter: BarsCollectionPainter(
-                                                    tasksByRow: vm.tasksByRow,
-                                                    rowVerticalOffsets: vm.rowVerticalOffsets,
-                                                    conflictIndicators: vm.conflictIndicators,
-                                                    dependencies: vm.dependencies,
-                                                    data: vm.data,
-                                                    domain: vm.totalDomain,
+                                                    constraints.maxWidth,
+                                                    constraints.maxHeight - vm.timeAxisHeight,
+                                                  ),
+                                                  painter: CursorPainter(
+                                                    remoteCursors: vm.showRemoteCursors ? vm.remoteCursors : const {},
+                                                    totalScale: vm.totalScale,
                                                     visibleRows: widget.visibleRows,
                                                     rowMaxStackDepth: widget.rowMaxStackDepth,
-                                                    scale: vm.totalScale,
                                                     rowHeight: widget.rowHeight,
-                                                    draggedTaskId: vm.draggedTask?.id,
-                                                    drawingTask:
-                                                        vm.currentTool == GanttTool.draw ? vm.draggedTask : null,
-                                                    ghostTaskStart: vm.ghostTaskStart,
-                                                    ghostTaskEnd: vm.ghostTaskEnd,
-                                                    ghostTaskRowId: vm.ghostTaskRowId,
-                                                    remoteGhosts: vm.remoteGhosts,
-                                                    theme: effectiveTheme,
-                                                    hoveredRowId: vm.hoveredRowId,
-                                                    hoveredDate: vm.hoveredDate,
-                                                    cpmStats: vm.cpmStats,
-                                                    showSlack: vm.showSlack,
-                                                    hasCustomTaskBuilder: widget.taskBarBuilder != null,
-                                                    hasCustomTaskContentBuilder: widget.taskContentBuilder != null,
                                                     translateY: vm.translateY,
-                                                    selectedTaskIds: vm.selectedTaskIds,
-                                                    bulkGhostTasks: vm.bulkGhostTasks,
-                                                    rollUpMilestones: widget.rollUpMilestones,
-                                                    enableDependencyCreation:
-                                                        vm.currentTool == GanttTool.drawDependencies,
-                                                    dependencyDragStartTaskId: vm.dependencyStartTaskId,
-                                                    dependencyDragStartIsFromStart:
-                                                        vm.dependencyStartSide == TaskPart.startHandle,
-                                                    dependencyDragCurrentPosition: vm.currentDragPosition,
-                                                    hoveredTaskForDependency: vm.dependencyHoveredTaskId,
-                                                    criticalTaskIds: vm.criticalTaskIds,
-                                                    criticalDependencies: vm.criticalDependencies,
-                                                    workCalendar: vm.workCalendar,
-                                                    showNowLine: widget.showNowLine,
-                                                    nowLineDate: widget.nowLineDate,
-                                                    dependencyDragStatus: vm.dependencyDragStatus,
-                                                    dependencyDragDelayAmount: vm.dependencyDragDelayAmount,
+                                                    rowVerticalOffsets: vm.rowVerticalOffsets,
                                                   ),
                                                 ),
                                               ),
-                                              if (vm.currentTool == GanttTool.select && vm.selectionRect != null)
-                                                CustomPaint(
-                                                  size: Size(
-                                                      constraints.maxWidth, constraints.maxHeight - vm.timeAxisHeight),
-                                                  painter: _SelectionBoxPainter(
-                                                    rect: vm.selectionRect!,
-                                                    borderColor: Theme.of(context).primaryColor,
-                                                    fillColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                                                  ),
-                                                ),
-                                              if (widget.taskBarBuilder != null || widget.taskContentBuilder != null)
-                                                ..._buildTaskWidgets(vm, vm.data, effectiveTheme),
-                                              ..._buildCustomCellWidgets(vm, vm.data),
-                                              ..._buildFocusedTaskWidgets(
-                                                  vm,
-                                                  vm.data,
-                                                  effectiveTheme,
-                                                  widget.focusedTaskResizeHandleBuilder,
-                                                  widget.focusedTaskResizeHandleWidth,
-                                                  vm.rowVerticalOffsets),
-                                              if (vm.showRemoteCursors)
-                                                IgnorePointer(
-                                                  child: RepaintBoundary(
-                                                    child: CustomPaint(
-                                                      size: Size(constraints.maxWidth,
-                                                          constraints.maxHeight - vm.timeAxisHeight),
-                                                      painter: CursorPainter(
-                                                        remoteCursors:
-                                                            vm.showRemoteCursors ? vm.remoteCursors : const {},
-                                                        totalScale: vm.totalScale,
-                                                        visibleRows: widget.visibleRows,
-                                                        rowMaxStackDepth: widget.rowMaxStackDepth,
-                                                        rowHeight: widget.rowHeight,
-                                                        translateY: vm.translateY,
-                                                        rowVerticalOffsets: vm.rowVerticalOffsets,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 0,
-                                          left: 0,
-                                          right: 0,
-                                          height: vm.timeAxisHeight,
-                                          child: widget.timelineAxisHeaderBuilder != null
-                                              ? widget.timelineAxisHeaderBuilder!(
-                                                  context,
-                                                  vm.totalScale,
-                                                  vm.visibleExtent,
-                                                  vm.totalDomain,
-                                                  effectiveTheme,
-                                                  totalContentWidth,
-                                                )
-                                              : Container(
-                                                  color: effectiveTheme.backgroundColor,
-                                                  child: RepaintBoundary(
-                                                    child: CustomPaint(
-                                                      painter: AxisPainter(
-                                                        x: 0,
-                                                        y: 0,
-                                                        width: totalContentWidth,
-                                                        height: vm.timeAxisHeight,
-                                                        scale: vm.totalScale,
-                                                        domain: vm.totalDomain,
-                                                        visibleDomain: vm.visibleExtent,
-                                                        theme: effectiveTheme,
-                                                        timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
-                                                        weekendColor: effectiveTheme.weekendColor,
-                                                        weekendDays: widget.workCalendar?.weekendDays.toList() ??
-                                                            widget.weekendDays,
-                                                        showGridLines: false,
-                                                        verticallyCenterLabels: true,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                        ),
-                                        if (vm.showResizeTooltip)
-                                          Positioned(
-                                            left: vm.resizeTooltipPosition.dx + 15,
-                                            top: vm.resizeTooltipPosition.dy + 15,
-                                            child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
-                                          ),
-                                      ],
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
+                                    Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      height: vm.timeAxisHeight,
+                                      child: widget.timelineAxisHeaderBuilder != null
+                                          ? widget.timelineAxisHeaderBuilder!(
+                                              context,
+                                              vm.totalScale,
+                                              vm.visibleExtent,
+                                              vm.totalDomain,
+                                              effectiveTheme,
+                                              totalContentWidth,
+                                            )
+                                          : Container(
+                                              color: effectiveTheme.backgroundColor,
+                                              child: RepaintBoundary(
+                                                child: CustomPaint(
+                                                  painter: AxisPainter(
+                                                    x: 0,
+                                                    y: 0,
+                                                    width: totalContentWidth,
+                                                    height: vm.timeAxisHeight,
+                                                    scale: vm.totalScale,
+                                                    domain: vm.totalDomain,
+                                                    visibleDomain: vm.visibleExtent,
+                                                    theme: effectiveTheme,
+                                                    timelineAxisLabelBuilder: widget.timelineAxisLabelBuilder,
+                                                    weekendColor: effectiveTheme.weekendColor,
+                                                    weekendDays:
+                                                        widget.workCalendar?.weekendDays.toList() ?? widget.weekendDays,
+                                                    showGridLines: false,
+                                                    verticallyCenterLabels: true,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                    if (vm.showResizeTooltip)
+                                      Positioned(
+                                        left: vm.resizeTooltipPosition.dx + 15,
+                                        top: vm.resizeTooltipPosition.dy + 15,
+                                        child: _buildResizeTooltip(context, vm.resizeTooltipText, effectiveTheme),
+                                      ),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                          if (widget.showResourceHistogram) ...[
-                            const Divider(height: 1),
-                            ResourceHistogramWidget(
-                              viewModel: vm,
-                              height: 150,
-                              theme: effectiveTheme,
-                            ),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
+                        ),
+                      ),
+                      if (widget.showResourceHistogram) ...[
+                        const Divider(height: 1),
+                        ResourceHistogramWidget(viewModel: vm, height: 150, theme: effectiveTheme),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
 
   Widget _wrap(Widget child) {
     if (widget.height != null) {
@@ -1017,10 +1039,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
         decoration: BoxDecoration(color: tooltipBackgroundColor, borderRadius: BorderRadius.circular(4)),
-        child: Text(
-          text,
-          style: theme.axisTextStyle.copyWith(color: tooltipFontColor),
-        ),
+        child: Text(text, style: theme.axisTextStyle.copyWith(color: tooltipFontColor)),
       ),
     );
   }
@@ -1082,13 +1101,7 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
             );
           }
 
-          taskWidgets.add(Positioned(
-            left: startX,
-            top: top,
-            width: width,
-            height: vm.rowHeight,
-            child: taskWidget,
-          ));
+          taskWidgets.add(Positioned(left: startX, top: top, width: width, height: vm.rowHeight, child: taskWidget));
         }
       }
       final stackDepth = vm.rowMaxStackDepth[rowData.id] ?? 1;
@@ -1178,8 +1191,15 @@ class _LegacyGanttChartWidgetState extends State<LegacyGanttChartWidget> {
 
             if (width > 0) {
               final top = cumulativeRowTop + (task.stackIndex * vm.rowHeight) + vm.translateY;
-              customCells.add(Positioned(
-                  left: startX, top: top, width: width, height: vm.rowHeight, child: task.cellBuilder!(currentDate)));
+              customCells.add(
+                Positioned(
+                  left: startX,
+                  top: top,
+                  width: width,
+                  height: vm.rowHeight,
+                  child: task.cellBuilder!(currentDate),
+                ),
+              );
             }
             currentDate = nextDay;
           }
@@ -1212,10 +1232,12 @@ List<Widget> _buildFocusedTaskWidgets(
   final double barTop = rowTop + (focusedTask.stackIndex * vm.rowHeight);
 
   // Ghost task support
-  final effectiveStart =
-      (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null) ? vm.ghostTaskStart! : focusedTask.start;
-  final effectiveEnd =
-      (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null) ? vm.ghostTaskEnd! : focusedTask.end;
+  final effectiveStart = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskStart != null)
+      ? vm.ghostTaskStart!
+      : focusedTask.start;
+  final effectiveEnd = (vm.draggedTask?.id == focusedTask.id && vm.ghostTaskEnd != null)
+      ? vm.ghostTaskEnd!
+      : focusedTask.end;
 
   final startX = vm.totalScale(effectiveStart);
   final endX = vm.totalScale(effectiveEnd);
@@ -1223,32 +1245,40 @@ List<Widget> _buildFocusedTaskWidgets(
 
   final List<Widget> widgets = [];
   if (width > 0) {
-    widgets.add(Positioned(
-      left: startX,
-      top: barTop,
-      width: width,
-      height: vm.rowHeight,
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: theme.barColorSecondary.withValues(alpha: 0.5), width: 3),
-            borderRadius: BorderRadius.circular(4.0),
+    widgets.add(
+      Positioned(
+        left: startX,
+        top: barTop,
+        width: width,
+        height: vm.rowHeight,
+        child: IgnorePointer(
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.barColorSecondary.withValues(alpha: 0.5), width: 3),
+              borderRadius: BorderRadius.circular(4.0),
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     if (handleBuilder != null) {
-      widgets.add(Positioned(
+      widgets.add(
+        Positioned(
           left: startX - handleWidth,
           top: barTop,
           height: vm.rowHeight,
-          child: handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth)));
-      widgets.add(Positioned(
+          child: handleBuilder(focusedTask, TaskPart.startHandle, vm, handleWidth),
+        ),
+      );
+      widgets.add(
+        Positioned(
           left: endX,
           top: barTop,
           height: vm.rowHeight,
-          child: handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth)));
+          child: handleBuilder(focusedTask, TaskPart.endHandle, vm, handleWidth),
+        ),
+      );
     }
   }
 
@@ -1303,10 +1333,7 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: Container(
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(4.0),
-          ),
+          decoration: BoxDecoration(color: Colors.transparent, borderRadius: BorderRadius.circular(4.0)),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1325,10 +1352,7 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
                         style: theme.taskTextStyle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: content,
-                        ),
+                        child: Align(alignment: Alignment.centerLeft, child: content),
                       ),
                     ),
                   ),
@@ -1352,10 +1376,7 @@ class _DefaultTaskBarState extends State<_DefaultTaskBar> {
                           borderRadius: BorderRadius.all(theme.barCornerRadius),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: content,
-                            ),
+                            child: Align(alignment: Alignment.centerLeft, child: content),
                           ),
                         ),
                       ),
@@ -1390,9 +1411,9 @@ class _OverlapIndicatorBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-        painter: _OverlapPainter(theme: theme),
-        child: Container(),
-      );
+    painter: _OverlapPainter(theme: theme),
+    child: Container(),
+  );
 }
 
 /// The actual painter for the conflict/overlap pattern.
@@ -1436,7 +1457,10 @@ class _OverlapPainter extends CustomPainter {
     const double lineSpacing = 8.0;
     for (double i = -rrect.height; i < rrect.width; i += lineSpacing) {
       canvas.drawLine(
-          Offset(rrect.left + i, rrect.top), Offset(rrect.left + i + rrect.height, rrect.bottom), patternPaint);
+        Offset(rrect.left + i, rrect.top),
+        Offset(rrect.left + i + rrect.height, rrect.bottom),
+        patternPaint,
+      );
     }
     canvas.restore();
   }
@@ -1479,11 +1503,7 @@ class _ConflictClipper extends CustomClipper<Path> {
   final List<LegacyGanttTask> conflicts;
   final double barHeight;
 
-  _ConflictClipper({
-    required this.task,
-    required this.conflicts,
-    required this.barHeight,
-  });
+  _ConflictClipper({required this.task, required this.conflicts, required this.barHeight});
 
   @override
   Path getClip(Size size) {

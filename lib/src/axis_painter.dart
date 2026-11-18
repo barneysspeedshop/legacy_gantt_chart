@@ -2,6 +2,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:intl/intl.dart';
+
 import 'dart:ui' as ui;
 
 import 'models/legacy_gantt_theme.dart';
@@ -108,11 +109,7 @@ class AxisPainter extends CustomPainter {
       final testLabel = step.labelFormat(DateTime(2023, 1, 1, 10, 0)); // Sample date
       final textStyle = theme.axisTextStyle;
       final textSpan = TextSpan(text: testLabel, style: textStyle);
-      final textPainter = TextPainter(
-        text: textSpan,
-        textAlign: TextAlign.center,
-        textDirection: ui.TextDirection.ltr,
-      );
+      final textPainter = TextPainter(text: textSpan, textAlign: TextAlign.center, textDirection: ui.TextDirection.ltr);
       textPainter.layout();
 
       if (pixelsPerTick > textPainter.width + 8) {
@@ -165,11 +162,7 @@ class AxisPainter extends CustomPainter {
       previousTickTime = tickTime;
 
       if (showGridLines) {
-        canvas.drawLine(
-          Offset(tickX, y),
-          Offset(tickX, y + height),
-          paint,
-        );
+        canvas.drawLine(Offset(tickX, y), Offset(tickX, y + height), paint);
       }
 
       final textStyle = theme.axisTextStyle;
@@ -195,10 +188,7 @@ class AxisPainter extends CustomPainter {
             textY = y - textPainter.height;
           }
 
-          textPainter.paint(
-            canvas,
-            Offset(labelX, textY),
-          );
+          textPainter.paint(canvas, Offset(labelX, textY));
 
           lastLabelRightEdge = labelX + labelWidth;
         }
@@ -216,7 +206,7 @@ class AxisPainter extends CustomPainter {
       !listEquals(domain, oldDelegate.domain) ||
       (visibleDomain.isNotEmpty && oldDelegate.visibleDomain.isNotEmpty
           ? visibleDomain.first != oldDelegate.visibleDomain.first ||
-              visibleDomain.last != oldDelegate.visibleDomain.last
+                visibleDomain.last != oldDelegate.visibleDomain.last
           : listEquals(visibleDomain, oldDelegate.visibleDomain));
 
   DateTime _roundDownTo(DateTime dt, Duration delta) {
@@ -228,10 +218,7 @@ class AxisPainter extends CustomPainter {
     final int roundedLocalMs = (localMs ~/ deltaMs) * deltaMs;
     final int resultMs = roundedLocalMs - offset;
 
-    return DateTime.fromMillisecondsSinceEpoch(
-      resultMs,
-      isUtc: dt.isUtc,
-    );
+    return DateTime.fromMillisecondsSinceEpoch(resultMs, isUtc: dt.isUtc);
   }
 }
 

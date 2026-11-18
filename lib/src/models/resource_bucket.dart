@@ -7,11 +7,7 @@ class ResourceBucket {
   final String resourceId;
   final double totalLoad;
 
-  const ResourceBucket({
-    required this.date,
-    required this.resourceId,
-    this.totalLoad = 0.0,
-  });
+  const ResourceBucket({required this.date, required this.resourceId, this.totalLoad = 0.0});
 
   /// 1.0 = 100% capacity.
   bool get isOverAllocated => totalLoad > 1.0;
@@ -28,14 +24,9 @@ class ResourceBucket {
   @override
   int get hashCode => date.hashCode ^ resourceId.hashCode ^ totalLoad.hashCode;
 
-  ResourceBucket copyWith({
-    DateTime? date,
-    String? resourceId,
-    double? totalLoad,
-  }) =>
-      ResourceBucket(
-        date: date ?? this.date,
-        resourceId: resourceId ?? this.resourceId,
-        totalLoad: totalLoad ?? this.totalLoad,
-      );
+  ResourceBucket copyWith({DateTime? date, String? resourceId, double? totalLoad}) => ResourceBucket(
+    date: date ?? this.date,
+    resourceId: resourceId ?? this.resourceId,
+    totalLoad: totalLoad ?? this.totalLoad,
+  );
 }

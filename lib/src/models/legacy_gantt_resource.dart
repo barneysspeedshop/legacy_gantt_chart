@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
+
 import 'immutable_metadata.dart';
 
 /// Represents a resource (person or job) in the Gantt chart.
