@@ -1,5 +1,5 @@
 // packages/gantt_chart/lib/src/axis_painter.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:intl/intl.dart';
 import 'dart:ui' as ui;

@@ -1,9 +1,8 @@
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'dart:ui' as ui;
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:collection/collection.dart'; // Added this import
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';
@@ -24,11 +23,7 @@ class MyApp extends StatelessWidget {
         title: 'Legacy Gantt Chart Example',
         // The localizations delegates and supported locales are required for the
         // `intl` package, which is used for formatting dates and times.
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [
           Locale('en', 'US'),
           Locale('fr', 'FR'),
@@ -46,6 +41,9 @@ class MyApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: Brightness.dark),
         ),
         themeMode: ThemeMode.system,
+        // legacy_context_menu still consumes Flutter's legacy Material API.
+        // ignore: deprecated_member_use
+        builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
         home: const GanttView(),
       );
 }

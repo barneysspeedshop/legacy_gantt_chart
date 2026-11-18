@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'dart:ui' as ui;
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:intl/intl.dart';

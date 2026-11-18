@@ -119,7 +119,8 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  legacy_gantt_chart: ^5.0.0
+  legacy_gantt_chart: ^10.0.0
+  material_ui: ^1.11.1
 ```
 
 Then, you can install the package using the command-line:
@@ -250,7 +251,7 @@ LegacyGanttChartWidget(
 Here is a minimal example of how to create a static Gantt chart.
 
 ```dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 
 class MinimalGanttChart extends StatelessWidget {

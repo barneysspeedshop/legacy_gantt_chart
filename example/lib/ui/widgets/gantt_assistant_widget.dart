@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import '../../services/gantt_natural_language_service.dart';
 import '../../view_models/gantt_view_model.dart';

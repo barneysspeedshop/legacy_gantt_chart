@@ -1,5 +1,6 @@
 // packages/gantt_chart/lib/src/models/gantt_chart_colors.dart
-import 'package:flutter/material.dart';
+import 'dart:ui';
+import 'package:flutter/foundation.dart';
 
 /// Defines the color scheme for the Gantt chart.
 @immutable
