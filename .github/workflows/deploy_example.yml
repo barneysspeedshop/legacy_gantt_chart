@@ -1,44 +1,53 @@
 name: Deploy Example to GitHub Pages
-
-# Run this workflow every time a change is pushed to the `main` branch
-on:
+'on':
   push:
-    branches: [ main ]
-
-# Prevent multiple workflows from running at the same time for the same branch
+    branches:
+    - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
-  build_and_deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.50.0'
-          channel: 'stable'
-          cache: true
-
-      - name: Cache Pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PUB_CACHE }}
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: ${{ runner.os }}-pub-
-
-      - name: Build Flutter web app
-        run: |
-          cd example
-          flutter pub get
-          flutter build web --release --base-href /legacy_gantt_chart/
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./example/build/web
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Set up Flutter
+      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        flutter-version: 3.50.0
+        channel: stable
+        cache: true
+    - name: Build Flutter web app
+      run: |
+        cd example
+        flutter pub get
+        flutter build web --release --base-href /legacy_gantt_chart/
+    - name: Upload static site
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: pages-site
+        path: example/build/web
+        retention-days: 1
+    timeout-minutes: 20
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: pages-site
+        path: public
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453
+      with:
+        github_token: ${{ github.token }}
+        publish_dir: ./public
+permissions:
+  contents: read

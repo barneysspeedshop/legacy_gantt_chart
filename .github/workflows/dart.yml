@@ -1,56 +1,43 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
 name: Dart
-
-on:
+'on':
   push:
-    branches: [ "main" ]
+    branches:
+    - main
   pull_request:
-    branches: [ "main" ]
-
+    branches:
+    - main
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.50.0'
-          channel: 'stable'
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Verify published library formatting
-        run: dart format --output=none --set-exit-if-changed lib
-
-      # Consider passing '--fatal-infos' for slightly stricter analysis.
-      - name: Analyze project source
-        run: flutter analyze
-
-      # Your project will need to have tests in test/ and a dependency on
-      # package:test for this step to succeed. Note that Flutter projects will
-      # want to change this to 'flutter test'.
-      - name: Run package tests
-        run: flutter test
-
-      - name: Run example tests
-        run: |
-          cd example
-          flutter pub get
-          flutter test
-
-      - name: Install package scoring tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y webp
-          dart pub global activate pana 0.23.19
-
-      - name: Verify full pub score
-        run: dart pub global run pana --exit-code-threshold 0 .
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        flutter-version: 3.50.0
+        channel: stable
+        cache: true
+    - name: Install dependencies
+      run: flutter pub get
+    - name: Verify published library formatting
+      run: dart format --output=none --set-exit-if-changed lib
+    - name: Analyze project source
+      run: flutter analyze
+    - name: Run package tests
+      run: flutter test
+    - name: Run example tests
+      run: |
+        cd example
+        flutter pub get
+        flutter test
+    - name: Install package scoring tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y webp
+        dart pub global activate pana 0.23.19
+    - name: Verify full pub score
+      run: dart pub global run pana --exit-code-threshold 0 .
+    timeout-minutes: 20
+permissions:
+  contents: read
