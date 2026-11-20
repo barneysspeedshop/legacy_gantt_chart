@@ -113,6 +113,13 @@ void main() {
         username: 'user',
         password: 'pass',
       );
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'INSERT_TASK',
+        data: {'id': 'remote-task', 'rowId': 'row', 'name': 'Remote task',
+          'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
+        timestamp: Hlc.fromDate(DateTime.now(), 'server'),
+        actorId: 'server',
+      ));
     });
 
     tearDown(() {

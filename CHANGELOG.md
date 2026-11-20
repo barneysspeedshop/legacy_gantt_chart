@@ -1,5 +1,7 @@
 ## 10.0.2
 
+* Give offline clients distinct, monotonic hybrid clocks so replacement operations are causally newer than resets.
+* Keep sample generation local until an explicit reseed; preserve remote root-resource hierarchy and safely replay reset/synchronization batches in the demo, including dependency types and lag.
 * Preserve reset and other control operations in mixed outgoing updates, keeping their order between entity batches so reseeding replaces the remote dataset correctly.
 * Default both public demo entry points to the hosted server and prefill the shared demo account.
 

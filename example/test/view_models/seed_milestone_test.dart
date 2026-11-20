@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:example/view_models/gantt_view_model.dart';
 import 'package:example/data/local/gantt_db.dart';
 import 'package:example/data/local/local_gantt_repository.dart';
@@ -10,6 +11,7 @@ import 'package:example/data/local/local_gantt_repository.dart';
 class BlockingSyncClient implements GanttSyncClient {
   final sending = Completer<void>();
   final release = Completer<void>();
+  final sentOperations = <Operation>[];
 
   @override
   Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'blocked');
@@ -19,6 +21,7 @@ class BlockingSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperations(List<Operation> operations) async {
+    sentOperations.addAll(operations);
     if (!sending.isCompleted) sending.complete();
     await release.future;
   }
@@ -53,6 +56,9 @@ void main() {
     expect(vm.localResources, hasLength(171));
     expect(vm.gridData.map((row) => row.name).toList(), List.generate(10, (i) => 'Person $i'));
 
+    final queue = await (await GanttDb.db).query('SELECT * FROM offline_queue WHERE is_deleted = 0');
+    expect(queue, isEmpty, reason: 'Automatic sample data must not reset a shared tenant on connection');
+
     // 3. Verify Milestone exists in VM memory
     final milestone = vm.allGanttTasks.firstWhere(
       (t) => t.isMilestone && t.id == 'milestone_demo_1',
@@ -71,6 +77,31 @@ void main() {
     await vm.disposeAsync();
     await GanttDb.reset();
   });
+  test('an empty bound tenant does not automatically generate replacement data', () async {
+    GanttDb.overridePath = ':memory:';
+    await GanttDb.reset();
+    final db = await GanttDb.db;
+    await db.execute('INSERT INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)',
+        ['canonical_scope', 'bound-tenant']);
+    final vm = GanttViewModel(useLocalDatabase: true);
+    final ready = Completer<void>();
+    void onChange() {
+      if (!vm.isLoading && !ready.isCompleted) ready.complete();
+    }
+    vm.addListener(onChange);
+    try {
+      onChange();
+      await ready.future.timeout(const Duration(seconds: 5));
+      expect(vm.allTasks, isEmpty);
+      expect(vm.localResources, isEmpty);
+      expect(await db.query('SELECT * FROM offline_queue WHERE is_deleted = 0'), isEmpty);
+    } finally {
+      vm.removeListener(onChange);
+      await vm.disposeAsync();
+      await GanttDb.reset();
+    }
+  });
+
   test('local reseed builds its resource hierarchy before synchronization completes', () async {
     GanttDb.overridePath = ':memory:';
     await GanttDb.reset();
@@ -88,6 +119,11 @@ void main() {
     } finally {
       client.release.complete();
       await reseed;
+      final dependencyTypes = client.sentOperations
+          .where((op) => op.type == 'INSERT_DEPENDENCY')
+          .map((op) => ProtobufMapper.toJson(ProtobufMapper.toProtobuf(op.toJson()))['data']['type'])
+          .toSet();
+      expect(dependencyTypes, containsAll(['contained', 'finishToStart']));
       await Future<void>.delayed(const Duration(milliseconds: 100));
       await vm.disposeAsync();
       await GanttDb.reset();

@@ -11,6 +11,8 @@ class ProtocolStateStore {
   final String scope;
   final _lock = Lock();
   final _engine = CRDTEngine();
+  Hlc? _lastResetTimestamp;
+  Hlc? get lastResetTimestamp => _lastResetTimestamp;
   late final Future<SqliteCrdt> _ready = _open();
 
   ProtocolStateStore(this._database, {this.scope = 'local'});
@@ -29,10 +31,13 @@ class ProtocolStateStore {
     return database;
   }
 
-  Future<void> applyOperations(List<Operation> operations, {bool local = false}) => _lock.synchronized(() async {
+  /// Returns the clock of the newest reset accepted by this call, if any.
+  Future<Hlc?> applyOperations(List<Operation> operations, {bool local = false}) => _lock.synchronized(() async {
     final canonical = operations.expand((operation) => _canonicalOperations(operation, local: local)).toList();
-    if (canonical.isEmpty) return;
+    if (canonical.isEmpty) return null;
     final database = await _ready;
+    Hlc? acceptedReset;
+    Hlc? latestReset;
     await database.transaction((transaction) async {
       final rows = await transaction.query(
         'SELECT entity_type, entity_id, payload FROM canonical_protocol_state WHERE scope = ?',
@@ -90,11 +95,13 @@ class ProtocolStateStore {
               ..lastUpdated = clock,
           );
           state.lastReset = operation.timestamp;
+          acceptedReset = operation.timestamp;
         } else if (state.lastReset == null || operation.timestamp >= state.lastReset!) {
           pending.add(operation);
         }
       }
       flush();
+      latestReset = state.lastReset;
       final previous = {for (final row in rows) '${row['entity_type']}:${row['entity_id']}': row['payload']};
       final changedRows = <Map<String, String>>[];
       void save(String type, String id, String payload) {
@@ -121,6 +128,8 @@ class ProtocolStateStore {
         );
       }
     });
+    _lastResetTimestamp = latestReset;
+    return acceptedReset;
   });
 
   Future<MerkleTree> computeMerkleTree() => _lock.synchronized(() async {
