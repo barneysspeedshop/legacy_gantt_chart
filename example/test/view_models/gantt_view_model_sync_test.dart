@@ -52,6 +52,9 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
   Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'fake');
 
   @override
+  int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch;
+
+  @override
   Future<void> sendOperation(Operation op) async {
     sentOperations.add(op);
   }
