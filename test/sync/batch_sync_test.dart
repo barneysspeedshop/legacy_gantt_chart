@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'package:legacy_gantt_chart/src/sync/websocket_gantt_sync_client.dart';
@@ -106,6 +107,68 @@ void main() {
       expect(operations[1]['type'], 'UPDATE_TASK');
     });
 
+    test('reseed sends reset before replacement tasks on the wire', () async {
+      final frames = <Map<String, dynamic>>[];
+      final subscription = outgoingController.stream.listen((frame) {
+        frames.add(ProtobufMapper.toJson(ProtocolMessage.fromBuffer(frame as List<int>)));
+      });
+      addTearDown(subscription.cancel);
+      client.connect('test_tenant');
+
+      await client.sendOperations([
+        Operation(type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
+        Operation(
+          type: 'INSERT_TASK',
+          data: {'id': 'replacement-1'},
+          timestamp: Hlc.fromIntTimestamp(101),
+          actorId: 'user1',
+        ),
+        Operation(
+          type: 'INSERT_TASK',
+          data: {'id': 'replacement-2'},
+          timestamp: Hlc.fromIntTimestamp(102),
+          actorId: 'user1',
+        ),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(frames.map((frame) => frame['type']).toList(), ['subscribe', 'RESET_DATA', 'BATCH_UPDATE']);
+      expect(frames[1]['timestamp'], Hlc.fromIntTimestamp(100).toString());
+      final replacements = frames[2]['data']['operations'] as List;
+      expect(replacements.map((op) => op['data']['id']).toList(), ['replacement-1', 'replacement-2']);
+      expect(replacements.map((op) => op['timestamp']).toList(), [
+        Hlc.fromIntTimestamp(101).toString(),
+        Hlc.fromIntTimestamp(102).toString(),
+      ]);
+    });
+
+    test('reset preserves its position between entity batches', () async {
+      final frames = <Map<String, dynamic>>[];
+      final subscription = outgoingController.stream.listen((frame) {
+        frames.add(ProtobufMapper.toJson(ProtocolMessage.fromBuffer(frame as List<int>)));
+      });
+      addTearDown(subscription.cancel);
+      client.connect('test_tenant');
+
+      await client.sendOperations([
+        Operation(type: 'INSERT_TASK', data: {'id': 'old-1'}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'user1'),
+        Operation(type: 'INSERT_TASK', data: {'id': 'old-2'}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'user1'),
+        Operation(type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(102), actorId: 'user1'),
+        Operation(type: 'INSERT_TASK', data: {'id': 'new-1'}, timestamp: Hlc.fromIntTimestamp(103), actorId: 'user1'),
+        Operation(type: 'INSERT_TASK', data: {'id': 'new-2'}, timestamp: Hlc.fromIntTimestamp(104), actorId: 'user1'),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(frames.map((frame) => frame['type']).toList(), [
+        'subscribe',
+        'BATCH_UPDATE',
+        'RESET_DATA',
+        'BATCH_UPDATE',
+      ]);
+      expect((frames[1]['data']['operations'] as List).map((op) => op['data']['id']).toList(), ['old-1', 'old-2']);
+      expect((frames[3]['data']['operations'] as List).map((op) => op['data']['id']).toList(), ['new-1', 'new-2']);
+    });
+
     test('receiving BATCH_UPDATE emits single batch operation', () async {
       client.connect('test_tenant');
 
@@ -120,18 +183,18 @@ void main() {
               'type': 'INSERT_TASK',
               'data': {'id': '1'},
               'timestamp': Hlc.fromIntTimestamp(100).toString(),
-              'actorId': 'server'
+              'actorId': 'server',
             },
             {
               'type': 'UPDATE_TASK',
               'data': {'id': '2'},
               'timestamp': Hlc.fromIntTimestamp(101).toString(),
-              'actorId': 'server'
+              'actorId': 'server',
             },
-          ]
+          ],
         },
         'timestamp': Hlc.fromIntTimestamp(200).toString(),
-        'actorId': 'server'
+        'actorId': 'server',
       }).writeToBuffer();
 
       incomingController.add(batchMsg);

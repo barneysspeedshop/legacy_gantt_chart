@@ -432,6 +432,34 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
       throw Exception('Not connected');
     }
 
+    const batchableTypes = {
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'INSERT_TASK',
+      'UPDATE_TASK',
+      'DELETE_TASK',
+      'INSERT_DEPENDENCY',
+      'UPDATE_DEPENDENCY',
+      'DELETE_DEPENDENCY',
+      'INSERT_RESOURCE',
+      'UPDATE_RESOURCE',
+      'DELETE_RESOURCE',
+    };
+    final batch = <Operation>[];
+    for (final operation in operations) {
+      if (batchableTypes.contains(operation.type)) {
+        batch.add(operation);
+      } else {
+        await _sendEntityBatch(batch);
+        batch.clear();
+        await sendOperation(operation);
+      }
+    }
+    await _sendEntityBatch(batch);
+  }
+
+  Future<void> _sendEntityBatch(List<Operation> operations) async {
     if (operations.isEmpty) return;
 
     if (operations.length == 1) {
