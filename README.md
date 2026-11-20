@@ -326,6 +326,13 @@ To see a full-featured demo of the `legacy_gantt_chart` in action, you can run t
     flutter run
     ```
 
+The sync server field defaults to `https://api.gantt-sync.com`. To use a local
+server instead, run:
+
+```shell
+flutter run --dart-define=GANTT_SERVER_URL=http://localhost:8080
+```
+
 [ ^Table of Contents ^ ](#table-of-contents)
 
 ## API Documentation 

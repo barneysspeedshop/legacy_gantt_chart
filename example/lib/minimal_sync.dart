@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
+import 'demo_config.dart';
 
 void main() {
   runApp(const MinimalSyncApp());
@@ -25,7 +26,7 @@ class MinimalSyncView extends StatefulWidget {
 }
 
 class _MinimalSyncViewState extends State<MinimalSyncView> {
-  final _uriController = TextEditingController(text: 'http://localhost:8080');
+  final _uriController = TextEditingController(text: defaultSyncServerUrl);
   final _userController = TextEditingController();
   final _passController = TextEditingController();
   final _tenantController = TextEditingController(text: 'debug');
