@@ -10,14 +10,9 @@ class PersistedGanttSyncClient extends OfflineGanttSyncClient {
   PersistedGanttSyncClient(super.db, {required this.protocolState});
 
   @override
-  Future<void> sendOperation(Operation operation) async {
-    await protocolState().applyOperations([operation], local: true);
-    await super.sendOperation(operation);
-  }
-
-  @override
-  Future<void> sendOperations(List<Operation> operations) async {
-    await protocolState().applyOperations(operations, local: true);
-    await super.sendOperations(operations);
+  Future<void> persistOperations(List<Operation> operations) async {
+    final commit = await protocolState().applyOperations(operations, local: true, enqueue: true);
+    final clock = commit.state.latestClock;
+    if (clock != null) observeClock(clock);
   }
 }

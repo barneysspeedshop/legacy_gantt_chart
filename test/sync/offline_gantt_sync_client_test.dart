@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/offline_sync.dart';
+
 // ignore: implementation_imports
 // ignore: implementation_imports
 
@@ -13,6 +16,8 @@ class MockInnerClient implements WebSocketGanttSyncClient {
   final operationController = StreamController<Operation>.broadcast();
   final sentOperations = <Operation>[];
   bool shouldFailSend = false;
+  int disposeCount = 0;
+  Future<void> Function()? beforeBatchSend;
 
   @override
   int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch;
@@ -31,6 +36,7 @@ class MockInnerClient implements WebSocketGanttSyncClient {
 
   @override
   Future<void> sendOperations(List<Operation> operations) async {
+    await beforeBatchSend?.call();
     for (final op in operations) {
       await sendOperation(op);
     }
@@ -44,6 +50,7 @@ class MockInnerClient implements WebSocketGanttSyncClient {
 
   @override
   Future<void> dispose() async {
+    disposeCount++;
     await connectionController.close();
     await operationController.close();
   }
@@ -90,10 +97,7 @@ void main() {
       mockInner = MockInnerClient();
 
       // Use in-memory DB
-      final dbFuture = SqliteCrdt.openInMemory(
-        version: 1,
-        onCreate: (db, version) async {},
-      );
+      final dbFuture = SqliteCrdt.openInMemory(version: 1, onCreate: (db, version) async {});
       crdt = await dbFuture;
 
       client = OfflineGanttSyncClient(Future.value(crdt), mockInner);
@@ -167,8 +171,9 @@ void main() {
       newMock.connectionController.add(true);
       await Future.delayed(Duration.zero);
 
-      await client
-          .sendOperation(Operation(type: 'NEW_CLIENT', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'NEW_CLIENT', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'),
+      );
       await Future.delayed(const Duration(milliseconds: 50));
 
       expect(newMock.sentOperations, hasLength(1));
@@ -226,16 +231,18 @@ void main() {
 
     test('Flushes queue before sending new online operation', () async {
       mockInner.shouldFailSend = true;
-      await client
-          .sendOperation(Operation(type: 'OFFLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'OFFLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'),
+      );
       await Future.delayed(const Duration(milliseconds: 50));
 
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
 
-      await client
-          .sendOperation(Operation(type: 'ONLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'ONLINE_OP', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'),
+      );
 
       await Future.delayed(const Duration(milliseconds: 200));
 
@@ -270,8 +277,9 @@ void main() {
       // 1. Queue many items
       mockInner.shouldFailSend = true;
       for (int i = 0; i < 50; i++) {
-        await client
-            .sendOperation(Operation(type: 'MSG_$i', data: {}, timestamp: Hlc.fromIntTimestamp(i), actorId: 'A'));
+        await client.sendOperation(
+          Operation(type: 'MSG_$i', data: {}, timestamp: Hlc.fromIntTimestamp(i), actorId: 'A'),
+        );
       }
 
       // 2. Go online. Flush starts.
@@ -283,10 +291,12 @@ void main() {
       mockInner.connectionController.add(true);
 
       // 3. Immediately queue more items concurrently
-      final future1 = client
-          .sendOperation(Operation(type: 'CONCURRENT_1', data: {}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'A'));
-      final future2 = client
-          .sendOperation(Operation(type: 'CONCURRENT_2', data: {}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'A'));
+      final future1 = client.sendOperation(
+        Operation(type: 'CONCURRENT_1', data: {}, timestamp: Hlc.fromIntTimestamp(100), actorId: 'A'),
+      );
+      final future2 = client.sendOperation(
+        Operation(type: 'CONCURRENT_2', data: {}, timestamp: Hlc.fromIntTimestamp(101), actorId: 'A'),
+      );
 
       await Future.wait<void>([future1, future2]);
 
@@ -300,14 +310,17 @@ void main() {
       mockInner.shouldFailSend = true;
 
       // Send ephemeral operations
-      await client
-          .sendOperation(Operation(type: 'CURSOR_MOVE', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
-      await client
-          .sendOperation(Operation(type: 'GHOST_UPDATE', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'CURSOR_MOVE', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'),
+      );
+      await client.sendOperation(
+        Operation(type: 'GHOST_UPDATE', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'),
+      );
 
       // Send a normal operation
-      await client
-          .sendOperation(Operation(type: 'NORMAL_OP', data: {}, timestamp: Hlc.fromIntTimestamp(3), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'NORMAL_OP', data: {}, timestamp: Hlc.fromIntTimestamp(3), actorId: 'A'),
+      );
 
       // Reconnect
       mockInner.shouldFailSend = false;
@@ -321,7 +334,7 @@ void main() {
       expect(mockInner.sentOperations.first.type, 'NORMAL_OP');
     });
 
-    test('sendOperations sends directly when online and queue empty', () async {
+    test('sendOperations queues and flushes when online and queue empty', () async {
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
 
@@ -346,9 +359,7 @@ void main() {
       mockInner.connectionController.add(true);
       await Future.delayed(const Duration(milliseconds: 50));
 
-      final newOps = [
-        Operation(type: 'NEW', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A'),
-      ];
+      final newOps = [Operation(type: 'NEW', data: {}, timestamp: Hlc.fromIntTimestamp(2), actorId: 'A')];
 
       await client.sendOperations(newOps);
       await Future.delayed(const Duration(milliseconds: 200)); // Wait for both flushes
@@ -369,8 +380,9 @@ void main() {
 
     test('clearQueue and dispose work correctly', () async {
       mockInner.shouldFailSend = true;
-      await client
-          .sendOperation(Operation(type: 'TO_BE_CLEARED', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'));
+      await client.sendOperation(
+        Operation(type: 'TO_BE_CLEARED', data: {}, timestamp: Hlc.fromIntTimestamp(1), actorId: 'A'),
+      );
       await Future.delayed(const Duration(milliseconds: 50));
 
       await client.clearQueue();
@@ -386,12 +398,14 @@ void main() {
 
     test('Maps start/end to start_date/end_date during send and flush', () async {
       mockInner.shouldFailSend = true;
-      await client.sendOperation(Operation(
-        type: 'MAP_TEST',
-        data: {'start': '2023-01-01', 'end': '2023-01-02'},
-        timestamp: Hlc.fromIntTimestamp(1),
-        actorId: 'A',
-      ));
+      await client.sendOperation(
+        Operation(
+          type: 'MAP_TEST',
+          data: {'start': '2023-01-01', 'end': '2023-01-02'},
+          timestamp: Hlc.fromIntTimestamp(1),
+          actorId: 'A',
+        ),
+      );
       await Future.delayed(const Duration(milliseconds: 50));
 
       mockInner.shouldFailSend = false;
@@ -404,11 +418,13 @@ void main() {
       expect(mockInner.sentOperations.first.data.containsKey('start'), isFalse);
     });
 
-    test('Handles malformed JSON in offline queue', () async {
-      await crdt.execute(
-        'INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)',
-        ['BAD_JSON', '{invalid_json}', Hlc.fromIntTimestamp(1).toString(), 'A'],
-      );
+    test('Retains malformed JSON in offline queue for recovery', () async {
+      await crdt.execute('INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)', [
+        'BAD_JSON',
+        '{invalid_json}',
+        Hlc.fromIntTimestamp(1).toString(),
+        'A',
+      ]);
       await Future.delayed(const Duration(milliseconds: 50));
 
       mockInner.connectionController.add(true);
@@ -416,7 +432,130 @@ void main() {
       await client.dispose();
 
       final countResult = await crdt.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0');
-      expect(countResult.first.values.first, 0);
+      expect(countResult.first.values.first, 1);
+    });
+
+    test('online edits persist and return without waiting for socket handoff', () async {
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      mockInner.beforeBatchSend = () async {
+        if (!entered.isCompleted) entered.complete();
+        await release.future;
+      };
+      mockInner.connectionController.add(true);
+      await Future.delayed(Duration.zero);
+      try {
+        await client
+            .sendOperation(
+              Operation(
+                type: 'UPDATE_TASK',
+                data: {'id': 'durable-task', 'name': 'Offline first'},
+                timestamp: Hlc.fromIntTimestamp(10),
+                actorId: 'A',
+              ),
+            )
+            .timeout(const Duration(seconds: 1));
+        await entered.future;
+        final queued = await crdt.query('SELECT type, data FROM offline_queue WHERE is_deleted = 0');
+        expect(queued, hasLength(1));
+        expect(queued.single['type'], 'UPDATE_TASK');
+        expect(queued.single['data'], contains('Offline first'));
+        expect(mockInner.sentOperations, isEmpty);
+      } finally {
+        release.complete();
+        await client.flushPending();
+      }
+      expect(mockInner.sentOperations.map((op) => op.data['id']), ['durable-task']);
+    });
+
+    test('failed online send remains queued until retry succeeds', () async {
+      mockInner.shouldFailSend = true;
+      mockInner.connectionController.add(true);
+      await Future.delayed(Duration.zero);
+      await client.sendOperation(
+        Operation(type: 'UPDATE_TASK', data: {'id': 'retry-task'}, timestamp: Hlc.fromIntTimestamp(11), actorId: 'A'),
+      );
+      await client.flushPending();
+      expect(await crdt.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), hasLength(1));
+      mockInner.shouldFailSend = false;
+      await client.flushPending();
+      expect(mockInner.sentOperations.map((op) => op.data['id']), ['retry-task']);
+      expect(await crdt.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), isEmpty);
+    });
+
+    test('disconnect during handoff retains operations for retry', () async {
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      mockInner.beforeBatchSend = () async {
+        if (!entered.isCompleted) entered.complete();
+        await release.future;
+      };
+      await client.sendOperation(
+        Operation(
+          type: 'UPDATE_TASK',
+          data: {'id': 'disconnect-task'},
+          timestamp: Hlc.fromIntTimestamp(12),
+          actorId: 'A',
+        ),
+      );
+      mockInner.connectionController.add(true);
+      await entered.future;
+      mockInner.connectionController.add(false);
+      await Future.delayed(Duration.zero);
+      release.complete();
+      await client.flushPending();
+      expect(await crdt.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), hasLength(1));
+      mockInner.connectionController.add(true);
+      await Future.delayed(Duration.zero);
+      await client.flushPending();
+      expect(await crdt.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), isEmpty);
+      expect(mockInner.sentOperations.last.data['id'], 'disconnect-task');
+    });
+
+    test('recreated client recovers pending operations and future clock', () async {
+      final futureClock = Hlc(
+        millis: DateTime.now().millisecondsSinceEpoch + 60000,
+        counter: 123,
+        nodeId: 'old-device',
+      );
+      await client.sendOperation(
+        Operation(type: 'UPDATE_TASK', data: {'id': 'restart-task'}, timestamp: futureClock, actorId: 'A'),
+      );
+      await client.dispose();
+      mockInner = MockInnerClient();
+      client = OfflineGanttSyncClient(Future.value(crdt), mockInner);
+      await client.ready;
+      expect(client.currentHlc > futureClock, isTrue);
+      mockInner.connectionController.add(true);
+      await Future.delayed(Duration.zero);
+      await client.flushPending();
+      expect(mockInner.sentOperations.map((op) => op.data['id']), ['restart-task']);
+    });
+
+    test('failed persistence never hands an operation to the socket', () async {
+      mockInner.connectionController.add(true);
+      await Future.delayed(Duration.zero);
+      await expectLater(
+        client.sendOperation(
+          Operation(
+            type: 'UPDATE_TASK',
+            data: {'id': 'unserializable', 'invalid': Object()},
+            timestamp: Hlc.fromIntTimestamp(14),
+            actorId: 'A',
+          ),
+        ),
+        throwsA(isA<JsonUnsupportedObjectError>()),
+      );
+      await client.flushPending();
+      expect(mockInner.sentOperations, isEmpty);
+      expect(await crdt.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), isEmpty);
+    });
+
+    test('disposing the offline client closes its owned connection once', () async {
+      await client.dispose();
+      expect(mockInner.disposeCount, 1);
+      await client.dispose();
+      expect(mockInner.disposeCount, 1);
     });
 
     test('Delegates inboundProgress to inner client', () {

@@ -5,6 +5,8 @@ import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:example/view_models/gantt_view_model.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:example/data/local/gantt_db.dart';
+import 'package:example/data/local/local_gantt_repository.dart';
+import 'package:example/data/local/protocol_state_store.dart';
 
 class FakeSyncClient implements WebSocketGanttSyncClient {
   final _operationController = StreamController<Operation>.broadcast();
@@ -121,6 +123,71 @@ void main() {
       expect(fakeClient.isConnected, isTrue);
     });
 
+    test('local creates remain visible and persisted while Merkle exchange is paused', () async {
+      await viewModel.disposeAsync();
+      final database = await GanttDb.db;
+      const scope = '["ws://localhost:8080/ws","tenant1"]';
+      await database.execute('INSERT OR REPLACE INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)', [
+        'canonical_scope',
+        scope,
+      ]);
+      viewModel = GanttViewModel(database: Future.value(database), useLocalDatabase: true);
+      await viewModel.initialized;
+      viewModel.loginFunction = ({required uri, required username, required password}) async => 'fake_token';
+      viewModel.syncClientFactory = ({required uri, required authToken}) => fakeClient;
+      final gate = Completer<void>();
+      fakeClient.merkleGate = gate;
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final merkleStarted = fakeClient.merkleRequests.stream.first;
+      await viewModel.connectSync(
+        uri: 'http://localhost:8080',
+        tenantId: 'tenant1',
+        username: 'valid',
+        password: 'password',
+      );
+      final dropped = Completer<void>();
+      void connectionChanged() {
+        if (!viewModel.isSyncConnected && !dropped.isCompleted) dropped.complete();
+      }
+
+      viewModel.addListener(connectionChanged);
+      fakeClient.simulateConnectionDrop();
+      await dropped.future.timeout(const Duration(seconds: 5));
+      viewModel.removeListener(connectionChanged);
+      fakeClient.simulateReconnect();
+      await merkleStarted.timeout(const Duration(seconds: 5));
+      await viewModel.addResources([LocalResource(id: 'local-row', name: 'Local team')]);
+      await viewModel.addTasks([
+        for (final id in ['local-a', 'local-b'])
+          LegacyGanttTask(
+            id: id,
+            rowId: 'local-row',
+            name: id,
+            start: DateTime.utc(2026, 11, 20),
+            end: DateTime.utc(2026, 11, 21),
+          ),
+      ]);
+      await viewModel.addDependencies([
+        const LegacyGanttTaskDependency(
+          predecessorTaskId: 'local-a',
+          successorTaskId: 'local-b',
+          type: DependencyType.contained,
+          lag: Duration(minutes: 5),
+        ),
+      ]);
+      expect(gate.isCompleted, isFalse);
+      expect(viewModel.allTasks.map((task) => task.id), unorderedEquals(['local-a', 'local-b']));
+      expect(viewModel.localResources.single.name, 'Local team');
+      expect(viewModel.dependencies.single.type, DependencyType.contained);
+      final persisted = await ProtocolStateStore(Future.value(database), scope: scope).readState();
+      expect(persisted.tasks.map((task) => task.id), unorderedEquals(['local-a', 'local-b']));
+      expect(persisted.resources.single.name, 'Local team');
+      expect(persisted.dependencies.single.lag, const Duration(minutes: 5));
+      gate.complete();
+    });
+
     test('reconnect Merkle uses full deleted protocol snapshots rather than visible tasks', () async {
       await viewModel.connectSync(
         uri: 'http://localhost:8080',
@@ -139,6 +206,23 @@ void main() {
         metadataJson: '{"unknownPluginSetting":42}',
         lastUpdated: clock.toString(),
       );
+      source.fieldTimestamps.addAll({
+        for (final field in [
+          'rowId',
+          'start',
+          'end',
+          'name',
+          'completion',
+          'resourceId',
+          'parentId',
+          'notes',
+          'isSummary',
+          'isMilestone',
+          'isDeleted',
+          'unknownPluginSetting',
+        ])
+          field: clock.toString(),
+      });
       final operation = Operation.fromJson(
         ProtobufMapper.toJson(
           ProtocolMessage.fromBuffer(

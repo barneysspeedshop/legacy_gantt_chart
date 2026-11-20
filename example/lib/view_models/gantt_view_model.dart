@@ -1,12 +1,18 @@
 import 'package:material_ui/material_ui.dart';
+
 import 'dart:math' as math;
+
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import 'package:legacy_gantt_chart/offline_sync.dart';
 
 import 'package:collection/collection.dart';
 import 'package:intl/intl.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
+import 'package:synchronized/synchronized.dart';
 import 'package:legacy_timeline_scrubber/legacy_timeline_scrubber.dart' as scrubber;
 
 import '../data/models.dart';
@@ -17,53 +23,56 @@ import '../ui/gantt_grid_data.dart';
 import '../data/local/gantt_db.dart';
 import '../data/local/protocol_state_store.dart';
 import '../data/local/persisted_gantt_sync_client.dart';
+import '../data/local/presence_gantt_sync_client.dart';
+import '../data/local/legacy_projection_migration.dart';
 
 /// An enum to manage the different theme presets demonstrated in the example.
-enum ThemePreset {
-  standard,
-  forest,
-  midnight,
-}
+enum ThemePreset { standard, forest, midnight }
 
-enum TimelineAxisFormat {
-  auto,
-  dayOfMonth,
-  dayAndMonth,
-  monthAndYear,
-  dayOfWeek,
-  custom,
-}
+enum TimelineAxisFormat { auto, dayOfMonth, dayAndMonth, monthAndYear, dayOfWeek, custom }
 
 class GanttViewModel extends ChangeNotifier {
-  final LocalGanttRepository _localRepository = LocalGanttRepository();
+  final Future<SqliteCrdt> _database;
+  final _localMutations = Lock();
+  late final LocalGanttRepository _localRepository = LocalGanttRepository(database: _database);
+  Future<void> _initialized = Future.value();
+  Future<void> get initialized => _initialized;
+  StreamSubscription<ProtocolSnapshot>? _stateSubscription;
   ProtocolStateStore? _canonicalState;
   int _syncGeneration = 0;
+  int _connectionAttempt = 0;
+  String? _boundScope;
+  bool _disposed = false;
   Future<void> _incomingOperationChain = Future.value();
-  ProtocolStateStore get _protocolState => _canonicalState ??= ProtocolStateStore(GanttDb.db, scope: 'local');
+  ProtocolStateStore get _protocolState => _canonicalState ??= ProtocolStateStore(_database, scope: 'local');
 
   Future<void> _bindProtocolScope(String scope) async {
-    final db = await GanttDb.db;
-    final rows = await db.query("SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0");
+    _syncGeneration++;
+    await _syncOperationsSubscription?.cancel();
+    await _connectionStateSubscription?.cancel();
+    if (_syncClient is OfflineGanttSyncClient) {
+      await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
+    }
+    await _incomingOperationChain;
+    _isMerkleSyncing = false;
+    _initialSyncExpected = 0;
+    _initialSyncReceived = 0;
+    final db = await _database;
+    final rows = await db.query(
+      "SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0",
+    );
     final previousScope = rows.firstOrNull?['meta_value'];
     final pending = await db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id');
     if (previousScope != null && previousScope != scope && pending.isNotEmpty) {
       throw StateError('Synchronize pending changes with their original tenant before switching servers or tenants.');
     }
     if (previousScope != scope && pending.isEmpty) {
-      _syncGeneration++;
-      await _syncOperationsSubscription?.cancel();
-      await _connectionStateSubscription?.cancel();
-      await _incomingOperationChain;
-      if (_syncClient is OfflineGanttSyncClient) {
-        await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
-      }
       await db.transaction((transaction) async {
         await transaction.execute('DELETE FROM dependencies');
         await transaction.execute('DELETE FROM tasks');
         await transaction.execute('DELETE FROM resources');
         await transaction.execute("DELETE FROM sync_metadata WHERE meta_key = 'last_server_sync'");
       });
-      _operationBuffer.clear();
       _isMerkleSyncing = false;
       _initialSyncExpected = 0;
       _initialSyncReceived = 0;
@@ -82,7 +91,7 @@ class GanttViewModel extends ChangeNotifier {
       _syncToController();
       notifyListeners();
     }
-    final state = ProtocolStateStore(GanttDb.db, scope: scope);
+    final state = ProtocolStateStore(_database, scope: scope);
     await state.applyOperations(
       pending
           .map(
@@ -95,18 +104,20 @@ class GanttViewModel extends ChangeNotifier {
           )
           .toList(),
       local: true,
+      bindScope: true,
     );
-    await db.execute('INSERT OR REPLACE INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)', [
-      'canonical_scope',
-      scope,
-    ]);
+    await _stateSubscription?.cancel();
+    await _canonicalState?.close();
     _canonicalState = state;
+    _boundScope = scope;
+    _isLocalPreview = false;
+    await _subscribeToState();
+    await state.restoreProjection();
+    _acceptSnapshot(await state.readState(), force: true);
   }
 
   bool _useLocalDatabase = false;
-  StreamSubscription<List<LegacyGanttTask>>? _tasksSubscription;
-  StreamSubscription<List<LegacyGanttTaskDependency>>? _dependenciesSubscription;
-  StreamSubscription<List<LocalResource>>? _resourcesSubscription;
+  bool _isLocalPreview = false;
 
   /// The main list of tasks displayed on the Gantt chart, including regular tasks,
   /// summary tasks, highlights, and conflict indicators.
@@ -234,7 +245,7 @@ class GanttViewModel extends ChangeNotifier {
     if (_allGanttTasks.isNotEmpty) {
       final updatedTasks = _allGanttTasks.map((t) => t.copyWith(usesWorkCalendar: value)).toList();
       _allGanttTasks = updatedTasks;
-      _localRepository.insertTasks(updatedTasks); // Batch update local DB
+      unawaited(updateTasksBulk(updatedTasks));
 
       _processLocalData();
     }
@@ -294,69 +305,176 @@ class GanttViewModel extends ChangeNotifier {
 
   bool get useLocalDatabase => _useLocalDatabase;
 
-  Future<void> setUseLocalDatabase(bool value) async {
-    if (_useLocalDatabase == value) return;
-    _useLocalDatabase = value;
-    notifyListeners();
-    if (_useLocalDatabase) {
-      await _initLocalMode();
-    } else {
-      await _exitLocalMode();
-    }
+  Future<void> setUseLocalDatabase(bool value) {
+    final transition = _initialized.then((_) async {
+      if (_useLocalDatabase == value) return;
+      _useLocalDatabase = value;
+      notifyListeners();
+      if (value) {
+        await _initLocalMode();
+      } else {
+        await _exitLocalMode();
+      }
+    });
+    _initialized = transition;
+    return transition;
   }
-
-  bool _shouldAutoSeed = false;
 
   Future<void> _initLocalMode() async {
     _setLoading(true);
-    _shouldAutoSeed = true;
-    notifyListeners();
     await _localRepository.init();
-    final db = await GanttDb.db;
-    final storedScope = await db.query("SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0");
-    if (storedScope.isNotEmpty) {
-      _canonicalState = ProtocolStateStore(GanttDb.db, scope: storedScope.single['meta_value'] as String);
-    }
-
-    _tasksSubscription?.cancel();
-    _dependenciesSubscription?.cancel();
-    _resourcesSubscription?.cancel();
-
-    _resourcesSubscription = _localRepository.watchResources().listen((resources) {
-      _localResources = resources;
-      if (_ganttTasks.isNotEmpty) {
-        _processLocalData();
-      }
-    });
-
-    _tasksSubscription = _localRepository.watchTasks().listen((tasks) async {
-      if (_shouldAutoSeed) {
-        _shouldAutoSeed = false;
-        if (tasks.isEmpty) {
-          final existingResources = await _localRepository.getAllResources();
-          final pending = await db.query('SELECT id FROM offline_queue WHERE is_deleted = 0 LIMIT 1');
-          if (existingResources.isEmpty && pending.isEmpty && storedScope.isEmpty) {
-            await seedLocalDatabase(synchronize: false);
-            return;
-          }
-        }
-      }
-
-      _allGanttTasks = tasks;
-      await _processLocalData();
-    });
-
-    _dependenciesSubscription = _localRepository.watchDependencies().listen((deps) {
-      _dependencies = deps;
-      _syncToController();
-      notifyListeners();
-    });
-
-    _syncClient ??= PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
+    final db = await _database;
+    final scopeRows = await db.query(
+      "SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0",
+    );
+    final pending = await db.query('SELECT id FROM offline_queue WHERE is_deleted = 0 LIMIT 1');
+    final scope = scopeRows.firstOrNull?['meta_value'] as String?;
+    _boundScope = scope;
+    _isLocalPreview = scope == null && pending.isEmpty;
+    _canonicalState = ProtocolStateStore(_database, scope: scope ?? (_isLocalPreview ? 'preview' : 'local'));
+    _syncClient ??= PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
     controller.setSyncClient(_syncClient!);
 
+    final legacyTasks = await _localRepository.getAllTasks();
+    final legacyResources = await _localRepository.getAllResources();
+    final legacyDependencies = await _localRepository.getAllDependencies();
+    var snapshot = await _protocolState.readState();
+    if (_isLocalPreview &&
+        !snapshot.hasState &&
+        (legacyTasks.isNotEmpty || legacyResources.isNotEmpty || legacyDependencies.isNotEmpty)) {
+      // Existing unclassified local rows belong to the user, not the generated preview.
+      _isLocalPreview = false;
+      await _canonicalState?.close();
+      _canonicalState = ProtocolStateStore(_database, scope: 'local');
+    }
+    await migrateLegacyProjection(database: db, state: _protocolState, enqueue: !_isLocalPreview);
+    snapshot = await _protocolState.readState();
+    await _subscribeToState();
+    if (!snapshot.hasState && _isLocalPreview && legacyTasks.isEmpty && legacyResources.isEmpty) {
+      await seedLocalDatabase(synchronize: false);
+    } else {
+      await _protocolState.restoreProjection();
+      _acceptSnapshot(await _protocolState.readState(), force: true);
+    }
     _pendingSeedReset = true;
-    notifyListeners();
+  }
+
+  Future<void> _subscribeToState() async {
+    await _stateSubscription?.cancel();
+    _stateSubscription = _protocolState.snapshots.listen(_acceptSnapshot);
+    final snapshot = await _protocolState.readState();
+    if (_syncClient case final OfflineGanttSyncClient client) {
+      await client.ready;
+      if (snapshot.latestClock != null) client.observeClock(snapshot.latestClock!);
+    }
+  }
+
+  void _acceptSnapshot(ProtocolSnapshot snapshot, {bool force = false}) {
+    if (_disposed) return;
+    if (_syncClient case final OfflineGanttSyncClient client) {
+      if (snapshot.latestClock != null) client.observeClock(snapshot.latestClock!);
+    }
+    if (!force && (_isMerkleSyncing || _isInitialSyncing)) return;
+    _allGanttTasks = List.of(snapshot.tasks);
+    _localResources = List.of(snapshot.resources);
+    _dependencies = List.of(snapshot.dependencies);
+    _cachedFlatGridData = null;
+    _cachedVisibleFlatGridData = null;
+    unawaited(_processLocalData());
+  }
+
+  Operation _taskOperation(
+    LegacyGanttTask task, {
+    String type = 'INSERT_TASK',
+    Hlc? timestamp,
+    LegacyGanttTask? previous,
+  }) {
+    final clock = timestamp ?? _currentHlc;
+    final actor = _syncClient?.actorId ?? 'local-user';
+    final data = ProtobufMapper.taskToJson(task.copyWith(lastUpdated: clock, lastUpdatedBy: actor).toProtocolTask());
+    final previousData = previous == null ? <String, dynamic>{} : ProtobufMapper.taskToJson(previous.toProtocolTask());
+    const envelopeFields = {
+      'id',
+      'taskId',
+      'lastUpdated',
+      'lastUpdatedBy',
+      'fieldTimestamps',
+      'start_date',
+      'end_date',
+      'gantt_type',
+    };
+    data['fieldTimestamps'] = {
+      for (final entry in data.entries)
+        if (!envelopeFields.contains(entry.key))
+          entry.key: previous != null && const DeepCollectionEquality().equals(previousData[entry.key], entry.value)
+              ? (previous.fieldTimestamps[entry.key] ?? previous.lastUpdated).toString()
+              : clock.toString(),
+    };
+    return Operation(type: type, data: data, timestamp: clock, actorId: actor);
+  }
+
+  Operation _resourceOperation(LocalResource resource, {Hlc? timestamp}) {
+    final clock = timestamp ?? _currentHlc;
+    return Operation(
+      type: 'INSERT_RESOURCE',
+      data: ProtobufMapper.resourceToJson(resource.copyWith(lastUpdated: clock).toProtocolResource()),
+      timestamp: clock,
+      actorId: _syncClient?.actorId ?? 'local-user',
+    );
+  }
+
+  Operation _dependencyOperation(LegacyGanttTaskDependency dependency, {Hlc? timestamp}) {
+    final clock = timestamp ?? _currentHlc;
+    return Operation(
+      type: 'INSERT_DEPENDENCY',
+      data: {...ProtobufMapper.dependencyToJson(dependency.toProtocolDependency()), 'lastUpdated': clock.toString()},
+      timestamp: clock,
+      actorId: _syncClient?.actorId ?? 'local-user',
+    );
+  }
+
+  Future<void> _commitOperations(List<Operation> operations) {
+    if (_disposed) {
+      return Future.error(StateError('The local client has been disposed.'));
+    }
+    final expectedScope = _boundScope;
+    var committedOperations = operations;
+    return _localMutations.synchronized(() async {
+      await initialized;
+      if (_boundScope != expectedScope) {
+        throw StateError('The active tenant changed before this edit could be committed.');
+      }
+      if (committedOperations.isEmpty) return;
+      if (_isLocalPreview) {
+        final preview = await _protocolState.readState();
+        committedOperations = [
+          for (final resource in preview.resources)
+            _resourceOperation(resource, timestamp: resource.lastUpdated ?? Hlc.zero),
+          for (final task in preview.tasks) _taskOperation(task, timestamp: task.lastUpdated),
+          for (final dep in preview.dependencies) _dependencyOperation(dep, timestamp: dep.lastUpdated),
+          ...committedOperations,
+        ];
+        _isLocalPreview = false;
+        await _stateSubscription?.cancel();
+        await _canonicalState?.close();
+        _canonicalState = ProtocolStateStore(_database, scope: 'local');
+        await _subscribeToState();
+      }
+      final client = _syncClient;
+      try {
+        if (client is PersistedGanttSyncClient) {
+          await client.sendOperations(committedOperations);
+        } else {
+          await _protocolState.applyOperations(committedOperations, local: true);
+          await client?.sendOperations(committedOperations);
+        }
+      } catch (_) {
+        _acceptSnapshot(await _protocolState.readState(), force: true);
+        rethrow;
+      }
+      _acceptSnapshot(await _protocolState.readState(), force: true);
+      committedOperations.forEach(controller.recordOperation);
+    });
   }
 
   Hlc get _currentHlc {
@@ -368,7 +486,6 @@ class GanttViewModel extends ChangeNotifier {
 
   Future<void> _processLocalData() async {
     if (_allGanttTasks.isEmpty) {
-      _setLoading(false);
       _setLoading(false);
       _conflictIndicators = [];
       _ganttTasks = [];
@@ -418,22 +535,21 @@ class GanttViewModel extends ChangeNotifier {
       collectDescendants(parent.id);
 
       final children = allDescendants
-          .map((child) => GanttJobData(
-                id: child.id,
-                name: child.name ?? 'Unnamed', // Name defaults
-                taskName: null,
-                status: 'Open', // Dummy data
-                taskColor: '888888', // Dummy data
-                completion: 0,
-              ))
+          .map(
+            (child) => GanttJobData(
+              id: child.id,
+              name: child.name ?? 'Unnamed', // Name defaults
+              taskName: null,
+              status: 'Open', // Dummy data
+              taskColor: '888888', // Dummy data
+              completion: 0,
+            ),
+          )
           .toList();
 
-      resourcesData.add(GanttResourceData(
-        id: parent.id,
-        name: parent.name ?? 'Unnamed',
-        taskName: null,
-        children: children,
-      ));
+      resourcesData.add(
+        GanttResourceData(id: parent.id, name: parent.name ?? 'Unnamed', taskName: null, children: children),
+      );
     }
 
     final dummyResponse = GanttResponse(
@@ -447,8 +563,11 @@ class GanttViewModel extends ChangeNotifier {
     _apiResponse = dummyResponse;
 
     final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
-        _allGanttTasks, dummyResponse,
-        showConflicts: _showConflicts, visibleRowIds: visibleRowIds);
+      _allGanttTasks,
+      dummyResponse,
+      showConflicts: _showConflicts,
+      visibleRowIds: visibleRowIds,
+    );
 
     _ganttTasks = recalculatedTasks;
     _conflictIndicators = newConflictIndicators;
@@ -469,47 +588,6 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    // Self-healing: Ensure contained dependencies exist for all parent-child relationships
-    // This fixes the issue where summary backgrounds are lost if the server sync drops these derived dependencies.
-    // Skip during initial sync — dependencies are still arriving, so scanning for "missing"
-    // ones is premature. Self-healing will run once after the final sync batch completes.
-    if (!_isInitialSyncing) {
-      try {
-        final existingKeys = _dependencies
-            .where((d) => d.type == DependencyType.contained)
-            .map((d) => '${d.predecessorTaskId}|${d.successorTaskId}')
-            .toSet();
-
-        final missingDeps = <LegacyGanttTaskDependency>[];
-        for (final task in _allGanttTasks) {
-          if (task.parentId != null) {
-            final key = '${task.parentId!}|${task.id}';
-            if (!existingKeys.contains(key)) {
-              missingDeps.add(LegacyGanttTaskDependency(
-                predecessorTaskId: task.parentId!,
-                successorTaskId: task.id,
-                type: DependencyType.contained,
-                lastUpdated: _currentHlc,
-              ));
-            }
-          }
-        }
-
-        if (missingDeps.isNotEmpty) {
-          print('Restoring ${missingDeps.length} missing contained dependencies for summary visuals...');
-          if (_useLocalDatabase) {
-            await _localRepository.insertDependencies(missingDeps);
-            // Note: inserting dependencies will trigger watchDependencies -> _syncToController
-            // so we don't strictly need to notify here, but for safety we continue.
-          } else {
-            _dependencies = List.from(_dependencies)..addAll(missingDeps);
-          }
-        }
-      } catch (e) {
-        print('Error ensuring contained dependencies: $e');
-      }
-    }
-
     _setLoading(false);
     _syncToController();
     notifyListeners();
@@ -517,28 +595,16 @@ class GanttViewModel extends ChangeNotifier {
 
   Future<void> convertTaskType(LegacyGanttTask task, String newType) async {
     LegacyGanttTask newTask = task;
-    String ganttType = 'task';
 
     if (newType == 'milestone') {
-      ganttType = 'milestone';
-      newTask = task.copyWith(
-        isMilestone: true,
-        isSummary: false,
-        end: task.start,
-      );
+      newTask = task.copyWith(isMilestone: true, isSummary: false, end: task.start);
     } else if (newType == 'summary') {
-      ganttType = 'summary';
       DateTime newEnd = task.end;
       if (task.isMilestone && task.start == task.end) {
         newEnd = task.start.add(const Duration(days: 1));
       }
-      newTask = task.copyWith(
-        isMilestone: false,
-        isSummary: true,
-        end: newEnd,
-      );
+      newTask = task.copyWith(isMilestone: false, isSummary: true, end: newEnd);
     } else if (newType == 'task') {
-      ganttType = 'task';
       DateTime newEnd = task.end;
       if (task.isMilestone && task.start == task.end) {
         newEnd = task.start.add(const Duration(days: 1));
@@ -557,290 +623,71 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     // Set last updated by
-    newTask = newTask.copyWith(
-      lastUpdated: _currentHlc,
-      lastUpdatedBy: _currentUsername ?? 'local-user',
-    );
+    newTask = newTask.copyWith(lastUpdated: _currentHlc, lastUpdatedBy: _currentUsername ?? 'local-user');
 
-    await _localRepository.insertOrUpdateTask(newTask);
-
-    if (_syncClient != null) {
-      final op = Operation(
-        type: 'UPDATE_TASK',
-        data: {
-          'id': newTask.id,
-          'start_date': newTask.start.millisecondsSinceEpoch,
-          'end_date': newTask.end.millisecondsSinceEpoch,
-          'gantt_type': ganttType,
-          'is_summary': newTask.isSummary, // explicit field sometimes used
-          'completion': newTask.completion,
-          'resourceId': newTask.resourceId,
-          'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
-          'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
-          'notes': newTask.notes,
-          'uses_work_calendar': newTask.usesWorkCalendar,
-          'parentId': newTask.parentId,
-          'propagates_move_to_children': newTask.propagatesMoveToChildren,
-          'resize_policy': newTask.resizePolicy.index,
-        },
-        timestamp: _currentHlc,
-        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-      );
-      await _syncClient!.sendOperation(op);
-      controller.recordOperation(op);
-    }
+    await updateTask(newTask);
   }
 
-  Future<void> addTask(LegacyGanttTask task) async {
-    // Ensure last updated info is set
-    final newTask = task.copyWith(
-      lastUpdated: _currentHlc,
-      lastUpdatedBy: _currentUsername ?? 'local-user',
-    );
+  Future<void> addTask(LegacyGanttTask task) => addTasks([task]);
 
-    await _localRepository.insertOrUpdateTask(newTask);
+  Future<void> addResources(List<LocalResource> resources) =>
+      _commitOperations(resources.map((resource) => _resourceOperation(resource)).toList());
 
-    if (_syncClient != null) {
-      String ganttType = 'task';
-      if (newTask.isMilestone) {
-        ganttType = 'milestone';
-      } else if (newTask.isSummary) {
-        ganttType = 'summary';
-      }
+  Future<void> addTasks(List<LegacyGanttTask> tasks) => _commitOperations(
+    tasks.map((task) => _taskOperation(task.copyWith(lastUpdatedBy: _currentUsername ?? 'local-user'))).toList(),
+  );
 
-      final op = Operation(
-        type: 'INSERT_TASK',
-        data: {
-          'gantt_type': ganttType,
-          'data': {
-            'id': newTask.id,
-            'rowId': newTask.rowId,
-            'name': newTask.name,
-            'start_date': newTask.start.millisecondsSinceEpoch,
-            'end_date': newTask.end.millisecondsSinceEpoch,
-            'isMilestone': newTask.isMilestone,
-            'color': newTask.color?.toARGB32().toRadixString(16),
-            'textColor': newTask.textColor?.toARGB32().toRadixString(16),
-            'completion': newTask.completion,
-            'resourceId': newTask.resourceId,
-            'baseline_start': newTask.baselineStart?.millisecondsSinceEpoch,
-            'baseline_end': newTask.baselineEnd?.millisecondsSinceEpoch,
-            'notes': newTask.notes,
-            'parentId': newTask.parentId,
-            'last_updated_by': newTask.lastUpdatedBy,
-          },
-        },
-        timestamp: _currentHlc,
-        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-      );
-      await _syncClient!.sendOperation(op);
-      controller.recordOperation(op);
-    }
-  }
+  Future<void> addDependencies(List<LegacyGanttTaskDependency> dependencies) =>
+      _commitOperations(dependencies.map((dependency) => _dependencyOperation(dependency)).toList());
 
-  Future<void> addResources(List<LocalResource> resources) async {
-    await _localRepository.insertResources(resources);
-    // Sync logic for resources if needed - currently sync client might support it
-    // But for now, local insert is key for the view.
-    // If we want to sync resources:
-    if (_syncClient != null) {
-      for (var res in resources) {
-        final op = Operation(
-          type: 'INSERT_RESOURCE', // Assuming backend supports this
-          data: {
-            'id': res.id,
-            'name': res.name,
-            'parentId': res.parentId,
-            'isExpanded': res.isExpanded,
-            'last_updated': _currentHlc.toString(),
-            'sort_order': res.sortOrder,
-          },
-          timestamp: _currentHlc,
-          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-        );
-        await _syncClient!.sendOperation(op);
-        controller.recordOperation(op);
-      }
-    }
-  }
+  Future<void> updateTask(LegacyGanttTask task) => updateTasksBulk([task]);
 
-  Future<void> addTasks(List<LegacyGanttTask> tasks) async {
-    await _localRepository.insertTasks(tasks);
-    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
-      // We might want to batch network ops too, but for now just loop
-      for (final newTask in tasks) {
-        final op = Operation(
-          type: 'INSERT_TASK',
-          data: {
-            'id': newTask.id,
-            'color': newTask.color?.toARGB32().toRadixString(16),
-            'text_color': newTask.textColor?.toARGB32().toRadixString(16),
-            'name': newTask.name,
-            'start_date': newTask.start.millisecondsSinceEpoch,
-            'end_date': newTask.end.millisecondsSinceEpoch,
-            'rowId': newTask.rowId,
-            'is_summary': newTask.isSummary,
-            'uses_work_calendar': newTask.usesWorkCalendar,
-            'resource_id': newTask.resourceId,
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        );
-        await _syncClient!.sendOperation(op);
-      }
-    }
-  }
-
-  Future<void> addDependencies(List<LegacyGanttTaskDependency> dependencies) async {
-    // Use the batch insert method provided by the repository
-    await _localRepository.insertDependencies(dependencies);
-
-    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
-      for (final dep in dependencies) {
-        final op = Operation(
-          type: 'INSERT_DEPENDENCY',
-          data: {
-            'id': '${dep.predecessorTaskId}_${dep.successorTaskId}',
-            'predecessor_task_id': dep.predecessorTaskId,
-            'successor_task_id': dep.successorTaskId,
-            'type': dep.type.index,
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        );
-        await _syncClient!.sendOperation(op);
-      }
-    }
-  }
-
-  Future<void> updateTask(LegacyGanttTask task) async {
-    // Explicitly update the task with the current user as the last editor
-    final updatedTask = task.copyWith(
-      lastUpdated: _currentHlc,
-      lastUpdatedBy: _currentUsername ?? 'local-user',
-    );
-    await _localRepository.insertOrUpdateTask(updatedTask);
-
-    if (_syncClient != null) {
-      String ganttType = 'task';
-      if (task.isMilestone) {
-        ganttType = 'milestone';
-      } else if (task.isSummary) {
-        ganttType = 'summary';
-      }
-
-      final op = Operation(
-        type: 'UPDATE_TASK',
-        data: {
-          'id': task.id,
-          'color': task.color?.toARGB32().toRadixString(16),
-          'text_color': task.textColor?.toARGB32().toRadixString(16),
-          'name': task.name,
-          'start_date': task.start.millisecondsSinceEpoch,
-          'end_date': task.end.millisecondsSinceEpoch,
-          'gantt_type': ganttType,
-          'is_summary': task.isSummary,
-          'completion': task.completion,
-          'resourceId': task.resourceId,
-          'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
-          'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
-          'notes': task.notes,
-          'uses_work_calendar': task.usesWorkCalendar,
-          'parentId': task.parentId,
-          'propagates_move_to_children': task.propagatesMoveToChildren,
-          'resize_policy': task.resizePolicy.index,
-        },
-        timestamp: _currentHlc,
-        actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-      );
-      await _syncClient!.sendOperation(op);
-      controller.recordOperation(op);
-    }
-  }
-
-  /// Bulk-update many tasks in a single database transaction.
-  /// Use this instead of calling [updateTask] in a loop for best performance.
   Future<void> updateTasksBulk(List<LegacyGanttTask> tasks) async {
-    final hlc = _currentHlc;
+    final clock = _currentHlc;
     final actor = _currentUsername ?? 'local-user';
-    final updatedTasks = tasks.map((t) => t.copyWith(lastUpdated: hlc, lastUpdatedBy: actor)).toList();
-
-    // Build a quick lookup for the updated versions
-    final updatedById = {for (final t in updatedTasks) t.id: t};
-
-    // Optimistically patch the in-memory list so the UI can update immediately
-    // without waiting for the watchTasks stream round-trip.
-    _allGanttTasks = _allGanttTasks.map((t) => updatedById[t.id] ?? t).toList();
-
-    // Re-process in the background — don't block the caller (avoids keeping the
-    // assistant widget's spinner alive during the heavy re-stack computation).
+    final updates = tasks.map((task) => task.copyWith(lastUpdated: clock, lastUpdatedBy: actor)).toList();
+    final originals = {for (final task in _allGanttTasks) task.id: task};
+    final operations = updates
+        .map((task) => _taskOperation(task, type: 'UPDATE_TASK', timestamp: clock, previous: originals[task.id]))
+        .toList();
+    final byId = {for (final task in updates) task.id: task};
+    _allGanttTasks = _allGanttTasks.map((task) => byId[task.id] ?? task).toList();
     unawaited(_processLocalData());
-
-    // One batched DB write (fire-and-forget; watchTasks stream will re-confirm)
-    await _localRepository.insertOrUpdateTasks(updatedTasks);
-
-    // Send sync operations if connected
-    if (_syncClient != null) {
-      for (final task in updatedTasks) {
-        String ganttType = 'task';
-        if (task.isMilestone) {
-          ganttType = 'milestone';
-        } else if (task.isSummary) {
-          ganttType = 'summary';
-        }
-        final op = Operation(
-          type: 'UPDATE_TASK',
-          data: {
-            'id': task.id,
-            'color': task.color?.toARGB32().toRadixString(16),
-            'text_color': task.textColor?.toARGB32().toRadixString(16),
-            'name': task.name,
-            'start_date': task.start.millisecondsSinceEpoch,
-            'end_date': task.end.millisecondsSinceEpoch,
-            'gantt_type': ganttType,
-            'is_summary': task.isSummary,
-            'completion': task.completion,
-            'resourceId': task.resourceId,
-            'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
-            'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
-            'notes': task.notes,
-            'uses_work_calendar': task.usesWorkCalendar,
-            'parentId': task.parentId,
-            'propagates_move_to_children': task.propagatesMoveToChildren,
-            'resize_policy': task.resizePolicy.index,
-          },
-          timestamp: hlc,
-          actorId: _syncClient?.actorId ?? actor,
-        );
-        await _syncClient!.sendOperation(op);
-        controller.recordOperation(op);
-      }
+    try {
+      await _commitOperations(operations);
+    } catch (_) {
+      _acceptSnapshot(await _protocolState.readState(), force: true);
+      rethrow;
     }
   }
 
-  /// Soft-delete a batch of tasks at once.
   Future<void> deleteTasksBulk(List<LegacyGanttTask> tasks) async {
-    final hlc = _currentHlc;
-    final idsToDelete = tasks.map((t) => t.id).toSet();
-
-    // Remove from in-memory list optimistically
-    _allGanttTasks = _allGanttTasks.where((t) => !idsToDelete.contains(t.id)).toList();
+    final ids = tasks.map((task) => task.id).toSet();
+    _allGanttTasks = _allGanttTasks.where((task) => !ids.contains(task.id)).toList();
     unawaited(_processLocalData());
-
-    // Persist each deletion (repository uses soft-delete)
-    for (final task in tasks) {
-      await _localRepository.deleteTask(task.id, hlc);
-
-      if (_syncClient != null) {
-        final op = Operation(
+    final operations = <Operation>[
+      for (final dependency in _dependencies.where(
+        (dep) => ids.contains(dep.predecessorTaskId) || ids.contains(dep.successorTaskId),
+      ))
+        Operation(
+          type: 'DELETE_DEPENDENCY',
+          data: {'predecessorTaskId': dependency.predecessorTaskId, 'successorTaskId': dependency.successorTaskId},
+          timestamp: _currentHlc,
+          actorId: _syncClient?.actorId ?? 'local-user',
+        ),
+      for (final id in ids)
+        Operation(
           type: 'DELETE_TASK',
-          data: {'id': task.id},
-          timestamp: hlc,
-          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-        );
-        await _syncClient!.sendOperation(op);
-        controller.recordOperation(op);
-      }
+          data: {'id': id},
+          timestamp: _currentHlc,
+          actorId: _syncClient?.actorId ?? 'local-user',
+        ),
+    ];
+    try {
+      await _commitOperations(operations);
+    } catch (_) {
+      _acceptSnapshot(await _protocolState.readState(), force: true);
+      rethrow;
     }
   }
 
@@ -855,34 +702,28 @@ class GanttViewModel extends ChangeNotifier {
   Map<String, dynamic> exportToJson() {
     final exportedEvents = _ganttTasks
         .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
-        .map((t) => GanttEventData(
-              id: t.id,
-              name: t.name,
-              utcStartDate: t.start.toUtc().toIso8601String(),
-              utcEndDate: t.end.toUtc().toIso8601String(),
-              resourceId: t.rowId,
-              referenceData: GanttReferenceData(
-                taskName: t.name,
-                taskColor: t.color?.toARGB32().toRadixString(16).padLeft(8, '0'),
-                taskTextColor: t.textColor?.toARGB32().toRadixString(16).padLeft(8, '0'),
-              ),
-            ))
+        .map(
+          (t) => GanttEventData(
+            id: t.id,
+            name: t.name,
+            utcStartDate: t.start.toUtc().toIso8601String(),
+            utcEndDate: t.end.toUtc().toIso8601String(),
+            resourceId: t.rowId,
+            referenceData: GanttReferenceData(
+              taskName: t.name,
+              taskColor: t.color?.toARGB32().toRadixString(16).padLeft(8, '0'),
+              taskTextColor: t.textColor?.toARGB32().toRadixString(16).padLeft(8, '0'),
+            ),
+          ),
+        )
         .toList();
 
     final exportedResources = _localResources.where((r) => r.parentId == null).map((parent) {
       final children = _localResources
           .where((r) => r.parentId == parent.id)
-          .map((child) => GanttJobData(
-                id: child.id,
-                name: child.name ?? 'Unnamed',
-                status: 'Open',
-              ))
+          .map((child) => GanttJobData(id: child.id, name: child.name ?? 'Unnamed', status: 'Open'))
           .toList();
-      return GanttResourceData(
-        id: parent.id,
-        name: parent.name ?? 'Unnamed',
-        children: children,
-      );
+      return GanttResourceData(id: parent.id, name: parent.name ?? 'Unnamed', children: children);
     }).toList();
 
     final response = GanttResponse(
@@ -891,31 +732,24 @@ class GanttViewModel extends ChangeNotifier {
       resourcesData: exportedResources,
       assignmentsData: _ganttTasks
           .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
-          .map((t) => GanttAssignmentData(
-                id: 'assignment-${t.id}',
-                event: t.id,
-                resource: t.rowId,
-              ))
+          .map((t) => GanttAssignmentData(id: 'assignment-${t.id}', event: t.id, resource: t.rowId))
           .toList(),
       dependenciesData: _dependencies
-          .map((d) => GanttDependencyData(
-                id: 'dep-${d.predecessorTaskId}-${d.successorTaskId}',
-                predecessorId: d.predecessorTaskId,
-                successorId: d.successorTaskId,
-                type: d.type.toString().split('.').last,
-              ))
+          .map(
+            (d) => GanttDependencyData(
+              id: 'dep-${d.predecessorTaskId}-${d.successorTaskId}',
+              predecessorId: d.predecessorTaskId,
+              successorId: d.successorTaskId,
+              type: d.type.toString().split('.').last,
+            ),
+          )
           .toList(),
       resourceTimeRangesData: _apiResponse?.resourceTimeRangesData ?? [],
     );
 
     final json = response.toJson();
     json['conflictIndicators'] = _conflictIndicators
-        .map((c) => {
-              'id': c.id,
-              'rowId': c.rowId,
-              'start': c.start.toIso8601String(),
-              'end': c.end.toIso8601String(),
-            })
+        .map((c) => {'id': c.id, 'rowId': c.rowId, 'start': c.start.toIso8601String(), 'end': c.end.toIso8601String()})
         .toList();
 
     return json;
@@ -957,44 +791,16 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> _clearDatabaseInternal() async {
-    _setLoading(true);
-    notifyListeners();
-
-    await _localRepository.deleteAllDependencies();
-    await _localRepository.deleteAllTasks();
-    await _localRepository.deleteAllResources();
-
-    if (_syncClient is OfflineGanttSyncClient) {
-      await (_syncClient as OfflineGanttSyncClient).clearQueue();
-    }
-
-    if (_syncClient != null) {
-      final opsToSend = <Operation>[];
-      opsToSend.add(Operation(
-        type: 'RESET_DATA',
-        data: {},
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
-      await _syncClient!.sendOperations(opsToSend);
-    }
-
     _pendingSeedReset = true;
-    notifyListeners();
+    await _commitOperations([
+      Operation(type: 'RESET_DATA', data: {}, timestamp: _currentHlc, actorId: _syncClient?.actorId ?? 'local-user'),
+    ]);
   }
 
   Future<void> _seedLocalDatabaseInternal({required bool synchronize}) async {
     _pendingSeedReset = true;
     _setLoading(true);
     notifyListeners();
-
-    await _localRepository.deleteAllDependencies();
-    await _localRepository.deleteAllTasks();
-    await _localRepository.deleteAllResources();
-
-    if (synchronize && _syncClient is OfflineGanttSyncClient) {
-      await (_syncClient as OfflineGanttSyncClient).clearQueue();
-    }
 
     final processedData = await _scheduleService.fetchAndProcessSchedule(
       startDate: _startDate,
@@ -1068,10 +874,7 @@ class GanttViewModel extends ChangeNotifier {
     // so the inspector doesn't show 'Unknown'
     final tasksWithUser = tasks
         .where((t) => !t.isTimeRangeHighlight && !t.isOverlapIndicator)
-        .map((t) => t.copyWith(
-              lastUpdated: _currentHlc,
-              lastUpdatedBy: 'local-user',
-            ))
+        .map((t) => t.copyWith(lastUpdated: _currentHlc, lastUpdatedBy: 'local-user'))
         .toList();
 
     final resourcesToInsert = <LocalResource>[];
@@ -1079,140 +882,32 @@ class GanttViewModel extends ChangeNotifier {
       final resource = processedData.apiResponse.resourcesData[i];
       final isExpanded = i == 0; // Only expand the first one
 
-      resourcesToInsert
-          .add(LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
+      resourcesToInsert.add(
+        LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded),
+      );
 
       for (final child in resource.children) {
         resourcesToInsert.add(LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
       }
     }
-    await _localRepository.insertResources(resourcesToInsert);
-
-    await _localRepository.insertTasks(tasksWithUser);
-    await _localRepository.insertDependencies(dependencies);
-    if (synchronize && _syncClient != null) {
-      final opsToSend = <Operation>[];
-      opsToSend.add(Operation(
-        type: 'RESET_DATA',
-        data: {},
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
-      for (final task in tasksWithUser) {
-        String ganttType = 'task';
-        if (task.isMilestone) {
-          ganttType = 'milestone';
-        } else if (task.isSummary) {
-          ganttType = 'summary';
-        }
-
-        opsToSend.add(Operation(
-          type: 'INSERT_TASK',
-          data: {
-            'gantt_type': ganttType,
-            'data': {
-              'id': task.id,
-              'rowId': task.rowId,
-              'name': task.name,
-              'start_date': task.start.millisecondsSinceEpoch,
-              'end_date': task.end.millisecondsSinceEpoch,
-              'isMilestone': task.isMilestone,
-              'color': task.color?.toARGB32().toRadixString(16),
-              'textColor': task.textColor?.toARGB32().toRadixString(16),
-              'completion': task.completion,
-              'resourceId': task.resourceId,
-              'baseline_start': task.baselineStart?.millisecondsSinceEpoch,
-              'baseline_end': task.baselineEnd?.millisecondsSinceEpoch,
-              'notes': task.notes,
-              'parentId': task.parentId,
-              'last_updated_by': 'local-user',
-            }
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-      for (final dep in dependencies) {
-        opsToSend.add(Operation(
-          type: 'INSERT_DEPENDENCY',
-          data: {
-            'predecessorTaskId': dep.predecessorTaskId,
-            'successorTaskId': dep.successorTaskId,
-            'type': dep.type.name,
-            'lag': dep.lag?.inMilliseconds ?? 0,
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-
-      await _syncClient!.sendOperations(opsToSend);
-      // Manually record all operations for audit
-      opsToSend.forEach(controller.recordOperation);
+    final operations = <Operation>[
+      Operation(type: 'RESET_DATA', data: {}, timestamp: _currentHlc, actorId: _syncClient?.actorId ?? 'local-user'),
+      for (var index = 0; index < resourcesToInsert.length; index++)
+        _resourceOperation(resourcesToInsert[index].copyWith(sortOrder: index.toDouble())),
+      for (final task in tasksWithUser) _taskOperation(task),
+      for (final dependency in dependencies) _dependencyOperation(dependency),
+    ];
+    if (synchronize) {
+      await _commitOperations(operations);
+    } else {
+      final commit = await _protocolState.applyOperations(operations, local: true);
+      _acceptSnapshot(commit.state, force: true);
     }
-
-    final expansionMap = <String, bool>{};
-    void fillExpansion(List<GanttGridData> nodes) {
-      for (final node in nodes) {
-        expansionMap[node.id] = node.isExpanded;
-        fillExpansion(node.children);
-      }
-    }
-
-    fillExpansion(processedData.gridData);
-
-    if (synchronize && _syncClient != null) {
-      final resourceOps = <Operation>[];
-      for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
-        final resource = processedData.apiResponse.resourcesData[i];
-        final isExpanded = i == 0; // Only expand the first one
-
-        resourceOps.add(Operation(
-          type: 'INSERT_RESOURCE',
-          data: {
-            'gantt_type': 'person',
-            'data': {
-              'id': resource.id,
-              'name': resource.name,
-              'parentId': null,
-              'isExpanded': isExpanded,
-            }
-          },
-          timestamp: _currentHlc,
-          actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-        ));
-
-        for (final child in resource.children) {
-          resourceOps.add(Operation(
-            type: 'INSERT_RESOURCE',
-            data: {
-              'gantt_type': 'job',
-              'data': {
-                'id': child.id,
-                'name': child.name,
-                'parentId': resource.id,
-                'isExpanded': true,
-              }
-            },
-            timestamp: _currentHlc,
-            actorId: _syncClient?.actorId ?? _currentUsername ?? 'local-user',
-          ));
-        }
-      }
-      await _syncClient!.sendOperations(resourceOps);
-      // Manually record resources for audit
-      // for (final op in resourceOps) {
-      //   // Optionally record resource ops if needed, but for now focusing on tasks
-      //   // controller.recordOperation(op);
-      // }
-    }
-
+    _setLoading(false);
     notifyListeners();
   }
 
   Future<void> _exitLocalMode() async {
-    _tasksSubscription?.cancel();
-    _dependenciesSubscription?.cancel();
     await fetchScheduleData();
   }
 
@@ -1240,8 +935,9 @@ class GanttViewModel extends ChangeNotifier {
         if (hasDirectTask || hasVisibleChildren || _showEmptyParentRows) {
           double completion = 0.0;
           if (hasDirectTask) {
-            final rowTasks =
-                tasks.where((t) => t.rowId == child.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator).toList();
+            final rowTasks = tasks
+                .where((t) => t.rowId == child.id && !t.isTimeRangeHighlight && !t.isOverlapIndicator)
+                .toList();
             if (rowTasks.isNotEmpty) {
               final totalCompletion = rowTasks.fold(0.0, (sum, t) => sum + t.completion);
               completion = totalCompletion / rowTasks.length;
@@ -1253,15 +949,17 @@ class GanttViewModel extends ChangeNotifier {
             }
           }
 
-          nodes.add(GanttGridData(
-            id: child.id,
-            name: child.name ?? 'Unnamed',
-            isParent: grandChildren.isNotEmpty,
-            children: grandChildren,
-            isExpanded: child.isExpanded,
-            completion: completion,
-            sortOrder: child.sortOrder,
-          ));
+          nodes.add(
+            GanttGridData(
+              id: child.id,
+              name: child.name ?? 'Unnamed',
+              isParent: grandChildren.isNotEmpty,
+              children: grandChildren,
+              isExpanded: child.isExpanded,
+              completion: completion,
+              sortOrder: child.sortOrder,
+            ),
+          );
         }
       }
       return nodes;
@@ -1281,12 +979,14 @@ class GanttViewModel extends ChangeNotifier {
     final List<GanttGridData> grid = [];
 
     for (final key in byRow.keys) {
-      grid.add(GanttGridData(
-        id: key,
-        name: tasks.firstWhereOrNull((t) => t.rowId == key)?.name ?? 'Row $key',
-        isParent: false,
-        children: [],
-      ));
+      grid.add(
+        GanttGridData(
+          id: key,
+          name: tasks.firstWhereOrNull((t) => t.rowId == key)?.name ?? 'Row $key',
+          isParent: false,
+          children: [],
+        ),
+      );
     }
     return grid;
   }
@@ -1297,7 +997,29 @@ class GanttViewModel extends ChangeNotifier {
 
   List<LegacyGanttTask> get conflictIndicators => _showConflicts ? _conflictIndicators : [];
   String Function(DateTime)? get resizeTooltipDateFormat => _resizeTooltipDateFormat;
-  List<LegacyGanttTaskDependency> get dependencies => _showDependencies ? _dependencies : [];
+  List<LegacyGanttTaskDependency> get dependencies => _showDependencies ? _presentationDependencies : [];
+
+  List<LegacyGanttTaskDependency> get _presentationDependencies {
+    final result = List<LegacyGanttTaskDependency>.of(_dependencies);
+    final keys = _dependencies
+        .where((dep) => dep.type == DependencyType.contained)
+        .map((dep) => (dep.predecessorTaskId, dep.successorTaskId))
+        .toSet();
+    for (final task in _allGanttTasks) {
+      if (task.parentId != null && keys.add((task.parentId!, task.id))) {
+        result.add(
+          LegacyGanttTaskDependency(
+            predecessorTaskId: task.parentId!,
+            successorTaskId: task.id,
+            type: DependencyType.contained,
+            lastUpdated: task.lastUpdated,
+          ),
+        );
+      }
+    }
+    return result;
+  }
+
   List<GanttGridData> get gridData => _gridData;
   ThemePreset get selectedTheme => _selectedTheme;
   List<LegacyGanttTask> get tasks => _ganttTasks;
@@ -1424,11 +1146,7 @@ class GanttViewModel extends ChangeNotifier {
     return flatList;
   }
 
-  Future<void> reorderResources(
-    String draggedId,
-    String? targetId,
-    bool isAfter,
-  ) async {
+  Future<void> reorderResources(String draggedId, String? targetId, bool isAfter) async {
     if (!_useLocalDatabase) return;
 
     final flatList = flatGridData;
@@ -1480,9 +1198,7 @@ class GanttViewModel extends ChangeNotifier {
       final resId = item['id'] as String;
       final resource = _localResources.firstWhereOrNull((r) => r.id == resId);
       if (resource != null) {
-        await _localRepository.updateResource(resource.copyWith(
-          sortOrder: newOrder,
-        ));
+        await addResources([resource.copyWith(sortOrder: newOrder)]);
       }
       return newOrder;
     }
@@ -1516,6 +1232,7 @@ class GanttViewModel extends ChangeNotifier {
     if (resource != null) {
       final updatedResource = resource.copyWith(
         parentId: newParentId,
+        clearParent: newParentId == null,
         sortOrder: finalSortOrder,
         lastUpdated: _currentHlc,
       );
@@ -1527,7 +1244,7 @@ class GanttViewModel extends ChangeNotifier {
       }
 
       await _processLocalData();
-      await _localRepository.insertOrUpdateResource(updatedResource);
+      await addResources([updatedResource]);
       notifyListeners();
     }
   }
@@ -1570,7 +1287,7 @@ class GanttViewModel extends ChangeNotifier {
         sortOrder: finalSortOrder,
         lastUpdated: _currentHlc,
       );
-      await _localRepository.updateResource(updatedResource);
+      await addResources([updatedResource]);
       await _processLocalData();
       notifyListeners();
     }
@@ -1596,7 +1313,8 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// Constructor initializes the locale and sets up a listener for horizontal scrolling.
-  GanttViewModel({String? initialLocale, bool useLocalDatabase = false}) {
+  GanttViewModel({String? initialLocale, bool useLocalDatabase = false, Future<SqliteCrdt>? database})
+    : _database = database ?? GanttDb.db {
     controller = LegacyGanttController(
       initialVisibleStartDate: _startDate,
       initialVisibleEndDate: _startDate.add(Duration(days: _range)),
@@ -1612,9 +1330,9 @@ class GanttViewModel extends ChangeNotifier {
     _ganttHorizontalScrollController.addListener(_onGanttScroll);
 
     if (useLocalDatabase) {
-      setUseLocalDatabase(true);
+      _initialized = setUseLocalDatabase(true);
     } else {
-      fetchScheduleData();
+      _initialized = fetchScheduleData();
     }
   }
 
@@ -1632,7 +1350,7 @@ class GanttViewModel extends ChangeNotifier {
       sortOrder: (DateTime.now().millisecondsSinceEpoch % 1000000).toDouble(),
     );
 
-    await _localRepository.insertOrUpdateResource(newResource);
+    await addResources([newResource]);
     await _processLocalData();
     notifyListeners();
   }
@@ -1663,17 +1381,50 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> deleteResource(String id) async {
     if (!_useLocalDatabase) return;
 
-    await _localRepository.deleteResource(id, _currentHlc);
+    final tasks = _allGanttTasks.where((task) => task.rowId == id).toList();
+    await deleteTasksBulk(tasks);
+    await _commitOperations([
+      Operation(
+        type: 'DELETE_RESOURCE',
+        data: {'id': id},
+        timestamp: _currentHlc,
+        actorId: _syncClient?.actorId ?? 'local-user',
+      ),
+    ]);
     await _processLocalData();
     notifyListeners();
   }
 
   @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  Future<void> _closePersistence() async {
+    try {
+      await initialized;
+      await _localMutations.synchronized(() async {});
+      await _incomingOperationChain;
+      if (_syncClient case final OfflineGanttSyncClient client) {
+        await client.dispose();
+      }
+      if (_syncClient case final WebSocketGanttSyncClient client) {
+        await client.dispose();
+      }
+      await _canonicalState?.close();
+    } catch (error) {
+      debugPrint('Error closing local synchronization: $error');
+    }
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
+    _connectionAttempt++;
+    _syncGeneration++;
+    unawaited(_closePersistence());
     _removeTooltip();
-    _tasksSubscription?.cancel();
-    _dependenciesSubscription?.cancel();
-    _resourcesSubscription?.cancel();
+    _stateSubscription?.cancel();
     _syncOperationsSubscription?.cancel();
     _connectionStateSubscription?.cancel();
     _gridScrollController.removeListener(_syncGridScroll);
@@ -1691,6 +1442,11 @@ class GanttViewModel extends ChangeNotifier {
   /// ensures that any active background flush operations are completed before
   /// the method returns.
   Future<void> disposeAsync() async {
+    _disposed = true;
+    _connectionAttempt++;
+    _syncGeneration++;
+    await initialized;
+    await _localMutations.synchronized(() async {});
     _removeTooltip();
     if (_activeSeedingFuture != null) {
       try {
@@ -1700,11 +1456,11 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
-    await _tasksSubscription?.cancel();
-    await _dependenciesSubscription?.cancel();
-    await _resourcesSubscription?.cancel();
+    await _stateSubscription?.cancel();
     await _syncOperationsSubscription?.cancel();
     await _connectionStateSubscription?.cancel();
+    await _incomingOperationChain;
+    await _canonicalState?.close();
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).dispose();
     } else if (_syncClient is WebSocketGanttSyncClient) {
@@ -2049,7 +1805,7 @@ class GanttViewModel extends ChangeNotifier {
     if (newRange != null) {
       _range = newRange;
       notifyListeners();
-      fetchScheduleData();
+      _initialized = fetchScheduleData();
     }
   }
 
@@ -2063,7 +1819,7 @@ class GanttViewModel extends ChangeNotifier {
     if (pickedDate != null && pickedDate != _startDate) {
       _startDate = pickedDate;
       notifyListeners();
-      fetchScheduleData();
+      _initialized = fetchScheduleData();
     }
   }
 
@@ -2166,8 +1922,9 @@ class GanttViewModel extends ChangeNotifier {
         final startOffsetMs = _visibleStartDate!.difference(effectiveTotalStartDate!).inMilliseconds;
         final newScrollOffset = (startOffsetMs / totalDataDuration) * totalWidth;
 
-        _ganttHorizontalScrollController
-            .jumpTo(newScrollOffset.clamp(0.0, _ganttHorizontalScrollController.position.maxScrollExtent));
+        _ganttHorizontalScrollController.jumpTo(
+          newScrollOffset.clamp(0.0, _ganttHorizontalScrollController.position.maxScrollExtent),
+        );
       });
     }
     _lastTotalGanttWidth = totalWidth;
@@ -2257,10 +2014,7 @@ class GanttViewModel extends ChangeNotifier {
                     Container(
                       margin: const EdgeInsets.only(top: 2, bottom: 4),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: taskColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      decoration: BoxDecoration(color: taskColor, borderRadius: BorderRadius.circular(12)),
                       child: Text(
                         statusText,
                         style: textStyle?.copyWith(
@@ -2301,7 +2055,10 @@ class GanttViewModel extends ChangeNotifier {
 
   /// A helper method to update the task list and stack depth map, then notify listeners.
   void _updateTasksAndStacking(
-      List<LegacyGanttTask> tasks, Map<String, int> maxDepth, List<LegacyGanttTask> conflictIndicators) {
+    List<LegacyGanttTask> tasks,
+    Map<String, int> maxDepth,
+    List<LegacyGanttTask> conflictIndicators,
+  ) {
     _ganttTasks = tasks;
     _conflictIndicators = conflictIndicators;
     _rowMaxStackDepth = maxDepth;
@@ -2311,7 +2068,7 @@ class GanttViewModel extends ChangeNotifier {
 
   void _syncToController() {
     controller.setTasks(_ganttTasks);
-    controller.setDependencies(_dependencies);
+    controller.setDependencies(_presentationDependencies);
     controller.setConflictIndicators(_conflictIndicators);
   }
 
@@ -2434,7 +2191,6 @@ class GanttViewModel extends ChangeNotifier {
   StreamSubscription<bool>? _connectionStateSubscription;
 
   bool _isMerkleSyncing = false;
-  final List<Operation> _operationBuffer = [];
 
   /// Tracks the number of operations expected during initial server sync.
   /// Set when SYNC_METADATA arrives, reset when all ops have been processed.
@@ -2476,95 +2232,117 @@ class GanttViewModel extends ChangeNotifier {
     required String username,
     required String password,
   }) async {
+    if (_disposed) return;
+    final attempt = ++_connectionAttempt;
+    bool isCurrent() => !_disposed && attempt == _connectionAttempt;
     try {
-      _currentUsername = username;
+      await initialized;
+      if (!isCurrent()) return;
       await _activeSeedingFuture;
+      if (!isCurrent()) return;
       final parsedUri = Uri.parse(uri);
       final loginCall = loginFunction ?? WebSocketGanttSyncClient.login;
-      final token = await loginCall(
-        uri: parsedUri,
-        username: username,
-        password: password,
-      );
+      final token = await loginCall(uri: parsedUri, username: username, password: password);
 
-      final wsUri = parsedUri.replace(scheme: parsedUri.scheme == 'https' ? 'wss' : 'ws', path: '/ws');
-      final scopeUri = Uri(
-        scheme: wsUri.scheme, host: wsUri.host, port: wsUri.hasPort ? wsUri.port : null, path: wsUri.path,
-      );
-      await _bindProtocolScope(jsonEncode([scopeUri.toString(), tenantId]));
-      WebSocketGanttSyncClient? wsClientToConnect;
-
-      if (syncClientFactory != null) {
-        final client = syncClientFactory!(uri: wsUri, authToken: token);
-        if (client is WebSocketGanttSyncClient) {
-          wsClientToConnect = client;
-          final offlineClient = PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
-          await offlineClient.setInnerClient(client);
-          _syncClient = offlineClient;
-        } else {
-          _syncClient = client;
-        }
-      } else {
-        final wsClient = WebSocketGanttSyncClient(
-          uri: wsUri,
-          authToken: token,
-          userId: username,
+      if (!isCurrent()) return;
+      await _localMutations.synchronized(() async {
+        if (!isCurrent()) return;
+        final wsUri = parsedUri.replace(scheme: parsedUri.scheme == 'https' ? 'wss' : 'ws', path: '/ws');
+        final scopeUri = Uri(
+          scheme: wsUri.scheme,
+          host: wsUri.host,
+          port: wsUri.hasPort ? wsUri.port : null,
+          path: wsUri.path,
         );
-        wsClientToConnect = wsClient;
+        await _bindProtocolScope(jsonEncode([scopeUri.toString(), tenantId]));
+        if (!isCurrent()) return;
+        _currentUsername = username;
+        WebSocketGanttSyncClient? wsClientToConnect;
 
-        if (_syncClient is OfflineGanttSyncClient) {
-          await (_syncClient as OfflineGanttSyncClient).setInnerClient(wsClient);
+        if (syncClientFactory != null) {
+          final client = syncClientFactory!(uri: wsUri, authToken: token);
+          if (client is WebSocketGanttSyncClient) {
+            wsClientToConnect = client;
+            final offlineClient = PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
+            await offlineClient.setInnerClient(client);
+            _syncClient = offlineClient;
+          } else {
+            _syncClient = client;
+          }
         } else {
-          if (_syncClient is WebSocketGanttSyncClient) {
-            await (_syncClient as WebSocketGanttSyncClient).dispose();
-          }
-          final offlineClient = PersistedGanttSyncClient(GanttDb.db, protocolState: () => _protocolState);
-          await offlineClient.setInnerClient(wsClient);
-          _syncClient = offlineClient;
-        }
-      }
+          final wsClient = WebSocketGanttSyncClient(uri: wsUri, authToken: token, userId: username);
+          wsClientToConnect = wsClient;
 
-      if (_syncClient != null) {
-        controller.setSyncClient(_syncClient!);
-      }
-
-      _connectionStateSubscription?.cancel();
-      _syncOperationsSubscription?.cancel();
-      Stream<bool>? connectionStream;
-      if (_syncClient is OfflineGanttSyncClient) {
-        connectionStream = (_syncClient as OfflineGanttSyncClient).connectionStateStream;
-      } else if (_syncClient is WebSocketGanttSyncClient) {
-        connectionStream = (_syncClient as WebSocketGanttSyncClient).connectionStateStream;
-      }
-
-      if (connectionStream != null) {
-        _connectionStateSubscription = connectionStream.listen((isConnected) {
-          if (_isSyncConnected != isConnected) {
-            _isSyncConnected = isConnected;
-            notifyListeners();
-            if (isConnected) {
-              _performMerkleSync();
+          if (_syncClient is OfflineGanttSyncClient) {
+            await (_syncClient as OfflineGanttSyncClient).setInnerClient(wsClient);
+          } else {
+            if (_syncClient is WebSocketGanttSyncClient) {
+              await (_syncClient as WebSocketGanttSyncClient).dispose();
             }
+            final offlineClient = PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
+            await offlineClient.setInnerClient(wsClient);
+            _syncClient = offlineClient;
           }
-        });
-      }
+        }
 
-      _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
-        _incomingOperationChain = _incomingOperationChain.then((_) => _handleIncomingOperation(op)).catchError((e) {
-          print('Error processing operation in chain: $e');
+        if (!isCurrent()) {
+          await _disconnectCurrentSync();
+          return;
+        }
+        final generation = _syncGeneration;
+        if (_syncClient != null) {
+          controller.setSyncClient(_syncClient!);
+        }
+
+        _connectionStateSubscription?.cancel();
+        _syncOperationsSubscription?.cancel();
+        Stream<bool>? connectionStream;
+        if (_syncClient is OfflineGanttSyncClient) {
+          connectionStream = (_syncClient as OfflineGanttSyncClient).connectionStateStream;
+        } else if (_syncClient is WebSocketGanttSyncClient) {
+          connectionStream = (_syncClient as WebSocketGanttSyncClient).connectionStateStream;
+        }
+
+        if (connectionStream != null) {
+          _connectionStateSubscription = connectionStream.listen((isConnected) {
+            if (_disposed || generation != _syncGeneration) return;
+            if (_isSyncConnected != isConnected) {
+              _isSyncConnected = isConnected;
+              notifyListeners();
+              if (isConnected) {
+                _performMerkleSync();
+              }
+            }
+          });
+        }
+
+        _syncOperationsSubscription = _syncClient!.operationStream.listen((op) {
+          if (_disposed || generation != _syncGeneration) return;
+          _incomingOperationChain = _incomingOperationChain
+              .then((_) async {
+                if (!_disposed && generation == _syncGeneration) await _handleIncomingOperation(op);
+              })
+              .catchError((e) {
+                print('Error processing operation in chain: $e');
+              });
         });
+
+        _isSyncConnected = true;
+        _broadcastPresence();
+        notifyListeners();
+
+        final lastSyncedHlc = await _localRepository.getLastServerSyncTimestamp();
+        if (!isCurrent()) {
+          await _disconnectCurrentSync();
+          return;
+        }
+        print('Connecting with lastSyncedHlc: $lastSyncedHlc');
+        wsClientToConnect?.connect(tenantId, lastSyncedTimestamp: lastSyncedHlc);
+
+        notifyListeners();
       });
-
-      _isSyncConnected = true;
-      _broadcastPresence();
-      notifyListeners();
-
-      final lastSyncedHlc = await _localRepository.getLastServerSyncTimestamp();
-      print('Connecting with lastSyncedHlc: $lastSyncedHlc');
-      wsClientToConnect?.connect(tenantId, lastSyncedTimestamp: lastSyncedHlc);
-
-      notifyListeners();
     } catch (e) {
+      if (!isCurrent()) return;
       print('Connection failed: $e');
       _isSyncConnected = false;
       notifyListeners();
@@ -2588,7 +2366,6 @@ class GanttViewModel extends ChangeNotifier {
       print('Local Merkle Root is ${localTree.root.hash}');
 
       _isMerkleSyncing = true;
-      _operationBuffer.clear();
 
       try {
         await client.syncWithMerkle(localTree: localTree);
@@ -2605,64 +2382,17 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> finalizeMerkleSync() async {
-    if (_operationBuffer.isEmpty) return;
-
-    print('Finalizing Merkle Sync: Processing buffered operations');
-
-    while (_operationBuffer.isNotEmpty) {
-      // Create a snapshot of the current buffer and clear it
-      final currentBatch = List<Operation>.from(_operationBuffer);
-      _operationBuffer.clear();
-
-      print('Processing Merkle Sync batch of ${currentBatch.length} operations...');
-
-      final batchTasks = <LegacyGanttTask>[];
-      final batchDependencies = <LegacyGanttTaskDependency>[];
-      final batchResources = <LocalResource>[];
-      final batchDeletedTaskIds = <String>[];
-      final batchDeletedDependencies = <(String, String)>[];
-      final batchDeletedResourceIds = <String>[];
-
-      for (final batch in currentBatch.where((op) => op.type == 'BATCH_UPDATE')) {
-        _initialSyncReceived += (batch.data['operations'] as List? ?? []).length;
-      }
-      final operations = currentBatch.expand((op) => op.type == 'BATCH_UPDATE' ? _operationsInBatch(op) : [op]);
-      for (final op in operations) {
-        await _processOperationInternal(
-          op,
-          notify: false,
-          batchTasks: batchTasks,
-          batchDependencies: batchDependencies,
-          batchResources: batchResources,
-          batchDeletedTaskIds: batchDeletedTaskIds,
-          batchDeletedDependencies: batchDeletedDependencies,
-          batchDeletedResourceIds: batchDeletedResourceIds,
-        );
-      }
-
-      if (_useLocalDatabase) {
-        if (batchTasks.isNotEmpty) await _localRepository.insertTasks(batchTasks);
-        if (batchDeletedTaskIds.isNotEmpty) await _localRepository.deleteTasks(batchDeletedTaskIds, _currentHlc);
-        if (batchDependencies.isNotEmpty) await _localRepository.insertDependencies(batchDependencies);
-        if (batchDeletedDependencies.isNotEmpty) {
-          await _localRepository.deleteDependencies(batchDeletedDependencies, _currentHlc);
-        }
-        if (batchResources.isNotEmpty) await _localRepository.insertResources(batchResources);
-        if (batchDeletedResourceIds.isNotEmpty) {
-          await _localRepository.deleteResources(batchDeletedResourceIds, _currentHlc);
-        }
-      }
-    }
-
-    if (!_isInitialSyncing) {
-      _initialSyncExpected = 0;
-      _initialSyncReceived = 0;
-    }
-    await _processLocalData();
-    notifyListeners();
+    _acceptSnapshot(await _protocolState.readState(), force: true);
   }
 
-  Future<void> disconnectSync() async {
+  Future<void> disconnectSync() {
+    _connectionAttempt++;
+    _syncGeneration++;
+    _isMerkleSyncing = false;
+    return _localMutations.synchronized(_disconnectCurrentSync);
+  }
+
+  Future<void> _disconnectCurrentSync() async {
     await _syncOperationsSubscription?.cancel();
     await _connectionStateSubscription?.cancel();
     await _incomingOperationChain;
@@ -2687,562 +2417,70 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
-    final acceptedReset = await _protocolState.applyOperations([op]);
     if (op.type == 'SYNC_METADATA') {
-      final total = (op.data['totalOperations'] as int?) ?? 0;
-      _initialSyncExpected = total;
+      _initialSyncExpected = (op.data['totalOperations'] as num?)?.toInt() ?? 0;
       _initialSyncReceived = 0;
-      if (total > 0) {
-        print('Initial sync starting: expecting $total operations');
-      }
-      // When total is 0, there's nothing to defer — just ignore.
       return;
     }
-
-    if (op.type == 'RESET_DATA') {
-      if (acceptedReset == null) return;
-      _initialSyncExpected = 0;
-      _initialSyncReceived = 0;
-      print('SyncClient: Received RESET_DATA, clearing buffer and applying immediately');
-      _operationBuffer.clear();
-      await _processOperationInternal(op, notify: true);
-      return;
-    }
-
-    if (_isMerkleSyncing) {
-      _operationBuffer.add(op);
-      return;
-    }
-    print('SyncClient: Received operation ${op.type} with timestamp ${op.timestamp}');
-
-    if (op.type == 'BATCH_UPDATE') {
-      final operations = op.data['operations'] as List? ?? [];
-      final batchTasks = <LegacyGanttTask>[];
-      final batchDependencies = <LegacyGanttTaskDependency>[];
-      final batchResources = <LocalResource>[];
-      final batchDeletedTaskIds = <String>[];
-      final batchDeletedDependencies = <(String, String)>[];
-      final batchDeletedResourceIds = <String>[];
-
-      for (final subOp in _operationsInBatch(op)) {
-        await _processOperationInternal(
-          subOp,
-          notify: false,
-          batchTasks: batchTasks,
-          batchDependencies: batchDependencies,
-          batchResources: batchResources,
-          batchDeletedTaskIds: batchDeletedTaskIds,
-          batchDeletedDependencies: batchDeletedDependencies,
-          batchDeletedResourceIds: batchDeletedResourceIds,
-        );
-      }
-
-      if (_useLocalDatabase) {
-        if (batchTasks.isNotEmpty) {
-          await _localRepository.insertTasks(batchTasks);
-        }
-        if (batchDeletedTaskIds.isNotEmpty) {
-          await _localRepository.deleteTasks(batchDeletedTaskIds, op.timestamp);
-        }
-        if (batchDependencies.isNotEmpty) {
-          await _localRepository.insertDependencies(batchDependencies);
-        }
-        if (batchDeletedDependencies.isNotEmpty) {
-          await _localRepository.deleteDependencies(batchDeletedDependencies, op.timestamp);
-        }
-        if (batchResources.isNotEmpty) {
-          await _localRepository.insertResources(batchResources);
-        }
-        if (batchDeletedResourceIds.isNotEmpty) {
-          await _localRepository.deleteResources(batchDeletedResourceIds, op.timestamp);
-        }
-      }
-
-      // Track how many operations we've received for initial sync progress
-      _initialSyncReceived += operations.length;
-
-      try {
-        if (_useLocalDatabase) {
-          // Force update of sync timestamp after batch processing to ensure persistence
-          // Use the batch timestamp which is the latest server time for this batch
-          await _localRepository.setLastServerSyncTimestamp(op.timestamp);
-        }
-        // During initial sync, defer the expensive _processLocalData() until
-        // all expected batches have arrived. DB writes above still happen
-        // incrementally (crash-safe), we just skip the grid rebuild, stacking
-        // recalculation, and self-healing until the final batch.
-        if (!_isInitialSyncing) {
-          await _processLocalData();
-          if (_initialSyncExpected > 0) {
-            print('Initial sync complete: processed $_initialSyncReceived/$_initialSyncExpected operations');
-            _initialSyncExpected = 0;
-            _initialSyncReceived = 0;
-          }
-        }
-      } catch (e) {
-        print('Error in _processLocalData during batch update: $e');
-      } finally {
-        notifyListeners();
-      }
-    } else {
-      await _processOperationInternal(op, notify: true);
-    }
-  }
-
-  Iterable<Operation> _operationsInBatch(Operation batch) sync* {
-    for (final opEnv in batch.data['operations'] as List? ?? []) {
-      try {
-        final opMap = opEnv as Map<String, dynamic>;
-        final opType = opMap['type'] as String;
-        var opData = opMap['data'] as Map<String, dynamic>;
-        final opTsRaw = opMap['timestamp'];
-
-        final opTs = opTsRaw is int
-            ? Hlc.fromIntTimestamp(opTsRaw)
-            : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
-
-        final batchUserId = batch.data['user_id'];
-        final opMapActor = opMap['actorId'] as String?;
-        final opActor = batchUserId ?? opMapActor ?? 'unknown';
-
-        if (opData.containsKey('data') && opData['data'] is Map) {
-          final innerData = opData['data'] as Map<String, dynamic>;
-          if (opData.containsKey('gantt_type')) {
-            innerData['gantt_type'] = opData['gantt_type'];
-          }
-          opData = innerData;
-        }
-
-        yield Operation(type: opType, data: opData, timestamp: opTs, actorId: opActor);
-      } catch (e) {
-        print('Error processing batch item: $e');
-      }
-    }
-  }
-
-  Future<void> _processOperationInternal(
-    Operation op, {
-    bool notify = true,
-    List<LegacyGanttTask>? batchTasks,
-    List<LegacyGanttTaskDependency>? batchDependencies,
-    List<LocalResource>? batchResources,
-    List<String>? batchDeletedTaskIds,
-    List<(String, String)>? batchDeletedDependencies,
-    List<String>? batchDeletedResourceIds,
-  }) async {
-    final lastReset = _protocolState.lastResetTimestamp;
-    if (op.type != 'RESET_DATA' && lastReset != null && op.timestamp <= lastReset) return;
-
-    final data = op.data;
-    final taskData = data;
-
-    if (op.type == 'UPDATE_TASK') {
-      var innerData = taskData;
-      String? ganttType;
-
-      ganttType = innerData['gantt_type'] as String?;
-
-      if (innerData.containsKey('data') && innerData['data'] is Map) {
-        ganttType ??= (innerData['gantt_type'] ?? innerData['ganttType']) as String?;
-        innerData = innerData['data'] as Map<String, dynamic>;
-        ganttType ??= (innerData['gantt_type'] ?? innerData['ganttType']) as String?;
-      }
-
-      final taskIdRaw = innerData['id'];
-      if (taskIdRaw == null) {
-        return;
-      }
-      final taskId = taskIdRaw.toString().trim();
-
-      final sourceIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
-
-      if (sourceIndex != -1) {
-        final existingTask = _allGanttTasks[sourceIndex];
-
-        if (op.timestamp <= existingTask.lastUpdated) {
-          return;
-        }
-
-        final updatedTask = existingTask.copyWith(
-          name: innerData['name'] ?? existingTask.name,
-          start: parseDate(innerData['start_date']) ??
-              parseDate(innerData['start']) ??
-              parseDate(innerData['startDate']) ??
-              existingTask.start,
-          end: parseDate(innerData['end_date']) ??
-              parseDate(innerData['end']) ??
-              parseDate(innerData['endDate']) ??
-              existingTask.end,
-          lastUpdated: op.timestamp,
-          lastUpdatedBy: innerData['user_id'] ?? innerData['userId'] ?? op.actorId,
-          isMilestone: ganttType != null ? ganttType == 'milestone' : existingTask.isMilestone,
-          isSummary: ganttType != null
-              ? (ganttType == 'summary' || ganttType == 'project')
-              : (innerData['is_summary'] == true || innerData['isSummary'] == true ? true : existingTask.isSummary),
-          color: _parseColor(innerData['color']) ?? existingTask.color,
-          textColor:
-              _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']) ?? existingTask.textColor,
-          completion: (innerData['completion'] as num?)?.toDouble() ?? existingTask.completion,
-          resourceId: innerData['resourceId'] as String? ?? existingTask.resourceId,
-          baselineStart: parseDate(innerData['baseline_start']) ??
-              parseDate(innerData['baselineStart']) ??
-              existingTask.baselineStart,
-          baselineEnd:
-              parseDate(innerData['baseline_end']) ?? parseDate(innerData['baselineEnd']) ?? existingTask.baselineEnd,
-          notes: innerData['notes'] as String? ?? existingTask.notes,
-          parentId: _optionalId(innerData['parentId'] ?? innerData['parent_id']) ?? existingTask.parentId,
-          usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true
-              ? true
-              : (innerData['uses_work_calendar'] == false ? false : existingTask.usesWorkCalendar),
-          isAutoScheduled: innerData['is_auto_scheduled'] == true
-              ? true
-              : (innerData['is_auto_scheduled'] == false ? false : existingTask.isAutoScheduled),
-        );
-
-        try {
-          if (_useLocalDatabase) {
-            if (batchTasks != null) {
-              batchTasks.add(updatedTask);
-            } else {
-              await _localRepository.insertOrUpdateTask(updatedTask);
-            }
-          }
-
-          _allGanttTasks = List.from(_allGanttTasks);
-          _allGanttTasks[sourceIndex] = updatedTask;
-
-          final visibleIndex = _ganttTasks.indexWhere((t) => t.id == taskId);
-          if (visibleIndex != -1) {
-            _ganttTasks[visibleIndex] = updatedTask;
-          }
-          if (notify) await _processLocalData();
-        } catch (e) {
-          print('Error processing UPDATE_TASK for $taskId: $e');
-        }
-      } else {
-        final start =
-            parseDate(innerData['start_date'] ?? innerData['startDate'] ?? innerData['start']) ?? DateTime.now();
-        final end = parseDate(innerData['end_date'] ?? innerData['endDate'] ?? innerData['end']) ??
-            start.add(const Duration(days: 1));
-
-        final newTask = LegacyGanttTask(
-          id: taskId,
-          rowId: innerData['rowId'] ?? 'unknown_row',
-          name: innerData['name'] ?? 'Unnamed Task',
-          start: start,
-          end: end,
-          isSummary: (ganttType == 'summary' || ganttType == 'project') ||
-              (innerData['is_summary'] == true) ||
-              (innerData['isSummary'] == true),
-          isMilestone: ganttType == 'milestone',
-          color: _parseColor(innerData['color']),
-          textColor: _parseColor(innerData['text_color']) ?? _parseColor(innerData['textColor']),
-          completion: (innerData['completion'] as num?)?.toDouble() ?? 0.0,
-          resourceId: innerData['resourceId'] as String?,
-          baselineStart:
-              parseDate(innerData['baseline_start'] ?? innerData['baselineStart'] ?? innerData['baseline_start']),
-          baselineEnd: parseDate(innerData['baseline_end'] ?? innerData['baselineEnd'] ?? innerData['baseline_end']),
-          notes: innerData['notes'] as String?,
-          parentId: _optionalId(innerData['parentId'] ?? innerData['parent_id']),
-          usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true,
-          isAutoScheduled: innerData['is_auto_scheduled'] != false,
-          lastUpdated: op.timestamp,
-          lastUpdatedBy: innerData['user_id'] ?? innerData['userId'] ?? op.actorId,
-        );
-
-        if (_useLocalDatabase) {
-          if (batchTasks != null) {
-            batchTasks.add(newTask);
-          } else {
-            await _localRepository.insertOrUpdateTask(newTask);
-          }
-        }
-
-        _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
-        if (notify) await _processLocalData();
-      }
-    } else if (op.type == 'INSERT_TASK') {
-      var data = op.data;
-      String? ganttType;
-
-      ganttType = (data['gantt_type'] ?? data['ganttType']) as String?;
-
-      if (data.containsKey('data') && data['data'] is Map) {
-        ganttType ??= (data['gantt_type'] ?? data['ganttType']) as String?;
-        data = data['data'] as Map<String, dynamic>;
-        ganttType ??= (data['gantt_type'] ?? data['ganttType']) as String?;
-      }
-
-      final taskId = data['id']?.toString().trim() ?? '';
-      final existingIndex = _allGanttTasks.indexWhere((t) => t.id == taskId);
-      if (existingIndex != -1) {
-        final existing = _allGanttTasks[existingIndex];
-        if (op.timestamp <= existing.lastUpdated) {
-          return;
-        }
-      }
-
-      final start = parseDate(data['start_date'] ?? data['start'] ?? data['startDate']) ?? DateTime.now();
-      final end = parseDate(data['end_date'] ?? data['end'] ?? data['endDate']) ?? start.add(const Duration(days: 1));
-
-      final newTask = LegacyGanttTask(
-        id: taskId,
-        rowId: data['rowId']?.toString().trim() ?? '',
-        name: data['name'],
-        start: start,
-        end: end,
-        isSummary:
-            ganttType == 'summary' || ganttType == 'project' || data['is_summary'] == true || data['isSummary'] == true,
-        isMilestone: ganttType == 'milestone' || data['is_milestone'] == true || data['isMilestone'] == true,
-        color: _parseColor(data['color']),
-        textColor: _parseColor(data['textColor']),
-        completion: (data['completion'] as num?)?.toDouble() ?? 0.0,
-        resourceId: data['resourceId'] as String?,
-        baselineStart: parseDate(data['baseline_start'] ?? data['baselineStart']),
-        baselineEnd: parseDate(data['baseline_end'] ?? data['baselineEnd']),
-        notes: data['notes'] as String?,
-        parentId: _optionalId(data['parentId'] ?? data['parent_id']),
-        usesWorkCalendar: data['uses_work_calendar'] == true,
-        isAutoScheduled: data['is_auto_scheduled'] != false,
-        lastUpdated: op.timestamp,
-        lastUpdatedBy: op.actorId,
-      );
-
-      if (_useLocalDatabase) {
-        if (batchTasks != null) {
-          batchTasks.add(newTask);
-        } else {
-          await _localRepository.insertOrUpdateTask(newTask);
-        }
-      }
-
-      if (existingIndex != -1) {
-        _allGanttTasks = List.from(_allGanttTasks);
-        _allGanttTasks[existingIndex] = newTask;
-      } else {
-        _allGanttTasks = List.from(_allGanttTasks)..add(newTask);
-      }
-      if (notify) await _processLocalData();
-    } else if (op.type == 'DELETE_TASK') {
-      final taskId = taskData['id'];
-      if (taskId == null) return;
-
-      if (_useLocalDatabase) {
-        if (batchTasks != null && batchTasks.isNotEmpty) {
-          await _localRepository.insertTasks(batchTasks);
-          batchTasks.clear();
-        }
-        if (batchDeletedTaskIds != null) {
-          batchDeletedTaskIds.add(taskId);
-        } else {
-          // Using op.timestamp instead of _currentHlc here for single ops from outside
-          await _localRepository.deleteTask(taskId, op.timestamp);
-        }
-      }
-
-      _ganttTasks.removeWhere((t) => t.id == taskId);
-      _allGanttTasks.removeWhere((t) => t.id == taskId);
-      _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-      if (notify) await _processLocalData();
-    } else if (op.type == 'PRESENCE_UPDATE') {
+    if (op.type == 'PRESENCE_UPDATE') {
       final data = op.data;
-      final userId = op.actorId;
-
-      final viewportStartMs = data['viewportStart'] as int?;
-      final viewportEndMs = data['viewportEnd'] as int?;
-
-      _connectedUsers[userId] = RemoteGhost(
-        userId: userId,
+      _connectedUsers[op.actorId] = RemoteGhost(
+        userId: op.actorId,
         lastUpdated: DateTime.now(),
-        viewportStart: viewportStartMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportStartMs) : null,
-        viewportEnd: viewportEndMs != null ? DateTime.fromMillisecondsSinceEpoch(viewportEndMs) : null,
+        viewportStart: data['viewportStart'] is num
+            ? DateTime.fromMillisecondsSinceEpoch((data['viewportStart'] as num).toInt())
+            : null,
+        viewportEnd: data['viewportEnd'] is num
+            ? DateTime.fromMillisecondsSinceEpoch((data['viewportEnd'] as num).toInt())
+            : null,
         verticalScrollOffset: (data['verticalScrollOffset'] as num?)?.toDouble(),
         userName: data['userName'] as String?,
         userColor: data['userColor'] as String?,
       );
-      if (notify) notifyListeners();
-
-      if (followedUserId == userId) {
-        _applyFollowedUserView(_connectedUsers[userId]!);
-      }
-    } else if (op.type == 'INSERT_DEPENDENCY' || op.type == 'UPDATE_DEPENDENCY') {
-      final data = op.data;
-      final dependencyTypeString = (data['dependency_type'] ?? data['type'] ?? 'finishToStart').toString();
-      final dependencyType = DependencyType.values.firstWhere(
-        (e) => e.name.toLowerCase() == dependencyTypeString.toLowerCase(),
-        orElse: () => DependencyType.finishToStart,
-      );
-      final newDep = LegacyGanttTaskDependency(
-        predecessorTaskId: data['predecessorTaskId'] ?? data['predecessor_task_id'],
-        successorTaskId: data['successorTaskId'] ?? data['successor_task_id'],
-        type: dependencyType,
-        lag: data['lag'] != null ? Duration(milliseconds: (data['lag'] as num).toInt()) : null,
-        lastUpdated: op.timestamp,
-      );
-
-      if (_useLocalDatabase) {
-        if (batchDependencies != null) {
-          batchDependencies.add(newDep);
-        } else {
-          await _localRepository.insertOrUpdateDependency(newDep);
-        }
-        if (notify) await _processLocalData();
-      } else {
-        if (!_dependencies.contains(newDep)) {
-          _dependencies.add(newDep);
-          if (notify) notifyListeners();
-        }
-      }
-    } else if (op.type == 'DELETE_DEPENDENCY') {
-      final data = op.data;
-      final pred = data['predecessorTaskId'];
-      final succ = data['successorTaskId'];
-
-      if (_useLocalDatabase) {
-        if (batchDependencies != null && batchDependencies.isNotEmpty) {
-          await _localRepository.insertDependencies(batchDependencies);
-          batchDependencies.clear();
-        }
-        if (batchDeletedDependencies != null) {
-          batchDeletedDependencies.add((pred, succ));
-        } else {
-          await _localRepository.deleteDependency(pred, succ, op.timestamp);
-        }
-        if (notify) await _processLocalData();
-      } else {
-        _dependencies.removeWhere((d) => d.predecessorTaskId == pred && d.successorTaskId == succ);
-        if (notify) notifyListeners();
-      }
-    } else if (op.type == 'CLEAR_DEPENDENCIES') {
-      final taskId = op.data['taskId'];
-      if (taskId == null) return;
-
-      if (_useLocalDatabase) {
-        if (batchDependencies != null && batchDependencies.isNotEmpty) {
-          await _localRepository.insertDependencies(batchDependencies);
-          batchDependencies.clear();
-        }
-        await _localRepository.deleteDependenciesForTask(taskId, op.timestamp);
-        if (notify) await _processLocalData();
-      } else {
-        _dependencies.removeWhere((d) => d.predecessorTaskId == taskId || d.successorTaskId == taskId);
-        if (notify) notifyListeners();
-      }
-    } else if (op.type == 'INSERT_RESOURCE' || op.type == 'UPDATE_RESOURCE') {
-      var data = op.data;
-      if (data.containsKey('data') && data['data'] is Map) {
-        data = data['data'] as Map<String, dynamic>;
-      }
-
-      final resource = LocalResource(
-        id: data['id'],
-        name: data['name'],
-        parentId: _optionalId(data['parent_id'] ?? data['parentId']),
-        isExpanded: data['isExpanded'] == true || data['is_expanded'] == true,
-      );
-
-      if (_useLocalDatabase) {
-        if (batchResources != null) {
-          batchResources.add(resource);
-        } else {
-          await _localRepository.insertOrUpdateResource(resource);
-        }
-      }
-
-      final index = _localResources.indexWhere((r) => r.id == resource.id);
-      if (index != -1) {
-        _localResources[index] = resource;
-      } else {
-        _localResources = List.from(_localResources)..add(resource);
-      }
-
-      if (notify) await _processLocalData();
-    } else if (op.type == 'DELETE_RESOURCE') {
-      final id = op.data['id'];
-      if (id != null) {
-        if (_useLocalDatabase) {
-          if (batchResources != null && batchResources.isNotEmpty) {
-            await _localRepository.insertResources(batchResources);
-            batchResources.clear();
-          }
-          if (batchDeletedResourceIds != null) {
-            batchDeletedResourceIds.add(id);
-          } else {
-            await _localRepository.deleteResource(id, op.timestamp);
-          }
-        }
-        _localResources.removeWhere((r) => r.id == id);
-        if (notify) await _processLocalData();
-      }
-    } else if (op.type == 'RESET_DATA') {
-      bool shouldReset = true;
-      if (shouldReset) {
-        if (_useLocalDatabase) {
-          await _localRepository.deleteAllDependencies();
-          await _localRepository.deleteAllTasks();
-          await _localRepository.deleteAllResources();
-        }
-
-        batchTasks?.clear();
-        batchDependencies?.clear();
-        batchResources?.clear();
-
-        _dependencies.clear();
-        _ganttTasks.clear();
-        _allGanttTasks.clear();
-        _localResources.clear();
-        _gridData.clear();
-        _cachedVisibleFlatGridData = null;
-        _rowMaxStackDepth.clear();
-        _cachedFlatGridData = null;
-        _conflictIndicators.clear();
-      }
-
-      if (notify) notifyListeners();
+      if (followedUserId == op.actorId) _applyFollowedUserView(_connectedUsers[op.actorId]!);
+      notifyListeners();
+      return;
     }
-  }
-
-  String? _optionalId(dynamic value) {
-    final id = value?.toString();
-    return id == null || id.isEmpty ? null : id;
-  }
-
-  Color? _parseColor(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return Color(value);
-    if (value is String) {
-      try {
-        if (value.startsWith('#')) {
-          return Color(int.parse(value.substring(1), radix: 16));
-        }
-        return Color(int.parse(value, radix: 16));
-      } catch (_) {
-        return null;
-      }
+    if (!const {
+      'BATCH_UPDATE',
+      'RESET_DATA',
+      'INSERT_TASK',
+      'UPDATE_TASK',
+      'DELETE_TASK',
+      'INSERT_RESOURCE',
+      'UPDATE_RESOURCE',
+      'DELETE_RESOURCE',
+      'INSERT_DEPENDENCY',
+      'UPDATE_DEPENDENCY',
+      'DELETE_DEPENDENCY',
+    }.contains(op.type)) {
+      return;
     }
-    return null;
+    if (op.type == 'BATCH_UPDATE') _initialSyncReceived += (op.data['operations'] as List? ?? []).length;
+    final commit = await _protocolState.applyOperations([op]);
+    if (commit.acceptedReset != null) {
+      _initialSyncExpected = 0;
+      _initialSyncReceived = 0;
+      _pendingSeedReset = true;
+    }
+    _acceptSnapshot(commit.state, force: commit.acceptedReset != null);
+    if (op.type == 'BATCH_UPDATE') await _localRepository.setLastServerSyncTimestamp(op.timestamp);
+    if (!_isInitialSyncing) {
+      _initialSyncExpected = 0;
+      _initialSyncReceived = 0;
+    }
   }
 
   /// A callback from the Gantt chart widget when a task has been moved or resized by the user.
   /// It updates the task in the local list and then recalculates the stacking for all tasks.
   Future<void> handleTaskUpdate(LegacyGanttTask task, DateTime newStart, DateTime newEnd) async {
     if (_useLocalDatabase) {
-      final updatedTask = task.copyWith(start: newStart, end: newEnd, lastUpdated: _currentHlc);
-      await _localRepository.insertOrUpdateTask(updatedTask);
-
-      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
-      if (index != -1) {
-        _allGanttTasks[index] = updatedTask;
-
-        if (_apiResponse != null) {
-          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
-              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
-          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-        }
-      }
+      await updateTask(task.copyWith(start: newStart, end: newEnd));
+      return;
     } else if (_apiResponse != null) {
-      final parentResource =
-          _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
+      final parentResource = _apiResponse?.resourcesData.firstWhereOrNull(
+        (r) => r.children.any((c) => c.id == task.rowId),
+      );
       if (parentResource != null) {
         final jobIndex = parentResource.children.indexWhere((j) => j.id == task.rowId);
         if (jobIndex != -1) {
@@ -3271,34 +2509,30 @@ class GanttViewModel extends ChangeNotifier {
         _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd);
 
         if (_apiResponse != null) {
-          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
-              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+            _allGanttTasks,
+            _apiResponse!,
+            showConflicts: _showConflicts,
+          );
           _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
         }
       }
+    }
+    if (_syncClient != null) {
+      await _commitOperations([
+        _taskOperation(
+          task.copyWith(start: newStart, end: newEnd),
+          type: 'UPDATE_TASK',
+          previous: task,
+        ),
+      ]);
     }
   }
 
   Future<void> handleTaskMove(LegacyGanttTask task, DateTime newStart, DateTime newEnd, String newRowId) async {
     if (_useLocalDatabase) {
-      final updatedTask = task.copyWith(
-        start: newStart,
-        end: newEnd,
-        rowId: newRowId,
-        lastUpdated: _currentHlc,
-      );
-      await _localRepository.insertOrUpdateTask(updatedTask);
-
-      final index = _allGanttTasks.indexWhere((t) => t.id == task.id);
-      if (index != -1) {
-        _allGanttTasks[index] = updatedTask;
-
-        if (_apiResponse != null) {
-          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
-              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
-          _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-        }
-      }
+      await updateTask(task.copyWith(start: newStart, end: newEnd, rowId: newRowId));
+      return;
     }
 
     if (!_useLocalDatabase) {
@@ -3307,11 +2541,23 @@ class GanttViewModel extends ChangeNotifier {
         _allGanttTasks[index] = _allGanttTasks[index].copyWith(start: newStart, end: newEnd, rowId: newRowId);
 
         if (_apiResponse != null) {
-          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService
-              .publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+          final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+            _allGanttTasks,
+            _apiResponse!,
+            showConflicts: _showConflicts,
+          );
           _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
         }
       }
+    }
+    if (_syncClient != null) {
+      await _commitOperations([
+        _taskOperation(
+          task.copyWith(start: newStart, end: newEnd, rowId: newRowId),
+          type: 'UPDATE_TASK',
+          previous: task,
+        ),
+      ]);
     }
   }
 
@@ -3334,9 +2580,13 @@ class GanttViewModel extends ChangeNotifier {
       );
 
       if (_useLocalDatabase) {
-        _localRepository.insertOrUpdateTask(newTask);
+        unawaited(addTask(newTask));
+        return;
       }
 
+      if (_syncClient != null) {
+        unawaited(_commitOperations([_taskOperation(newTask)]));
+      }
       _allGanttTasks.add(newTask);
       _recalculateStackingAndNotify();
     }
@@ -3344,9 +2594,13 @@ class GanttViewModel extends ChangeNotifier {
 
   void handleDependencyCreated(LegacyGanttTaskDependency dependency) {
     if (_dependencyCreationEnabled) {
-      _dependencies.add(dependency);
       if (_useLocalDatabase) {
-        _localRepository.insertOrUpdateDependency(dependency);
+        unawaited(addDependencies([dependency]));
+        return;
+      }
+      _dependencies.add(dependency);
+      if (_syncClient != null) {
+        unawaited(_commitOperations([_dependencyOperation(dependency)]));
       }
       _recalculateStackingAndNotify();
     }
@@ -3354,17 +2608,21 @@ class GanttViewModel extends ChangeNotifier {
 
   Future<void> handleDependenciesSynced(List<LegacyGanttTaskDependency> dependencies) async {
     if (dependencies.isEmpty) return;
-    _dependencies.addAll(dependencies);
     if (_useLocalDatabase) {
-      await _localRepository.insertDependencies(dependencies);
+      await addDependencies(dependencies);
+      return;
+    }
+    _dependencies.addAll(dependencies);
+    if (_syncClient != null) {
+      await _commitOperations(dependencies.map(_dependencyOperation).toList());
     }
     _recalculateStackingAndNotify();
   }
 
-
   Future<void> handleBatchTaskUpdate(List<(LegacyGanttTask, DateTime, DateTime)> updates) async {
     debugPrint(
-        '${DateTime.now().toIso8601String()} GanttViewModel: handleBatchTaskUpdate received ${updates.length} updates');
+      '${DateTime.now().toIso8601String()} GanttViewModel: handleBatchTaskUpdate received ${updates.length} updates',
+    );
     final now = _currentHlc;
     bool needsCalculations = false;
     final List<LegacyGanttTask> dbUpdates = [];
@@ -3385,8 +2643,9 @@ class GanttViewModel extends ChangeNotifier {
 
         dbUpdates.add(updatedTask);
       } else if (_apiResponse != null) {
-        final parentResource =
-            _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == task.rowId));
+        final parentResource = _apiResponse?.resourcesData.firstWhereOrNull(
+          (r) => r.children.any((c) => c.id == task.rowId),
+        );
         if (parentResource != null) {
           final jobIndex = parentResource.children.indexWhere((j) => j.id == task.rowId);
           if (jobIndex != -1) {
@@ -3417,13 +2676,16 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (needsCalculations && _apiResponse != null) {
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(_allGanttTasks, _apiResponse!, showConflicts: _showConflicts);
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+        _allGanttTasks,
+        _apiResponse!,
+        showConflicts: _showConflicts,
+      );
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
     }
 
     if (_useLocalDatabase && dbUpdates.isNotEmpty) {
-      await _localRepository.insertTasks(dbUpdates);
+      await updateTasksBulk(dbUpdates);
     }
   }
 
@@ -3479,34 +2741,19 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Helper method to add a new task, handle persistence, and update UI.
   Future<void> _createTask(LegacyGanttTask newTask) async {
+    if (_useLocalDatabase) {
+      await addTask(newTask);
+      return;
+    }
     _allGanttTasks.add(newTask);
     _recalculateStackingAndNotify();
-
-    if (_useLocalDatabase) {
-      await _localRepository.insertOrUpdateTask(newTask);
-    }
-
-    if (_syncClient != null && (_isSyncConnected || _syncClient is OfflineGanttSyncClient)) {
-      _syncClient!.sendOperation(Operation(
-        type: 'INSERT_TASK', // Use INSERT_TASK for clarity
-        data: {
-          'id': newTask.id,
-          'color': newTask.color?.toARGB32().toRadixString(16),
-          'text_color': newTask.textColor?.toARGB32().toRadixString(16),
-          'name': newTask.name,
-          'start_date': newTask.start.millisecondsSinceEpoch,
-          'end_date': newTask.end.millisecondsSinceEpoch,
-          'rowId': newTask.rowId,
-          'is_summary': newTask.isSummary,
-          'uses_work_calendar': newTask.usesWorkCalendar,
-        },
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
+    if (_syncClient != null) {
+      await _commitOperations([_taskOperation(newTask)]);
     }
   }
 
   /// A generic helper to show a dialog with a single text input field.
+
   Future<String?> _showTextInputDialog({
     required BuildContext context,
     required String title,
@@ -3526,10 +2773,7 @@ class GanttViewModel extends ChangeNotifier {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('OK'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('OK')),
         ],
       ),
     );
@@ -3546,14 +2790,24 @@ class GanttViewModel extends ChangeNotifier {
     if (newContactName != null && newContactName.isNotEmpty) {
       final newResourceId = 'person_${DateTime.now().millisecondsSinceEpoch}';
 
+      if (_useLocalDatabase) {
+        await addResources([LocalResource(id: newResourceId, name: newContactName)]);
+        return;
+      }
+
       final newResource = GanttResourceData(
         id: newResourceId,
         name: newContactName,
         taskName: 'Summary for $newContactName', // Ensure taskName is set
         children: [],
       );
-      final newGridItem =
-          GanttGridData(id: newResourceId, name: newContactName, isParent: true, isExpanded: true, children: []);
+      final newGridItem = GanttGridData(
+        id: newResourceId,
+        name: newContactName,
+        isParent: true,
+        isExpanded: true,
+        children: [],
+      );
 
       _apiResponse?.resourcesData.add(newResource);
       _gridData.add(newGridItem);
@@ -3574,8 +2828,19 @@ class GanttViewModel extends ChangeNotifier {
     if (newLineItemName != null && newLineItemName.isNotEmpty) {
       final newJobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
 
+      if (_useLocalDatabase) {
+        await addResources([LocalResource(id: newJobId, name: newLineItemName, parentId: parentId)]);
+        return;
+      }
+
       final newJob = GanttJobData(
-          id: newJobId, name: newLineItemName, taskName: null, status: 'New', taskColor: '9E9E9E', completion: 0.0);
+        id: newJobId,
+        name: newLineItemName,
+        taskName: null,
+        status: 'New',
+        taskColor: '9E9E9E',
+        completion: 0.0,
+      );
       final newGridItem = GanttGridData.fromJob(newJob);
 
       final parentResource = _apiResponse?.resourcesData.firstWhere((r) => r.id == parentId);
@@ -3593,12 +2858,12 @@ class GanttViewModel extends ChangeNotifier {
   void setParentTaskType(String parentId, bool isSummary) {
     if (_apiResponse == null) return;
 
+    final previousTasks = List<LegacyGanttTask>.of(_ganttTasks);
+    final previousDependencies = List<LegacyGanttTaskDependency>.of(_dependencies);
     List<LegacyGanttTask> nextTasks = _ganttTasks;
     List<LegacyGanttTaskDependency> nextDependencies = _dependencies;
 
-    final parentTaskIndex = nextTasks.indexWhere(
-      (t) => t.rowId == parentId && !t.isTimeRangeHighlight,
-    );
+    final parentTaskIndex = nextTasks.indexWhere((t) => t.rowId == parentId && !t.isTimeRangeHighlight);
 
     if (isSummary) {
       if (parentTaskIndex != -1) {
@@ -3633,19 +2898,29 @@ class GanttViewModel extends ChangeNotifier {
         }
       }
 
-      final hasDependency =
-          nextDependencies.any((d) => d.predecessorTaskId == parentId && d.type == DependencyType.contained);
-      if (!hasDependency && nextTasks.isNotEmpty) {
-        final successorForContainedDemo = nextTasks.firstWhere(
-          (t) => !t.isSummary && !t.isTimeRangeHighlight,
-          orElse: () => nextTasks.first,
-        );
-        final newDependency = LegacyGanttTaskDependency(
-          predecessorTaskId: parentId,
-          successorTaskId: successorForContainedDemo.id,
-          type: DependencyType.contained,
-        );
-        nextDependencies = [...nextDependencies, newDependency];
+      final summaryTask = nextTasks.firstWhereOrNull((task) => task.rowId == parentId && task.isSummary);
+      final parentItem = _gridData.firstWhereOrNull((item) => item.id == parentId);
+      final childRows = parentItem?.children.map((child) => child.id).toSet() ?? <String>{};
+      final childTask = nextTasks.firstWhereOrNull(
+        (task) =>
+            childRows.contains(task.rowId) && !task.isSummary && !task.isTimeRangeHighlight && !task.isOverlapIndicator,
+      );
+      if (summaryTask != null &&
+          childTask != null &&
+          !nextDependencies.any(
+            (dependency) =>
+                dependency.predecessorTaskId == summaryTask.id &&
+                dependency.successorTaskId == childTask.id &&
+                dependency.type == DependencyType.contained,
+          )) {
+        nextDependencies = [
+          ...nextDependencies,
+          LegacyGanttTaskDependency(
+            predecessorTaskId: summaryTask.id,
+            successorTaskId: childTask.id,
+            type: DependencyType.contained,
+          ),
+        ];
       }
     } else {
       if (parentTaskIndex != -1) {
@@ -3656,13 +2931,39 @@ class GanttViewModel extends ChangeNotifier {
           nextTasks = List.from(nextTasks)..[parentTaskIndex] = existingTask.copyWith(isSummary: false);
         }
       }
+      final summaryIds = {parentId, ...previousTasks.where((task) => task.rowId == parentId).map((task) => task.id)};
       nextDependencies = nextDependencies
-          .where((d) => !(d.predecessorTaskId == parentId && d.type == DependencyType.contained))
+          .where((d) => !(summaryIds.contains(d.predecessorTaskId) && d.type == DependencyType.contained))
           .toList();
     }
 
-    final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-        _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+    if (_useLocalDatabase || _syncClient != null) {
+      final nextIds = nextTasks.map((task) => task.id).toSet();
+      final operations = <Operation>[
+        for (final task in nextTasks.where(
+          (task) => task.rowId == parentId && !task.isTimeRangeHighlight && !task.isOverlapIndicator,
+        ))
+          _taskOperation(task, previous: previousTasks.where((previous) => previous.id == task.id).firstOrNull),
+        for (final task in previousTasks.where((task) => task.rowId == parentId && !nextIds.contains(task.id)))
+          Operation(
+            type: 'DELETE_TASK',
+            data: {'id': task.id},
+            timestamp: _currentHlc,
+            actorId: _syncClient?.actorId ?? 'local-user',
+          ),
+        for (final dependency in nextDependencies.where((dependency) => !previousDependencies.contains(dependency)))
+          _dependencyOperation(dependency),
+        for (final dependency in previousDependencies.where((dependency) => !nextDependencies.contains(dependency)))
+          _deleteDependencyOperation(dependency),
+      ];
+      unawaited(_commitOperations(operations));
+    }
+
+    final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+      nextTasks,
+      _apiResponse!,
+      showConflicts: _showConflicts,
+    );
     _dependencies = nextDependencies;
     _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
   }
@@ -3724,57 +3025,17 @@ class GanttViewModel extends ChangeNotifier {
         item.isExpanded = isExpanded ?? !item.isExpanded;
         _cachedFlatGridData = null; // Invalidate
         _cachedVisibleFlatGridData = null; // Invalidate
-        if (_useLocalDatabase) {
-          _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
-        }
-        if (_syncClient != null) {
-          final resource = _localResources.firstWhereOrNull((r) => r.id == item.id);
-          final data = <String, dynamic>{
-            'id': item.id,
-            'is_expanded': item.isExpanded,
-          };
-          if (resource != null) {
-            data['name'] = resource.name;
-            data['parentId'] = resource.parentId;
-          }
-
-          _syncClient!.sendOperation(Operation(
-            type: 'INSERT_RESOURCE',
-            data: data,
-            timestamp: _currentHlc,
-            actorId: 'local-user',
-          ));
-        }
+        _persistExpansion(item);
         _recalculateStackingAndNotify();
         return;
       }
     }
 
-    item.isExpanded = !item.isExpanded;
+    item.isExpanded = isExpanded ?? !item.isExpanded;
     _cachedFlatGridData = null; // Invalidate
     _cachedVisibleFlatGridData = null; // Invalidate
 
-    if (_useLocalDatabase) {
-      _localRepository.updateResourceExpansion(item.id, item.isExpanded, _currentHlc);
-    }
-    if (_syncClient != null) {
-      final resource = _localResources.firstWhereOrNull((r) => r.id == item.id);
-      final data = <String, dynamic>{
-        'id': item.id,
-        'is_expanded': item.isExpanded,
-      };
-      if (resource != null) {
-        data['name'] = resource.name;
-        data['parentId'] = resource.parentId;
-      }
-
-      _syncClient!.sendOperation(Operation(
-        type: 'INSERT_RESOURCE',
-        data: data,
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
-    }
+    _persistExpansion(item);
 
     if (_apiResponse != null) {
       final visibleRowIds = visibleGanttRows.map((r) => r.id).toSet();
@@ -3801,8 +3062,16 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   /// Helper to centralize the logic for recalculating stacking and notifying listeners.
+  void _persistExpansion(GanttGridData item) {
+    final resource = _localResources.firstWhereOrNull((resource) => resource.id == item.id);
+    if (resource != null && (_useLocalDatabase || _syncClient != null)) {
+      unawaited(_commitOperations([_resourceOperation(resource.copyWith(isExpanded: item.isExpanded))]));
+    }
+  }
+
   void _recalculateStackingAndNotify() {
-    final response = _apiResponse ??
+    final response =
+        _apiResponse ??
         GanttResponse(
           success: true,
           resourcesData: [],
@@ -3835,115 +3104,69 @@ class GanttViewModel extends ChangeNotifier {
   /// Handles the "Copy Task" action from the context menu.
   void handleCopyTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
-
     final newTask = task.copyWith(
       id: 'copy_${task.id}_${DateTime.now().millisecondsSinceEpoch}',
       start: task.start.add(const Duration(days: 1)),
       end: task.end.add(const Duration(days: 1)),
     );
-
-    if (_useLocalDatabase) {
-      _localRepository.insertOrUpdateTask(newTask);
-    } else {
-      final newTasks = [..._ganttTasks, newTask];
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-    }
-
-    if (_syncClient != null) {
-      _syncClient!.sendOperation(Operation(
-        type: 'INSERT',
-        data: {
-          'id': newTask.id,
-          'name': newTask.name,
-          'start_date': newTask.start.millisecondsSinceEpoch,
-          'end_date': newTask.end.millisecondsSinceEpoch,
-          'rowId': newTask.rowId,
-          'is_summary': newTask.isSummary,
-        },
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
-    }
+    unawaited(_createTask(newTask));
   }
 
   /// Handles the "Delete Task" action from the context menu.
+
   void handleDeleteTask(LegacyGanttTask task) {
     if (_apiResponse == null) return;
-
-    if (_useLocalDatabase) {
-      _localRepository.deleteTask(task.id, _currentHlc);
-    } else {
-      final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
-      final newDependencies =
-          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
-
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-      _dependencies = newDependencies;
-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
-    }
-
-    if (_syncClient != null) {
-      _syncClient!.sendOperation(Operation(
-        type: 'DELETE',
-        data: {
-          'id': task.id,
-        },
+    final operations = <Operation>[
+      for (final dependency in getDependenciesForTask(task)) _deleteDependencyOperation(dependency),
+      Operation(
+        type: 'DELETE_TASK',
+        data: {'id': task.id},
         timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
-    }
-
-    final remainingTasksInRow = _allGanttTasks.where((t) => t.rowId == task.rowId && t.id != task.id).length;
-    if (remainingTasksInRow == 0 && !_showEmptyParentRows) {
-      if (_useLocalDatabase) {
-        _localRepository.deleteResource(task.rowId, _currentHlc);
-      }
-      if (_syncClient != null) {
-        _syncClient!.sendOperation(Operation(
+        actorId: _syncClient?.actorId ?? 'local-user',
+      ),
+    ];
+    final remainingTasksInRow = _allGanttTasks.where((other) => other.rowId == task.rowId && other.id != task.id);
+    if (remainingTasksInRow.isEmpty && !_showEmptyParentRows) {
+      operations.add(
+        Operation(
           type: 'DELETE_RESOURCE',
           data: {'id': task.rowId},
           timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-      if (_useLocalDatabase) {
-        _localRepository.deleteResource(task.rowId, _currentHlc);
-      }
+          actorId: _syncClient?.actorId ?? 'local-user',
+        ),
+      );
     }
-
     if (_useLocalDatabase) {
-      _localRepository.deleteTask(task.id, _currentHlc);
-    } else {
-      final newTasks = _ganttTasks.where((t) => t.id != task.id).toList();
-      final newDependencies =
-          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
-
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(newTasks, _apiResponse!, showConflicts: _showConflicts);
-      _dependencies = newDependencies;
-      _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
+      _allGanttTasks.removeWhere((other) => other.id == task.id);
+      _dependencies.removeWhere(
+        (dependency) => dependency.predecessorTaskId == task.id || dependency.successorTaskId == task.id,
+      );
+      _recalculateStackingAndNotify();
+      unawaited(_commitOperations(operations));
+      return;
     }
-
+    final remaining = _ganttTasks.where((other) => other.id != task.id).toList();
+    _dependencies.removeWhere(
+      (dependency) => dependency.predecessorTaskId == task.id || dependency.successorTaskId == task.id,
+    );
+    final (tasks, depth, conflicts) = _scheduleService.publicCalculateTaskStacking(
+      remaining,
+      _apiResponse!,
+      showConflicts: _showConflicts,
+    );
+    _updateTasksAndStacking(tasks, depth, conflicts);
     if (_syncClient != null) {
-      _syncClient!.sendOperation(Operation(
-        type: 'DELETE',
-        data: {
-          'id': task.id,
-        },
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
+      unawaited(_commitOperations(operations));
     }
   }
 
   /// Shows a dialog to edit all parent summary tasks at once.
+
   Future<void> editAllParentTasks(BuildContext context) async {
     final parentRowIds = _gridData.where((g) => g.isParent).map((g) => g.id).toSet();
-    final parentSummaryTasks =
-        _ganttTasks.where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator).toList();
+    final parentSummaryTasks = _ganttTasks
+        .where((t) => t.isSummary && parentRowIds.contains(t.rowId) && !t.isOverlapIndicator)
+        .toList();
 
     if (parentSummaryTasks.isEmpty) return;
 
@@ -4034,6 +3257,10 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Updates multiple tasks at once and recalculates stacking.
   Future<void> _updateMultipleTasks(List<LegacyGanttTask> updatedTasks) async {
+    if (_useLocalDatabase) {
+      await updateTasksBulk(updatedTasks);
+      return;
+    }
     if (_apiResponse == null) return;
 
     final newTasks = List<LegacyGanttTask>.from(_allGanttTasks);
@@ -4049,8 +3276,9 @@ class GanttViewModel extends ChangeNotifier {
           completion: updatedTask.completion,
           lastUpdated: updatedTask.lastUpdated,
         );
-        final parentResource =
-            _apiResponse?.resourcesData.firstWhereOrNull((r) => r.children.any((c) => c.id == originalTask.rowId));
+        final parentResource = _apiResponse?.resourcesData.firstWhereOrNull(
+          (r) => r.children.any((c) => c.id == originalTask.rowId),
+        );
         if (parentResource != null) {
           final jobIndex = parentResource.children.indexWhere((j) => j.id == originalTask.rowId);
           if (jobIndex != -1) {
@@ -4107,32 +3335,29 @@ class GanttViewModel extends ChangeNotifier {
     print('DEBUG: Deleting ${resourcesToDelete.length} resources');
 
     final tasksToDelete = _allGanttTasks.where((t) => resourcesToDelete.contains(t.rowId)).toList();
-    if (_useLocalDatabase) {
-      for (final task in tasksToDelete) {
-        _localRepository.deleteTask(task.id, _currentHlc);
-      }
-      for (final id in resourcesToDelete) {
-        _localRepository.deleteResource(id, _currentHlc);
-      }
-    }
-
-    if (_syncClient != null) {
-      for (final task in tasksToDelete) {
-        _syncClient!.sendOperation(Operation(
-          type: 'DELETE',
+    final taskIds = tasksToDelete.map((task) => task.id).toSet();
+    final operations = <Operation>[
+      for (final dependency in _dependencies.where(
+        (dependency) => taskIds.contains(dependency.predecessorTaskId) || taskIds.contains(dependency.successorTaskId),
+      ))
+        _deleteDependencyOperation(dependency),
+      for (final task in tasksToDelete)
+        Operation(
+          type: 'DELETE_TASK',
           data: {'id': task.id},
           timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-      for (final resId in resourcesToDelete) {
-        _syncClient!.sendOperation(Operation(
+          actorId: _syncClient?.actorId ?? 'local-user',
+        ),
+      for (final id in resourcesToDelete)
+        Operation(
           type: 'DELETE_RESOURCE',
-          data: {'id': resId},
+          data: {'id': id},
           timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
+          actorId: _syncClient?.actorId ?? 'local-user',
+        ),
+    ];
+    if (_useLocalDatabase || _syncClient != null) {
+      unawaited(_commitOperations(operations));
     }
 
     if (!_useLocalDatabase) {
@@ -4158,8 +3383,11 @@ class GanttViewModel extends ChangeNotifier {
       // Deep removal in apiResponse is harder but for local/demo mode usually shallow or 2-level.
       _cachedFlatGridData = null;
 
-      final (recalculatedTasks, newMaxDepth, newConflictIndicators) =
-          _scheduleService.publicCalculateTaskStacking(nextTasks, _apiResponse!, showConflicts: _showConflicts);
+      final (recalculatedTasks, newMaxDepth, newConflictIndicators) = _scheduleService.publicCalculateTaskStacking(
+        nextTasks,
+        _apiResponse!,
+        showConflicts: _showConflicts,
+      );
       _updateTasksAndStacking(recalculatedTasks, newMaxDepth, newConflictIndicators);
     }
   }
@@ -4236,49 +3464,48 @@ class GanttViewModel extends ChangeNotifier {
     final sourceParentId = _getParentId(sourceTask.rowId);
     if (sourceParentId == null) return [];
 
-    final parentGridItem = _gridData.firstWhere((g) => g.id == sourceParentId,
-        orElse: () => GanttGridData(id: '', name: '', isParent: false, children: []));
+    final parentGridItem = _gridData.firstWhere(
+      (g) => g.id == sourceParentId,
+      orElse: () => GanttGridData(id: '', name: '', isParent: false, children: []),
+    );
     if (parentGridItem.id.isEmpty) return [];
 
     final allRowIdsForParent = <String>{parentGridItem.id, ...parentGridItem.children.map((c) => c.id)};
 
     return ganttTasks
-        .where((task) =>
-            !task.isSummary &&
-            !task.isTimeRangeHighlight &&
-            !task.isOverlapIndicator &&
-            task.id != sourceTask.id &&
-            allRowIdsForParent.contains(task.rowId))
+        .where(
+          (task) =>
+              !task.isSummary &&
+              !task.isTimeRangeHighlight &&
+              !task.isOverlapIndicator &&
+              task.id != sourceTask.id &&
+              allRowIdsForParent.contains(task.rowId),
+        )
         .toList();
   }
 
   /// Adds a new dependency object directly.
   void addDependencyObject(LegacyGanttTaskDependency newDependency) {
-    if (!_dependencies.any((d) =>
-        d.predecessorTaskId == newDependency.predecessorTaskId && d.successorTaskId == newDependency.successorTaskId)) {
+    if (_dependencies.any(
+      (dependency) =>
+          dependency.predecessorTaskId == newDependency.predecessorTaskId &&
+          dependency.successorTaskId == newDependency.successorTaskId,
+    )) {
+      return;
+    }
+    if (_useLocalDatabase) {
+      unawaited(addDependencies([newDependency]));
+    } else {
+      _dependencies = [..._dependencies, newDependency];
+      notifyListeners();
       if (_syncClient != null) {
-        _syncClient!.sendOperation(Operation(
-          type: 'INSERT_DEPENDENCY',
-          data: {
-            'predecessorTaskId': newDependency.predecessorTaskId,
-            'successorTaskId': newDependency.successorTaskId,
-            'type': newDependency.type.name,
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-
-      if (_useLocalDatabase) {
-        _localRepository.insertOrUpdateDependency(newDependency).then((_) => notifyListeners());
-      } else {
-        _dependencies = List.from(_dependencies)..add(newDependency);
-        notifyListeners();
+        unawaited(_commitOperations([_dependencyOperation(newDependency)]));
       }
     }
   }
 
   /// Adds a new dependency between two tasks.
+
   void addDependency(String fromTaskId, String toTaskId) {
     final newDependency = LegacyGanttTaskDependency(
       predecessorTaskId: fromTaskId,
@@ -4294,59 +3521,58 @@ class GanttViewModel extends ChangeNotifier {
 
   /// Removes a specific dependency.
   void removeDependency(LegacyGanttTaskDependency dependency) {
-    final initialCount = _dependencies.length;
-    final newList = _dependencies.where((d) => d != dependency).toList();
-
-    if (newList.length < initialCount) {
-      if (_syncClient != null) {
-        _syncClient!.sendOperation(Operation(
-          type: 'DELETE_DEPENDENCY',
-          data: {
-            'predecessorTaskId': dependency.predecessorTaskId,
-            'successorTaskId': dependency.successorTaskId,
-          },
-          timestamp: _currentHlc,
-          actorId: 'local-user',
-        ));
-      }
-
-      if (_useLocalDatabase) {
-        _localRepository
-            .deleteDependency(dependency.predecessorTaskId, dependency.successorTaskId, _currentHlc)
-            .then((_) => notifyListeners());
-      } else {
-        _dependencies = newList;
-        notifyListeners();
-      }
+    if (!_dependencies.any(
+      (other) =>
+          other.predecessorTaskId == dependency.predecessorTaskId &&
+          other.successorTaskId == dependency.successorTaskId,
+    )) {
+      return;
+    }
+    if (_useLocalDatabase || _syncClient != null) {
+      unawaited(_commitOperations([_deleteDependencyOperation(dependency)]));
+    }
+    if (!_useLocalDatabase) {
+      _dependencies.removeWhere(
+        (other) =>
+            other.predecessorTaskId == dependency.predecessorTaskId &&
+            other.successorTaskId == dependency.successorTaskId,
+      );
+      notifyListeners();
     }
   }
 
+  Operation _deleteDependencyOperation(LegacyGanttTaskDependency dependency) => Operation(
+    type: 'DELETE_DEPENDENCY',
+    data: {'predecessorTaskId': dependency.predecessorTaskId, 'successorTaskId': dependency.successorTaskId},
+    timestamp: _currentHlc,
+    actorId: _syncClient?.actorId ?? 'local-user',
+  );
+
   /// Removes all dependencies associated with a given task.
+
   void clearDependenciesForTask(LegacyGanttTask task) {
-    if (_syncClient != null) {
-      _syncClient!.sendOperation(Operation(
-        type: 'CLEAR_DEPENDENCIES',
-        data: {'taskId': task.id},
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
+    final dependencies = getDependenciesForTask(task);
+    if (_useLocalDatabase || _syncClient != null) {
+      unawaited(_commitOperations(dependencies.map(_deleteDependencyOperation).toList()));
     }
-
-    if (_useLocalDatabase) {
-      _localRepository.deleteDependenciesForTask(task.id, _currentHlc).then((_) => notifyListeners());
-    } else {
-      final initialCount = _dependencies.length;
-      final newList =
-          _dependencies.where((d) => d.predecessorTaskId != task.id && d.successorTaskId != task.id).toList();
-
-      if (newList.length < initialCount) {
-        _dependencies = newList;
-        notifyListeners();
-      }
+    if (!_useLocalDatabase) {
+      _dependencies.removeWhere(
+        (dependency) => dependency.predecessorTaskId == task.id || dependency.successorTaskId == task.id,
+      );
+      notifyListeners();
     }
+  }
+
+  PresenceGanttSyncClient? _presenceClient;
+  GanttSyncClient? get presenceSyncClient {
+    final client = _syncClient;
+    if (client == null) return null;
+    if (_presenceClient?.inner != client) _presenceClient = PresenceGanttSyncClient(client);
+    return _presenceClient;
   }
 
   /// Returns a date formatting function for the tooltip based on the selected timeline axis format.
+
   String Function(DateTime) _getTooltipDateFormat() {
     switch (_selectedAxisFormat) {
       case TimelineAxisFormat.auto:
@@ -4367,12 +3593,14 @@ class GanttViewModel extends ChangeNotifier {
   /// Sends a request to the server to optimize the schedule.
   Future<void> optimizeSchedule() async {
     if (_syncClient != null) {
-      await _syncClient!.sendOperation(Operation(
-        type: 'OPTIMIZE_SCHEDULE',
-        data: {}, // No payload needed, server fetches tasks
-        timestamp: _currentHlc,
-        actorId: 'local-user',
-      ));
+      await _syncClient!.sendOperation(
+        Operation(
+          type: 'OPTIMIZE_SCHEDULE',
+          data: {}, // No payload needed, server fetches tasks
+          timestamp: _currentHlc,
+          actorId: 'local-user',
+        ),
+      );
     }
   }
 
@@ -4439,16 +3667,18 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
 
     if (pickedDate == null || !context.mounted) return;
 
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initialDate),
-    );
+    final pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initialDate));
 
     if (pickedTime == null) return;
 
     setState(() {
-      final newDateTime =
-          DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+      final newDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
       if (isStart) {
         _startDate = newDateTime;
         if (_endDate.isBefore(_startDate)) {
@@ -4465,58 +3695,60 @@ class _EditTaskAlertDialogState extends State<_EditTaskAlertDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        key: const Key('editTaskDialog'),
-        title: const Text('Edit Task'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+    key: const Key('editTaskDialog'),
+    title: const Text('Edit Task'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _nameController,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Task Name'),
+          onSubmitted: (_) => _submit(),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            TextField(
-              controller: _nameController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Task Name'),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Start:'),
-                TextButton(
-                    onPressed: () => _selectDateTime(context, true),
-                    child: Text(DateFormat.yMd().add_jm().format(_startDate)))
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('End:'),
-                TextButton(
-                    onPressed: () => _selectDateTime(context, false),
-                    child: Text(DateFormat.yMd().add_jm().format(_endDate)))
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Text('Completion:'),
-                Expanded(
-                  child: Slider(
-                    value: _completion,
-                    onChanged: (value) => setState(() => _completion = value),
-                    label: '${(_completion * 100).round()}%',
-                    divisions: 100,
-                  ),
-                ),
-                Text('${(_completion * 100).round()}%'),
-              ],
+            const Text('Start:'),
+            TextButton(
+              onPressed: () => _selectDateTime(context, true),
+              child: Text(DateFormat.yMd().add_jm().format(_startDate)),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(onPressed: _submit, child: const Text('Save')),
-        ],
-      );
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('End:'),
+            TextButton(
+              onPressed: () => _selectDateTime(context, false),
+              child: Text(DateFormat.yMd().add_jm().format(_endDate)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Text('Completion:'),
+            Expanded(
+              child: Slider(
+                value: _completion,
+                onChanged: (value) => setState(() => _completion = value),
+                label: '${(_completion * 100).round()}%',
+                divisions: 100,
+              ),
+            ),
+            Text('${(_completion * 100).round()}%'),
+          ],
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(onPressed: _submit, child: const Text('Save')),
+    ],
+  );
 }
 
 /// A dialog that displays a list of tasks in a `DataTable` and allows editing their names and dates.
@@ -4568,8 +3800,13 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
     if (pickedTime == null) return;
 
     setState(() {
-      final newDateTime =
-          DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+      final newDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
       final index = _tasks.indexWhere((t) => t.id == task.id);
       if (index != -1) {
         var tempTask = _tasks[index];
@@ -4591,46 +3828,47 @@ class _EditTasksInRowDialogState extends State<_EditTasksInRowDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        key: const Key('editTasksInRowDialog'),
-        title: const Text('Edit Tasks'),
-        scrollable: true,
-        content: SizedBox(
-          width: 500, // Give it a reasonable width
-          child: DataTable(
-            columnSpacing: 16,
-            columns: const [
-              DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataColumn(label: Text('Start', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-              DataColumn(label: Text('End', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-            ],
-            rows: _tasks
-                .map((task) => DataRow(
-                      cells: [
-                        DataCell(
-                          Text(task.name ?? 'Unnamed Task', overflow: TextOverflow.ellipsis),
-                          onTap: () => _editName(task),
-                        ),
-                        DataCell(
-                          Text(DateFormat.yMd().add_jm().format(task.start)),
-                          onTap: () => _editDate(task, true),
-                        ),
-                        DataCell(
-                          Text(DateFormat.yMd().add_jm().format(task.end)),
-                          onTap: () => _editDate(task, false),
-                        ),
-                      ],
-                    ))
-                .toList(),
+    key: const Key('editTasksInRowDialog'),
+    title: const Text('Edit Tasks'),
+    scrollable: true,
+    content: SizedBox(
+      width: 500, // Give it a reasonable width
+      child: DataTable(
+        columnSpacing: 16,
+        columns: const [
+          DataColumn(
+            label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, _tasks),
-            child: const Text('Save'),
+          DataColumn(
+            label: Text('Start', style: TextStyle(fontWeight: FontWeight.bold)),
+            numeric: true,
+          ),
+          DataColumn(
+            label: Text('End', style: TextStyle(fontWeight: FontWeight.bold)),
+            numeric: true,
           ),
         ],
-      );
+        rows: _tasks
+            .map(
+              (task) => DataRow(
+                cells: [
+                  DataCell(
+                    Text(task.name ?? 'Unnamed Task', overflow: TextOverflow.ellipsis),
+                    onTap: () => _editName(task),
+                  ),
+                  DataCell(Text(DateFormat.yMd().add_jm().format(task.start)), onTap: () => _editDate(task, true)),
+                  DataCell(Text(DateFormat.yMd().add_jm().format(task.end)), onTap: () => _editDate(task, false)),
+                ],
+              ),
+            )
+            .toList(),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(onPressed: () => Navigator.pop(context, _tasks), child: const Text('Save')),
+    ],
+  );
 }
 
 /// A small dialog specifically for editing a task's name.
@@ -4666,16 +3904,12 @@ class _EditNameDialogState extends State<_EditNameDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        key: const Key('editNameDialog'),
-        title: const Text('Edit Task Name'),
-        content: TextField(
-          controller: _controller,
-          autofocus: true,
-          onSubmitted: (_) => _save(),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(onPressed: _save, child: const Text('Save')),
-        ],
-      );
+    key: const Key('editNameDialog'),
+    title: const Text('Edit Task Name'),
+    content: TextField(controller: _controller, autofocus: true, onSubmitted: (_) => _save()),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(onPressed: _save, child: const Text('Save')),
+    ],
+  );
 }
