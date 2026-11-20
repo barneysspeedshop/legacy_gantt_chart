@@ -979,6 +979,7 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void> _seedLocalDatabaseInternal() async {
+    _pendingSeedReset = true;
     _setLoading(true);
     notifyListeners();
 
@@ -1068,6 +1069,20 @@ class GanttViewModel extends ChangeNotifier {
             ))
         .toList();
 
+    final resourcesToInsert = <LocalResource>[];
+    for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
+      final resource = processedData.apiResponse.resourcesData[i];
+      final isExpanded = i == 0; // Only expand the first one
+
+      resourcesToInsert
+          .add(LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
+
+      for (final child in resource.children) {
+        resourcesToInsert.add(LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
+      }
+    }
+    await _localRepository.insertResources(resourcesToInsert);
+
     await _localRepository.insertTasks(tasksWithUser);
     await _localRepository.insertDependencies(dependencies);
     if (_syncClient != null) {
@@ -1140,20 +1155,6 @@ class GanttViewModel extends ChangeNotifier {
 
     fillExpansion(processedData.gridData);
 
-    final resourcesToInsert = <LocalResource>[];
-    for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
-      final resource = processedData.apiResponse.resourcesData[i];
-      final isExpanded = i == 0; // Only expand the first one
-
-      resourcesToInsert
-          .add(LocalResource(id: resource.id, name: resource.name, parentId: null, isExpanded: isExpanded));
-
-      for (final child in resource.children) {
-        resourcesToInsert.add(LocalResource(id: child.id, name: child.name, parentId: resource.id, isExpanded: true));
-      }
-    }
-    await _localRepository.insertResources(resourcesToInsert);
-
     if (_syncClient != null) {
       final resourceOps = <Operation>[];
       for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
@@ -1200,7 +1201,6 @@ class GanttViewModel extends ChangeNotifier {
       // }
     }
 
-    _pendingSeedReset = true;
     notifyListeners();
   }
 
