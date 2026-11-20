@@ -60578,7 +60578,7 @@ e.zY(!0)
 c.d!==$&&A.bk()
 c.d=e
 c.at!==$&&A.bk()
-c.at=new A.f0(new A.cu("http://localhost:8080",B.bK,B.aJ),d)
+c.at=new A.f0(new A.cu("https://api.gantt-sync.com",B.bK,B.aJ),d)
 c.ax!==$&&A.bk()
 c.ax=new A.f0(new A.cu("legacy",B.bK,B.aJ),d)
 c.ay!==$&&A.bk()
