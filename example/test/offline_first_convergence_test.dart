@@ -337,6 +337,51 @@ void main() {
     expect((await client.outgoing()).where((operation) => operation.type == 'DELETE_TASK'), hasLength(1));
   });
 
+  test('an empty reset fence changes the Merkle root and survives restart', () async {
+    final reset = await create('empty-reset');
+    final untouched = await create('empty-untouched');
+    expect(await reset.root(), await untouched.root());
+    await reset.receive([_operation('RESET_DATA', {}, 200)]);
+    expect(_visible(reset), _visible(untouched));
+    expect(await reset.root(), isNot(await untouched.root()));
+    final fencedRoot = await reset.root();
+    await reset.reopen();
+    expect(await reset.root(), fencedRoot);
+  });
+
+  test('Merkle roots expose a lost same-value write that changes later conflict resolution', () async {
+    final local = await create('lost-local');
+    final server = await create('lost-server');
+    final initial = _operation('INSERT_TASK', {
+      'id': 'task',
+      'rowId': 'row',
+      'name': 'A',
+      'notes': 'Initial notes',
+      'start': '2026-11-20T00:00:00.000Z',
+      'end': '2026-11-21T00:00:00.000Z',
+    }, 100);
+    final sameValue = _operation('UPDATE_TASK', {'id': 'task', 'name': 'A'}, 200);
+    final notes = _operation('UPDATE_TASK', {'id': 'task', 'notes': 'Shared notes'}, 300);
+    for (final operation in [initial, sameValue, notes]) {
+      await local.viewModel.handleIncomingOperationForTesting(operation);
+    }
+    for (final operation in [initial, notes]) {
+      await server.viewModel.handleIncomingOperationForTesting(operation);
+    }
+    expect(_visible(local), _visible(server));
+    expect(await local.root(), isNot(await server.root()));
+    final olderName = _operation('UPDATE_TASK', {'id': 'task', 'name': 'B'}, 150);
+    await local.viewModel.handleIncomingOperationForTesting(olderName);
+    await server.viewModel.handleIncomingOperationForTesting(olderName);
+    expect(local.viewModel.allTasks.single.name, 'A');
+    expect(server.viewModel.allTasks.single.name, 'B');
+    expect(await local.root(), isNot(await server.root()));
+    final localRoot = await local.root();
+    await local.reopen();
+    expect(local.viewModel.allTasks.single.name, 'A');
+    expect(await local.root(), localRoot);
+  });
+
   test('summary toggles preserve unrelated field clocks and independent offline notes', () async {
     final client = await create('summary-fields');
     await client.receive([

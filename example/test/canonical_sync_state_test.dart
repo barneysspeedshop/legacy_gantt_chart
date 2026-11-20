@@ -24,16 +24,18 @@ ProtocolTask _task() => ProtocolTask(
   notes: 'Keep on deletion',
   completion: 0.5,
   lastUpdated: _clock(1).toString(),
-  metadataJson: jsonEncode({
-    'color': '80010203',
-    'textColor': 'ff112233',
-    'load': 2.0,
-    'stackIndex': 3,
-    'isAutoScheduled': false,
-    'originalId': 'import-1',
-    'isTimeRangeHighlight': true,
-    'custom': {'externalId': 'task-custom-42'},
-  }),
+  metadataJson: jsonEncode(
+    MerkleHashNormalizer.completeTaskMetadata({
+      'color': '80010203',
+      'textColor': 'ff112233',
+      'load': 2.0,
+      'stackIndex': 3,
+      'isAutoScheduled': false,
+      'originalId': 'import-1',
+      'isTimeRangeHighlight': true,
+      'custom': {'externalId': 'task-custom-42'},
+    }),
+  ),
 );
 
 ProtocolResource _resource() => ProtocolResource(
@@ -81,26 +83,9 @@ Operation _wire(Operation operation) => Operation.fromJson(
 );
 
 Operation _snapshot({ProtocolTask? task, ProtocolResource? resource, ProtocolDependency? dependency}) {
-  if (task != null && task.isDeleted && task.fieldTimestamps.isEmpty) {
-    // A canonical tombstone snapshot carries historical field clocks; a bare
-    // DELETE command intentionally carries only identity and its delete clock.
-    task.fieldTimestamps.addAll({
-      for (final field in [
-        'rowId',
-        'start',
-        'end',
-        'name',
-        'completion',
-        'resourceId',
-        'parentId',
-        'notes',
-        'isSummary',
-        'isMilestone',
-        'isDeleted',
-        ...ProtobufMapper.metadataFromJson({'metadataJson': task.metadataJson}).keys,
-      ])
-        field: task.lastUpdated,
-    });
+  if (task != null && task.fieldTimestamps.isEmpty) {
+    // Full canonical snapshots carry the baseline of every semantic register.
+    task.fieldTimestamps.addAll(task.normalizedFieldTimestamps);
   }
   return _wire(
     _operation('BATCH_UPDATE', {
@@ -128,11 +113,13 @@ Operation _snapshot({ProtocolTask? task, ProtocolResource? resource, ProtocolDep
   );
 }
 
-String _root({ProtocolTask? task, ProtocolResource? resource, ProtocolDependency? dependency}) => MerkleTree.build([
-  if (task != null) MapEntry(task.lastUpdated, task.contentHash),
-  if (resource != null) MapEntry(resource.lastUpdated, resource.contentHash),
-  if (dependency != null) MapEntry(dependency.lastUpdated, dependency.contentHash),
-]).root.hash;
+String _root({ProtocolTask? task, ProtocolResource? resource, ProtocolDependency? dependency, Hlc? reset}) =>
+    MerkleTree.build([
+      if (reset != null) CRDTEngine.resetMerkleEntry(reset),
+      if (task != null) MapEntry(task.lastUpdated, task.contentHash),
+      if (resource != null) MapEntry(resource.lastUpdated, resource.contentHash),
+      if (dependency != null) MapEntry(dependency.lastUpdated, dependency.contentHash),
+    ]).root.hash;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -219,6 +206,23 @@ void main() {
     expect(await db.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), hasLength(2));
   });
 
+  test('canonical repair refuses a changed tenant binding without touching state or outbox', () async {
+    await store.applyOperations([_snapshot(task: _task())]);
+    final root = (await store.computeMerkleTree()).root.hash;
+    await db.execute('INSERT INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)', [
+      'canonical_scope',
+      'another-tenant',
+    ]);
+    await expectLater(store.enqueueRepair(), throwsStateError);
+    expect(await store.hasPendingOperations(), isFalse);
+    expect(await db.query('SELECT id FROM offline_queue WHERE is_deleted = 0'), isEmpty);
+    expect((await store.computeMerkleTree()).root.hash, root);
+    expect((await store.readState()).tasks.single.name, 'Full task');
+    await reopen();
+    expect((await store.computeMerkleTree()).root.hash, root);
+    expect(await store.hasPendingOperations(), isFalse);
+  });
+
   test('full binary records preserve custom metadata and hashes after reopen', () async {
     final task = _task();
     final resource = _resource();
@@ -236,6 +240,7 @@ void main() {
     final updated = task.deepCopy()
       ..name = 'Remote revision'
       ..lastUpdated = _clock(10).toString();
+    updated.fieldTimestamps.addAll({'name': _clock(10).toString(), 'isDeleted': _clock(10).toString()});
     final remote = _snapshot(task: updated);
     await store.applyOperations([remote]);
     expect((await store.computeMerkleTree()).root.hash, _root(task: updated));
@@ -282,10 +287,11 @@ void main() {
     final deleted = _task()
       ..isDeleted = true
       ..lastUpdated = _clock(3).toString();
-    expect((await store.computeMerkleTree()).root.hash, _root(task: deleted));
-    expect((await other.computeMerkleTree()).root.hash, _root(task: deleted));
+    deleted.fieldTimestamps.addAll({..._task().normalizedFieldTimestamps, 'isDeleted': _clock(3).toString()});
+    expect((await store.computeMerkleTree()).root.hash, _root(task: deleted, reset: _clock(3)));
+    expect((await other.computeMerkleTree()).root.hash, _root(task: deleted, reset: _clock(3)));
     await reopen();
-    expect((await store.computeMerkleTree()).root.hash, _root(task: deleted));
+    expect((await store.computeMerkleTree()).root.hash, _root(task: deleted, reset: _clock(3)));
   });
 
   test(
@@ -302,6 +308,12 @@ void main() {
         ..name = 'After reset'
         ..notes = 'Historical notes'
         ..lastUpdated = _clock(4).toString();
+      expected.fieldTimestamps.addAll({
+        ..._task().normalizedFieldTimestamps,
+        'notes': _clock(2).toString(),
+        'name': _clock(4).toString(),
+        'isDeleted': _clock(4).toString(),
+      });
       final orders = [
         for (var a = 0; a < 4; a++)
           for (var b = 0; b < 4; b++)
@@ -316,12 +328,16 @@ void main() {
         expect(visible.name, 'After reset', reason: '$order');
         expect(visible.notes, 'Historical notes', reason: '$order');
         expect(visible.rowId, 'row-1', reason: '$order');
-        expect((await state.computeMerkleTree()).root.hash, _root(task: expected), reason: '$order');
+        expect(
+          (await state.computeMerkleTree()).root.hash,
+          _root(task: expected, reset: _clock(3)),
+          reason: '$order',
+        );
       }
       await reopen();
       for (final indices in orders) {
         final state = ProtocolStateStore(Future.value(db), scope: 'order-${indices.join()}');
-        expect((await state.computeMerkleTree()).root.hash, _root(task: expected));
+        expect((await state.computeMerkleTree()).root.hash, _root(task: expected, reset: _clock(3)));
         expect((await state.readState()).tasks.single.notes, 'Historical notes');
       }
     },
@@ -336,7 +352,11 @@ void main() {
     final reset = _operation('RESET_DATA', {}, _clock(4));
     await store.applyOperations([reset, ...old]);
     await other.applyOperations([...old, reset]);
-    final expected = _root(resource: _resourceTombstone(_clock(4)), dependency: _dependencyTombstone(_clock(4)));
+    final expected = _root(
+      resource: _resourceTombstone(_clock(4)),
+      dependency: _dependencyTombstone(_clock(4)),
+      reset: _clock(4),
+    );
     for (final state in [store, other]) {
       expect((await state.readState()).resources, isEmpty);
       expect((await state.readState()).dependencies, isEmpty);
@@ -412,6 +432,7 @@ void main() {
       final deletedTask = task.deepCopy()
         ..isDeleted = true
         ..lastUpdated = _clock(11).toString();
+      deletedTask.fieldTimestamps['isDeleted'] = _clock(11).toString();
       final deletedResource = _resourceTombstone(_clock(12));
       final deletedDependency = _dependencyTombstone(_clock(13));
       if (local) {
@@ -462,9 +483,15 @@ void main() {
     final deletedTask = task.deepCopy()
       ..isDeleted = true
       ..lastUpdated = _clock(20).toString();
+    deletedTask.fieldTimestamps['isDeleted'] = _clock(20).toString();
     final deletedResource = _resourceTombstone(_clock(20));
     final deletedDependency = _dependencyTombstone(_clock(20));
-    final expected = _root(task: deletedTask, resource: deletedResource, dependency: deletedDependency);
+    final expected = _root(
+      task: deletedTask,
+      resource: deletedResource,
+      dependency: deletedDependency,
+      reset: _clock(20),
+    );
     expect((await store.computeMerkleTree()).root.hash, expected);
     await reopen();
     expect((await store.computeMerkleTree()).root.hash, expected);
@@ -473,15 +500,16 @@ void main() {
     final restored = task.deepCopy()
       ..name = 'After reset'
       ..lastUpdated = _clock(21).toString();
+    restored.fieldTimestamps.addAll({'name': _clock(21).toString(), 'isDeleted': _clock(21).toString()});
     await store.applyOperations([_snapshot(task: restored)]);
     expect(
       (await store.computeMerkleTree()).root.hash,
-      _root(task: restored, resource: deletedResource, dependency: deletedDependency),
+      _root(task: restored, resource: deletedResource, dependency: deletedDependency, reset: _clock(20)),
     );
     await store.applyOperations([_wire(_operation('RESET_DATA', <String, dynamic>{}, _clock(20)))]);
     expect(
       (await store.computeMerkleTree()).root.hash,
-      _root(task: restored, resource: deletedResource, dependency: deletedDependency),
+      _root(task: restored, resource: deletedResource, dependency: deletedDependency, reset: _clock(20)),
     );
   });
 

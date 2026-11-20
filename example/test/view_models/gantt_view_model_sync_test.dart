@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
@@ -34,6 +35,9 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
     merkleRequests.add(localTree);
     await merkleGate?.future;
   }
+
+  @override
+  Future<String> getMerkleRoot() async => 'fixture-mismatch';
 
   void simulateReconnect() => _connectionStateController.add(true);
 
@@ -85,6 +89,20 @@ void main() {
     late GanttViewModel viewModel;
     late FakeSyncClient fakeClient;
 
+    Future<void> waitForState(bool Function() predicate) async {
+      final ready = Completer<void>();
+      void changed() {
+        if (predicate() && !ready.isCompleted) ready.complete();
+      }
+      viewModel.addListener(changed);
+      try {
+        changed();
+        await ready.future.timeout(const Duration(seconds: 5));
+      } finally {
+        viewModel.removeListener(changed);
+      }
+    }
+
     setUp(() async {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
@@ -119,6 +137,7 @@ void main() {
         password: 'password',
       );
 
+      await waitForState(() => viewModel.isSyncConnected);
       expect(viewModel.isSyncConnected, isTrue);
       expect(fakeClient.isConnected, isTrue);
     });
@@ -203,26 +222,10 @@ void main() {
         start: '2026-11-17T00:00:00.000Z',
         end: '2026-11-18T00:00:00.000Z',
         isDeleted: true,
-        metadataJson: '{"unknownPluginSetting":42}',
+        metadataJson: jsonEncode(MerkleHashNormalizer.completeTaskMetadata({'unknownPluginSetting': 42})),
         lastUpdated: clock.toString(),
       );
-      source.fieldTimestamps.addAll({
-        for (final field in [
-          'rowId',
-          'start',
-          'end',
-          'name',
-          'completion',
-          'resourceId',
-          'parentId',
-          'notes',
-          'isSummary',
-          'isMilestone',
-          'isDeleted',
-          'unknownPluginSetting',
-        ])
-          field: clock.toString(),
-      });
+      source.fieldTimestamps.addAll(source.normalizedFieldTimestamps);
       final operation = Operation.fromJson(
         ProtobufMapper.toJson(
           ProtocolMessage.fromBuffer(
@@ -334,6 +337,7 @@ void main() {
       }).writeToBuffer();
       await viewModel.handleIncomingOperationForTesting(Operation.fromJson(
         ProtobufMapper.toJson(ProtocolMessage.fromBuffer(encoded))));
+      await waitForState(() => viewModel.localResources.isNotEmpty && viewModel.dependencies.isNotEmpty && viewModel.gridData.isNotEmpty);
       expect(viewModel.localResources.single.parentId, isNull);
       expect(viewModel.gridData.map((row) => row.name).toList(), ['Root']);
       expect(viewModel.dependencies.map((dep) => (dep.predecessorTaskId, dep.successorTaskId)).toList(),
@@ -349,6 +353,7 @@ void main() {
         type: 'INSERT_TASK', data: {'id': 'replacement', 'rowId': 'row', 'name': 'Replacement',
           'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
         timestamp: Hlc.fromIntTimestamp(2001), actorId: 'client-a'));
+      await waitForState(() => viewModel.allTasks.any((task) => task.id == 'replacement'));
       for (final clock in [1000, 2000]) {
         await viewModel.handleIncomingOperationForTesting(Operation(
           type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(clock), actorId: 'server-sync-reset'));
@@ -418,6 +423,7 @@ void main() {
         password: 'password',
       );
 
+      await waitForState(() => viewModel.isSyncConnected);
       expect(viewModel.isSyncConnected, isTrue);
 
       // Simulate drop

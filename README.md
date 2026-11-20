@@ -662,7 +662,7 @@ Version 11 requires protocol 4 and a compatible updated server. Resource updates
 
 The persistent example commits canonical entities, its display projection, and outgoing operations in one local transaction. Local edits appear after that commit, without waiting for the network. Incoming live updates and synchronization replays use the same merge path. Automatic sample previews stay local until an explicit edit or reseed.
 
-The outgoing queue currently removes operations after WebSocket handoff; the protocol does not provide a durable server acknowledgement. A successful send alone therefore does not prove that the server has persisted the operation.
+The outgoing queue removes operations after WebSocket handoff; the protocol does not provide a durable server acknowledgement. The persistent example also reconciles canonical state in both directions when connecting. If a handoff was lost, it requeues the accepted local records with their original clocks, then pulls missing server state and verifies the resulting roots. Checksums include task field clocks, entity clocks, and the reset fence, so identical displayed values cannot hide different causal histories. Recovery completes on correlated responses, with a bounded timeout; a successful send alone does not prove server persistence.
 
 ### Usage
 

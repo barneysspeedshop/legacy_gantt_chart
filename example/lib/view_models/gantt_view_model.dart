@@ -50,6 +50,7 @@ class GanttViewModel extends ChangeNotifier {
     _syncGeneration++;
     await _syncOperationsSubscription?.cancel();
     await _connectionStateSubscription?.cancel();
+    _isSyncConnected = false;
     if (_syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
     }
@@ -332,7 +333,12 @@ class GanttViewModel extends ChangeNotifier {
     _boundScope = scope;
     _isLocalPreview = scope == null && pending.isEmpty;
     _canonicalState = ProtocolStateStore(_database, scope: scope ?? (_isLocalPreview ? 'preview' : 'local'));
-    _syncClient ??= PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
+    _syncClient ??= PersistedGanttSyncClient(
+      _database,
+      protocolState: () => _protocolState,
+      settleIncoming: () => _incomingOperationChain,
+      enqueueCanonicalRepair: _enqueueCanonicalRepair,
+    );
     controller.setSyncClient(_syncClient!);
 
     final legacyTasks = await _localRepository.getAllTasks();
@@ -432,6 +438,13 @@ class GanttViewModel extends ChangeNotifier {
       actorId: _syncClient?.actorId ?? 'local-user',
     );
   }
+
+  Future<void> _enqueueCanonicalRepair(ProtocolStateStore expected) => _localMutations.synchronized(() async {
+    if (_disposed || !identical(_canonicalState, expected) || _boundScope != expected.scope) {
+      throw StateError('The active tenant changed before canonical repair could be queued.');
+    }
+    await expected.enqueueRepair();
+  });
 
   Future<void> _commitOperations(List<Operation> operations) {
     if (_disposed) {
@@ -2263,7 +2276,12 @@ class GanttViewModel extends ChangeNotifier {
           final client = syncClientFactory!(uri: wsUri, authToken: token);
           if (client is WebSocketGanttSyncClient) {
             wsClientToConnect = client;
-            final offlineClient = PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
+            final offlineClient = PersistedGanttSyncClient(
+              _database,
+              protocolState: () => _protocolState,
+              settleIncoming: () => _incomingOperationChain,
+              enqueueCanonicalRepair: _enqueueCanonicalRepair,
+            );
             await offlineClient.setInnerClient(client);
             _syncClient = offlineClient;
           } else {
@@ -2279,7 +2297,12 @@ class GanttViewModel extends ChangeNotifier {
             if (_syncClient is WebSocketGanttSyncClient) {
               await (_syncClient as WebSocketGanttSyncClient).dispose();
             }
-            final offlineClient = PersistedGanttSyncClient(_database, protocolState: () => _protocolState);
+            final offlineClient = PersistedGanttSyncClient(
+              _database,
+              protocolState: () => _protocolState,
+              settleIncoming: () => _incomingOperationChain,
+              enqueueCanonicalRepair: _enqueueCanonicalRepair,
+            );
             await offlineClient.setInnerClient(wsClient);
             _syncClient = offlineClient;
           }
@@ -2310,6 +2333,7 @@ class GanttViewModel extends ChangeNotifier {
               _isSyncConnected = isConnected;
               notifyListeners();
               if (isConnected) {
+                _broadcastPresence();
                 _performMerkleSync();
               }
             }
@@ -2327,9 +2351,11 @@ class GanttViewModel extends ChangeNotifier {
               });
         });
 
-        _isSyncConnected = true;
-        _broadcastPresence();
-        notifyListeners();
+        if (connectionStream == null) {
+          _isSyncConnected = true;
+          _broadcastPresence();
+          notifyListeners();
+        }
 
         final lastSyncedHlc = await _localRepository.getLastServerSyncTimestamp();
         if (!isCurrent()) {
@@ -2357,8 +2383,6 @@ class GanttViewModel extends ChangeNotifier {
     final state = _protocolState;
     print('Initiating Merkle Sync...');
 
-    // We compute the local tree based on the currently loaded data
-    // OR we could force a fresh fetch from DB if needed, but watch streams keep this up-to-date.
     try {
       final localTree = await state.computeMerkleTree();
       if (generation != _syncGeneration) return;

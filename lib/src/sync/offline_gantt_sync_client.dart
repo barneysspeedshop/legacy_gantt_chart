@@ -28,8 +28,13 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void>? _activeFlushFuture;
   bool _flushRequested = false;
   bool _disposed = false;
+  int _connectionGeneration = 0;
 
   Future<void> get ready => _dbInitFuture;
+
+  bool get isConnected => _isConnected && !_disposed;
+
+  int get connectionGeneration => _connectionGeneration;
 
   void observeClock(Hlc clock) {
     _clock = _clock.receive(clock, DateTime.now().millisecondsSinceEpoch);
@@ -49,6 +54,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> setInnerClient(WebSocketGanttSyncClient client) async {
     if (_innerClient == client) return;
+    _connectionGeneration++;
     await _detachInnerClient();
     await _innerClient?.dispose();
     _innerClient = client;
@@ -56,6 +62,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   Future<void> removeInnerClient() async {
+    _connectionGeneration++;
     await _detachInnerClient();
     await _innerClient?.dispose();
     _innerClient = null;
@@ -166,15 +173,21 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void> flushPending() async {
     if (_disposed) return;
     _flushRequested = true;
-    if (_activeFlushFuture != null) return _activeFlushFuture;
-    _activeFlushFuture = _drainRequestedFlushes();
-    try {
-      await _activeFlushFuture;
-    } finally {
-      _activeFlushFuture = null;
-      await _updatePendingCount();
-      if (_flushRequested && !_disposed) _scheduleFlush();
+    while (_flushRequested && !_disposed) {
+      final active = _activeFlushFuture;
+      if (active != null) {
+        await active;
+        continue;
+      }
+      final drain = _drainRequestedFlushes();
+      _activeFlushFuture = drain;
+      try {
+        await drain;
+      } finally {
+        if (identical(_activeFlushFuture, drain)) _activeFlushFuture = null;
+      }
     }
+    await _updatePendingCount();
   }
 
   Future<void> _drainRequestedFlushes() async {
@@ -369,6 +382,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _connectionGeneration++;
     print('OfflineClient: Disposing...');
     await _detachInnerClient();
     final inner = _innerClient;

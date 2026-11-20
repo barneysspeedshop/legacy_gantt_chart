@@ -4,6 +4,7 @@
 
 * Persist local operations before network delivery, including while connected, and retain unsent operations across restart.
 * Use one canonical persisted state for the example: commit entity changes, projections, and outgoing operations atomically; render local edits immediately while synchronization runs.
+* Reconcile canonical state in both directions after connecting, preserving original clocks to recover writes lost after socket handoff. Include field clocks and reset fences in Merkle checks, and await correlated range responses rather than a silence timer.
 * Keep widget presence traffic separate from entity persistence and serialize tenant changes with pending local edits.
 
 * Give offline clients distinct, monotonic hybrid clocks so replacement operations are causally newer than resets.

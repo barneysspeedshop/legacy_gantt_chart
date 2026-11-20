@@ -212,6 +212,67 @@ class ProtocolStateStore {
     return ProtocolProjection.snapshot(state.tasks, state.resources, state.dependencies.values, state.lastReset);
   });
 
+  Future<List<Operation>> exportState() => _lock.synchronized(() async => _repairOperations(await _read()));
+
+  Future<bool> hasPendingOperations() => _lock.synchronized(() async {
+    final database = await _ready;
+    return (await database.query('SELECT id FROM offline_queue WHERE is_deleted = 0 LIMIT 1')).isNotEmpty;
+  });
+
+  /// Requeues canonical registers without changing their clocks or values.
+  Future<void> enqueueRepair() => _lock.synchronized(() async {
+    final database = await _ready;
+    await database.transaction((transaction) async {
+      final binding = await transaction.query(
+        "SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0",
+      );
+      if (binding.isNotEmpty && binding.single['meta_value'] != scope) {
+        throw StateError('The active tenant changed before canonical repair could be queued.');
+      }
+      final state = _ProtocolState.fromRows(
+        await transaction.query(
+          'SELECT entity_type, entity_id, payload FROM canonical_protocol_state WHERE scope = ?',
+          [scope],
+        ),
+      );
+      final operations = _repairOperations(state);
+      if (operations.isEmpty) return;
+      await transaction.execute(
+        r'''INSERT INTO offline_queue (type, data, timestamp, actor_id)
+        SELECT json_extract(value, '$.type'), json_extract(value, '$.data'),
+          json_extract(value, '$.timestamp'), json_extract(value, '$.actorId') FROM json_each(?1)''',
+        [
+          jsonEncode(operations.map((op) => {...op.toJson(), 'data': jsonEncode(op.data)}).toList()),
+        ],
+      );
+    });
+  });
+
+  static List<Operation> _repairOperations(_ProtocolState state) => [
+    if (state.lastReset case final reset?) Operation(type: 'RESET_DATA', data: {}, timestamp: reset, actorId: 'reset'),
+    for (final resource in state.resources)
+      Operation(
+        type: resource.isDeleted ? 'DELETE_RESOURCE' : 'UPDATE_RESOURCE',
+        data: ProtobufMapper.resourceToJson(resource),
+        timestamp: resource.parsedLastUpdated,
+        actorId: 'canonical-repair',
+      ),
+    for (final task in state.tasks)
+      Operation(
+        type: task.isDeleted ? 'DELETE_TASK' : 'UPDATE_TASK',
+        data: ProtobufMapper.taskToJson(task),
+        timestamp: task.parsedLastUpdated,
+        actorId: task.lastUpdatedBy.isEmpty ? 'canonical-repair' : task.lastUpdatedBy,
+      ),
+    for (final dependency in state.dependencies.values)
+      Operation(
+        type: dependency.type == 'DELETE' ? 'DELETE_DEPENDENCY' : 'UPDATE_DEPENDENCY',
+        data: ProtobufMapper.dependencyToJson(dependency),
+        timestamp: dependency.parsedLastUpdated,
+        actorId: 'canonical-repair',
+      ),
+  ];
+
   Future<void> restoreProjection() async {
     // Persist protocol-version normalization before rebuilding the read model.
     await applyOperations([]);
@@ -260,6 +321,7 @@ class ProtocolStateStore {
       state.tasks,
       resources: state.resources,
       dependencies: state.dependencies.values.toList(),
+      resetTimestamp: state.lastReset,
     );
   });
 
@@ -394,23 +456,13 @@ class _ProtocolState {
       switch (row['entity_type']) {
         case 'task':
           final task = ProtocolTask.fromBuffer(base64Decode(payload));
-          tasks.add(
-            task.fieldTimestamps.isEmpty
-                ? CRDTEngine()
-                      .mergeTasks(
-                        [task],
-                        [
-                          Operation(
-                            type: 'UPDATE_TASK',
-                            data: ProtobufMapper.taskToJson(task),
-                            timestamp: task.parsedLastUpdated,
-                            actorId: task.lastUpdatedBy,
-                          ),
-                        ],
-                      )
-                      .single
-                : task,
-          );
+          final metadata = ProtobufMapper.metadataFromJson({'metadataJson': task.metadataJson});
+          task.metadataJson = jsonEncode(MerkleHashNormalizer.completeTaskMetadata(metadata));
+          final clocks = task.normalizedFieldTimestamps;
+          task.fieldTimestamps
+            ..clear()
+            ..addAll(clocks);
+          tasks.add(task);
         case 'resource':
           final resource = ProtocolResource.fromBuffer(base64Decode(payload));
           resources.add(
