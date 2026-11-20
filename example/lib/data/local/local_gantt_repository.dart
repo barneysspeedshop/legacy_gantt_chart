@@ -681,7 +681,7 @@ class LocalGanttRepository {
   LocalResource _rowToResource(Map<String, Object?> row) => LocalResource(
         id: row['id'] as String,
         name: row['name'] as String?,
-        parentId: row['parent_id'] as String?,
+        parentId: row['parent_id'] == '' ? null : row['parent_id'] as String?,
         isExpanded: (row['is_expanded'] is String
                 ? int.tryParse(row['is_expanded'] as String)
                 : (row['is_expanded'] as num?)?.toInt()) ==

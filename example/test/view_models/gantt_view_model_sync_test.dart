@@ -14,6 +14,7 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
   Hlc? lastConnectedCursor;
   bool isDisposed = false;
 
+  Completer<void>? merkleGate;
   final merkleRequests = StreamController<MerkleTree>.broadcast();
   @override
   String get actorId => 'fake';
@@ -29,6 +30,7 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
   @override
   Future<void> syncWithMerkle({required MerkleTree localTree}) async {
     merkleRequests.add(localTree);
+    await merkleGate?.future;
   }
 
   void simulateReconnect() => _connectionStateController.add(true);
@@ -48,6 +50,9 @@ class FakeSyncClient implements WebSocketGanttSyncClient {
 
   @override
   Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'fake');
+
+  @override
+  int get correctedTimestamp => DateTime.now().millisecondsSinceEpoch;
 
   @override
   Future<void> sendOperation(Operation op) async {
@@ -224,6 +229,87 @@ void main() {
       expect(fakeClient.sentOperations, isEmpty);
       final rows = await db.query("SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0");
       expect(rows.single['meta_value'], '["ws://localhost:8080/ws","tenant1"]');
+    });
+
+    test('binary root resources remain visible roots', () async {
+      await viewModel.connectSync(uri: 'http://localhost:8080', tenantId: 'tenant1',
+          username: 'valid', password: 'password');
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(1000), actorId: 'server'));
+      final encoded = ProtobufMapper.toProtobuf({
+        'type': 'BATCH_UPDATE', 'timestamp': Hlc.fromIntTimestamp(2000).toString(), 'actorId': 'server',
+        'data': {'operations': [
+          {'type': 'INSERT_RESOURCE', 'data': {'id': 'root', 'name': 'Root', 'parentId': null,
+            'isExpanded': true}, 'timestamp': Hlc.fromIntTimestamp(1001).toString()},
+          {'type': 'INSERT_TASK', 'data': {'id': 'task', 'rowId': 'root', 'name': 'Task',
+            'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
+            'timestamp': Hlc.fromIntTimestamp(1002).toString()},
+          {'type': 'INSERT_DEPENDENCY', 'data': {'predecessorTaskId': 'task', 'successorTaskId': 'next-task',
+            'type': 'finishToStart', 'lag': 60000}, 'timestamp': Hlc.fromIntTimestamp(1003).toString()},
+        ]},
+      }).writeToBuffer();
+      await viewModel.handleIncomingOperationForTesting(Operation.fromJson(
+        ProtobufMapper.toJson(ProtocolMessage.fromBuffer(encoded))));
+      expect(viewModel.localResources.single.parentId, isNull);
+      expect(viewModel.gridData.map((row) => row.name).toList(), ['Root']);
+      expect(viewModel.dependencies.map((dep) => (dep.predecessorTaskId, dep.successorTaskId)).toList(),
+          [('task', 'next-task')]);
+    });
+
+    test('older and replayed resets cannot erase replacement tasks', () async {
+      await viewModel.connectSync(uri: 'http://localhost:8080', tenantId: 'tenant1',
+          username: 'valid', password: 'password');
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(2000), actorId: 'client-a'));
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'INSERT_TASK', data: {'id': 'replacement', 'rowId': 'row', 'name': 'Replacement',
+          'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
+        timestamp: Hlc.fromIntTimestamp(2001), actorId: 'client-a'));
+      for (final clock in [1000, 2000]) {
+        await viewModel.handleIncomingOperationForTesting(Operation(
+          type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(clock), actorId: 'server-sync-reset'));
+        expect(viewModel.allTasks.map((task) => task.id).toList(), ['replacement']);
+      }
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'BATCH_UPDATE', data: {'operations': [
+          {'type': 'INSERT_TASK', 'data': {'id': 'stale-task', 'rowId': 'row'},
+            'timestamp': Hlc.fromIntTimestamp(1001).toString(), 'actorId': 'server'},
+        ]}, timestamp: Hlc.fromIntTimestamp(3000), actorId: 'server'));
+      expect(viewModel.allTasks.map((task) => task.id).toList(), ['replacement']);
+    });
+
+    test('Merkle replay applies buffered task and resource batches', () async {
+      await viewModel.connectSync(uri: 'http://localhost:8080', tenantId: 'tenant1',
+          username: 'valid', password: 'password');
+      await viewModel.handleIncomingOperationForTesting(Operation(
+        type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(1000), actorId: 'client-a'));
+      fakeClient.simulateConnectionDrop();
+      await Future<void>.delayed(Duration.zero);
+      fakeClient.merkleGate = Completer<void>();
+      final request = fakeClient.merkleRequests.stream.first;
+      fakeClient.simulateReconnect();
+      await request.timeout(const Duration(seconds: 5));
+      try {
+        await viewModel.handleIncomingOperationForTesting(Operation(
+          type: 'SYNC_METADATA', data: {'totalOperations': 2},
+          timestamp: Hlc.fromIntTimestamp(1001), actorId: 'server'));
+        await viewModel.handleIncomingOperationForTesting(Operation(
+          type: 'BATCH_UPDATE', data: {'operations': [
+            {'type': 'INSERT_RESOURCE', 'data': {'id': 'row', 'name': 'Resource', 'isExpanded': true},
+              'timestamp': Hlc.fromIntTimestamp(1002).toString(), 'actorId': 'client-b'},
+            {'type': 'INSERT_TASK', 'data': {'id': 'remote-task', 'rowId': 'row', 'name': 'Remote task',
+              'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
+              'timestamp': Hlc.fromIntTimestamp(1003).toString(), 'actorId': 'client-b'},
+          ]}, timestamp: Hlc.fromIntTimestamp(1004), actorId: 'server'));
+        expect(viewModel.allTasks, isEmpty);
+        await viewModel.finalizeMerkleSync();
+        expect(viewModel.allTasks.map((task) => task.id).toList(), ['remote-task']);
+        expect(viewModel.localResources.map((resource) => resource.id).toList(), ['row']);
+        expect(viewModel.gridData.map((row) => row.name).toList(), ['Resource']);
+      } finally {
+        fakeClient.merkleGate!.complete();
+        await Future<void>.delayed(Duration.zero);
+      }
     });
 
     test('connectSync failure', () async {

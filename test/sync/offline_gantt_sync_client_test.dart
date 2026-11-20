@@ -105,6 +105,35 @@ void main() {
       await client.dispose();
     });
 
+    test('offline reset and replacements always receive increasing clocks', () async {
+      await client.removeInnerClient();
+      var previous = client.currentHlc;
+      for (var i = 0; i < 1000; i++) {
+        final next = client.currentHlc;
+        expect(next > previous, isTrue, reason: 'Every replacement must be newer than its reset');
+        previous = next;
+      }
+    });
+
+    test('independent offline clients have independent clock nodes', () async {
+      await client.removeInnerClient();
+      final second = OfflineGanttSyncClient(Future.value(crdt));
+      try {
+        expect(client.currentHlc.nodeId, isNot(second.currentHlc.nodeId));
+      } finally {
+        await second.dispose();
+      }
+    });
+
+    test('offline clocks remain newer than received events after disconnect', () async {
+      final remote = Hlc(millis: DateTime.now().millisecondsSinceEpoch + 60000, counter: 100, nodeId: 'remote');
+      final received = client.operationStream.first;
+      mockInner.operationController.add(Operation(type: 'RESET_DATA', data: {}, timestamp: remote, actorId: 'remote'));
+      await received;
+      await client.removeInnerClient();
+      expect(client.currentHlc > remote, isTrue);
+    });
+
     test('Passes operations through when online', () async {
       mockInner.shouldFailSend = false;
       mockInner.connectionController.add(true);
@@ -120,15 +149,15 @@ void main() {
       expect(mockInner.sentOperations.first.type, 'ONLINE');
     });
 
-    test('Delegates Hlc and ActorId to inner client', () {
+    test('Uses inner time with its own clock node and delegates ActorId', () {
       expect(client.actorId, 'mock-inner-actor');
-      expect(client.currentHlc.nodeId, 'mock');
+      expect(client.currentHlc.nodeId, startsWith('offline-client-'));
     });
 
     test('Uses fallback Hlc and ActorId when no inner client', () async {
       await client.removeInnerClient();
       expect(client.actorId, 'offline-user');
-      expect(client.currentHlc.nodeId, 'offline-client');
+      expect(client.currentHlc.nodeId, startsWith('offline-client-'));
     });
 
     test('Manages inner client switches correctly', () async {

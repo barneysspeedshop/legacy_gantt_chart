@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:synchronized/synchronized.dart';
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
@@ -8,6 +9,12 @@ import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 import 'websocket_gantt_sync_client.dart';
 
 class OfflineGanttSyncClient implements GanttSyncClient {
+  late Hlc _clock = Hlc(
+    millis: 0,
+    counter: 0,
+    nodeId:
+        'offline-client-${Random.secure().nextInt(0x100000000).toRadixString(16)}-${Random.secure().nextInt(0x100000000).toRadixString(16)}',
+  );
   WebSocketGanttSyncClient? _innerClient;
   final _connectionStateController = StreamController<bool>.broadcast();
   final _operationController = StreamController<Operation>.broadcast();
@@ -59,6 +66,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     });
 
     _innerOperationSubscription = client.operationStream.listen((op) {
+      _clock = _clock.receive(op.timestamp, client.correctedTimestamp);
       _operationController.add(op);
     });
   }
@@ -99,10 +107,11 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   @override
   Hlc get currentHlc {
-    if (_innerClient != null) {
-      return _innerClient!.currentHlc;
-    }
-    return Hlc.fromDate(DateTime.now(), 'offline-client');
+    final inner = _innerClient;
+    _clock = inner == null
+        ? _clock.send(DateTime.now().millisecondsSinceEpoch)
+        : _clock.receive(inner.currentHlc, inner.correctedTimestamp);
+    return _clock;
   }
 
   @override

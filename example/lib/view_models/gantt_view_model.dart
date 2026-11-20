@@ -49,7 +49,7 @@ class GanttViewModel extends ChangeNotifier {
     if (previousScope != null && previousScope != scope && pending.isNotEmpty) {
       throw StateError('Synchronize pending changes with their original tenant before switching servers or tenants.');
     }
-    if (previousScope != null && previousScope != scope) {
+    if (previousScope != scope && pending.isEmpty) {
       _syncGeneration++;
       await _syncOperationsSubscription?.cancel();
       await _connectionStateSubscription?.cancel();
@@ -79,7 +79,6 @@ class GanttViewModel extends ChangeNotifier {
       _cachedFlatGridData = null;
       _cachedVisibleFlatGridData = null;
       _conflictIndicators.clear();
-      _latestIgnoredResetTimestamp = null;
       _syncToController();
       notifyListeners();
     }
@@ -335,8 +334,9 @@ class GanttViewModel extends ChangeNotifier {
         _shouldAutoSeed = false;
         if (tasks.isEmpty) {
           final existingResources = await _localRepository.getAllResources();
-          if (existingResources.isEmpty) {
-            await seedLocalDatabase();
+          final pending = await db.query('SELECT id FROM offline_queue WHERE is_deleted = 0 LIMIT 1');
+          if (existingResources.isEmpty && pending.isEmpty && storedScope.isEmpty) {
+            await seedLocalDatabase(synchronize: false);
             return;
           }
         }
@@ -922,13 +922,18 @@ class GanttViewModel extends ChangeNotifier {
   }
 
   Future<void>? _activeSeedingFuture;
+  bool _activeSeedSynchronizes = false;
 
-  Future<void> seedLocalDatabase() async {
+  Future<void> seedLocalDatabase({bool synchronize = true}) async {
     if (_activeSeedingFuture != null) {
-      return _activeSeedingFuture;
+      final preview = !_activeSeedSynchronizes;
+      await _activeSeedingFuture;
+      if (synchronize && preview) await seedLocalDatabase();
+      return;
     }
 
-    _activeSeedingFuture = _seedLocalDatabaseInternal();
+    _activeSeedSynchronizes = synchronize;
+    _activeSeedingFuture = _seedLocalDatabaseInternal(synchronize: synchronize);
     try {
       await _activeSeedingFuture;
     } finally {
@@ -978,7 +983,7 @@ class GanttViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _seedLocalDatabaseInternal() async {
+  Future<void> _seedLocalDatabaseInternal({required bool synchronize}) async {
     _pendingSeedReset = true;
     _setLoading(true);
     notifyListeners();
@@ -987,7 +992,7 @@ class GanttViewModel extends ChangeNotifier {
     await _localRepository.deleteAllTasks();
     await _localRepository.deleteAllResources();
 
-    if (_syncClient is OfflineGanttSyncClient) {
+    if (synchronize && _syncClient is OfflineGanttSyncClient) {
       await (_syncClient as OfflineGanttSyncClient).clearQueue();
     }
 
@@ -1085,7 +1090,7 @@ class GanttViewModel extends ChangeNotifier {
 
     await _localRepository.insertTasks(tasksWithUser);
     await _localRepository.insertDependencies(dependencies);
-    if (_syncClient != null) {
+    if (synchronize && _syncClient != null) {
       final opsToSend = <Operation>[];
       opsToSend.add(Operation(
         type: 'RESET_DATA',
@@ -1133,7 +1138,8 @@ class GanttViewModel extends ChangeNotifier {
           data: {
             'predecessorTaskId': dep.predecessorTaskId,
             'successorTaskId': dep.successorTaskId,
-            'dependency_type': dep.type.name,
+            'type': dep.type.name,
+            'lag': dep.lag?.inMilliseconds ?? 0,
           },
           timestamp: _currentHlc,
           actorId: 'local-user',
@@ -1155,7 +1161,7 @@ class GanttViewModel extends ChangeNotifier {
 
     fillExpansion(processedData.gridData);
 
-    if (_syncClient != null) {
+    if (synchronize && _syncClient != null) {
       final resourceOps = <Operation>[];
       for (int i = 0; i < processedData.apiResponse.resourcesData.length; i++) {
         final resource = processedData.apiResponse.resourcesData[i];
@@ -1287,7 +1293,6 @@ class GanttViewModel extends ChangeNotifier {
 
   double? _gridWidth;
   double? _controlPanelWidth = 300.0;
-  Hlc? _latestIgnoredResetTimestamp; // Helper to filter side-effect deletes from ignored resets
   List<LegacyGanttTask> get ganttTasks => _ganttTasks;
 
   List<LegacyGanttTask> get conflictIndicators => _showConflicts ? _conflictIndicators : [];
@@ -2473,6 +2478,7 @@ class GanttViewModel extends ChangeNotifier {
   }) async {
     try {
       _currentUsername = username;
+      await _activeSeedingFuture;
       final parsedUri = Uri.parse(uri);
       final loginCall = loginFunction ?? WebSocketGanttSyncClient.login;
       final token = await loginCall(
@@ -2617,7 +2623,11 @@ class GanttViewModel extends ChangeNotifier {
       final batchDeletedDependencies = <(String, String)>[];
       final batchDeletedResourceIds = <String>[];
 
-      for (final op in currentBatch) {
+      for (final batch in currentBatch.where((op) => op.type == 'BATCH_UPDATE')) {
+        _initialSyncReceived += (batch.data['operations'] as List? ?? []).length;
+      }
+      final operations = currentBatch.expand((op) => op.type == 'BATCH_UPDATE' ? _operationsInBatch(op) : [op]);
+      for (final op in operations) {
         await _processOperationInternal(
           op,
           notify: false,
@@ -2644,6 +2654,10 @@ class GanttViewModel extends ChangeNotifier {
       }
     }
 
+    if (!_isInitialSyncing) {
+      _initialSyncExpected = 0;
+      _initialSyncReceived = 0;
+    }
     await _processLocalData();
     notifyListeners();
   }
@@ -2673,12 +2687,12 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> handleIncomingOperationForTesting(Operation op) => _handleIncomingOperation(op);
 
   Future<void> _handleIncomingOperation(Operation op) async {
-    await _protocolState.applyOperations([op]);
+    final acceptedReset = await _protocolState.applyOperations([op]);
     if (op.type == 'SYNC_METADATA') {
       final total = (op.data['totalOperations'] as int?) ?? 0;
+      _initialSyncExpected = total;
+      _initialSyncReceived = 0;
       if (total > 0) {
-        _initialSyncExpected = total;
-        _initialSyncReceived = 0;
         print('Initial sync starting: expecting $total operations');
       }
       // When total is 0, there's nothing to defer — just ignore.
@@ -2686,6 +2700,9 @@ class GanttViewModel extends ChangeNotifier {
     }
 
     if (op.type == 'RESET_DATA') {
+      if (acceptedReset == null) return;
+      _initialSyncExpected = 0;
+      _initialSyncReceived = 0;
       print('SyncClient: Received RESET_DATA, clearing buffer and applying immediately');
       _operationBuffer.clear();
       await _processOperationInternal(op, notify: true);
@@ -2707,53 +2724,17 @@ class GanttViewModel extends ChangeNotifier {
       final batchDeletedDependencies = <(String, String)>[];
       final batchDeletedResourceIds = <String>[];
 
-      for (final opEnv in operations) {
-        try {
-          final opMap = opEnv as Map<String, dynamic>;
-          final opType = opMap['type'] as String;
-          var opData = opMap['data'] as Map<String, dynamic>;
-          final opTsRaw = opMap['timestamp'];
-
-          if (_latestIgnoredResetTimestamp != null && opTsRaw.toString() == _latestIgnoredResetTimestamp.toString()) {
-            continue;
-          }
-
-          final opTs = opTsRaw is int
-              ? Hlc.fromIntTimestamp(opTsRaw)
-              : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
-
-          final batchUserId = op.data['user_id'];
-          final opMapActor = opMap['actorId'] as String?;
-          final opActor = batchUserId ?? opMapActor ?? 'unknown';
-
-          if (opData.containsKey('data') && opData['data'] is Map) {
-            final innerData = opData['data'] as Map<String, dynamic>;
-            if (opData.containsKey('gantt_type')) {
-              innerData['gantt_type'] = opData['gantt_type'];
-            }
-            opData = innerData;
-          }
-
-          final subOp = Operation(
-            type: opType,
-            data: opData,
-            timestamp: opTs,
-            actorId: opActor,
-          );
-
-          await _processOperationInternal(
-            subOp,
-            notify: false,
-            batchTasks: batchTasks,
-            batchDependencies: batchDependencies,
-            batchResources: batchResources,
-            batchDeletedTaskIds: batchDeletedTaskIds,
-            batchDeletedDependencies: batchDeletedDependencies,
-            batchDeletedResourceIds: batchDeletedResourceIds,
-          );
-        } catch (e) {
-          print('Error processing batch item: $e');
-        }
+      for (final subOp in _operationsInBatch(op)) {
+        await _processOperationInternal(
+          subOp,
+          notify: false,
+          batchTasks: batchTasks,
+          batchDependencies: batchDependencies,
+          batchResources: batchResources,
+          batchDeletedTaskIds: batchDeletedTaskIds,
+          batchDeletedDependencies: batchDeletedDependencies,
+          batchDeletedResourceIds: batchDeletedResourceIds,
+        );
       }
 
       if (_useLocalDatabase) {
@@ -2808,6 +2789,37 @@ class GanttViewModel extends ChangeNotifier {
     }
   }
 
+  Iterable<Operation> _operationsInBatch(Operation batch) sync* {
+    for (final opEnv in batch.data['operations'] as List? ?? []) {
+      try {
+        final opMap = opEnv as Map<String, dynamic>;
+        final opType = opMap['type'] as String;
+        var opData = opMap['data'] as Map<String, dynamic>;
+        final opTsRaw = opMap['timestamp'];
+
+        final opTs = opTsRaw is int
+            ? Hlc.fromIntTimestamp(opTsRaw)
+            : (opTsRaw is String ? Hlc.parse(opTsRaw) : Hlc.fromDate(DateTime.now(), 'unknown'));
+
+        final batchUserId = batch.data['user_id'];
+        final opMapActor = opMap['actorId'] as String?;
+        final opActor = batchUserId ?? opMapActor ?? 'unknown';
+
+        if (opData.containsKey('data') && opData['data'] is Map) {
+          final innerData = opData['data'] as Map<String, dynamic>;
+          if (opData.containsKey('gantt_type')) {
+            innerData['gantt_type'] = opData['gantt_type'];
+          }
+          opData = innerData;
+        }
+
+        yield Operation(type: opType, data: opData, timestamp: opTs, actorId: opActor);
+      } catch (e) {
+        print('Error processing batch item: $e');
+      }
+    }
+  }
+
   Future<void> _processOperationInternal(
     Operation op, {
     bool notify = true,
@@ -2818,17 +2830,8 @@ class GanttViewModel extends ChangeNotifier {
     List<(String, String)>? batchDeletedDependencies,
     List<String>? batchDeletedResourceIds,
   }) async {
-    // If we recently ignored a RESET_DATA command, we must also ignore any side-effect operations
-    // (like DELETE_DEPENDENCY or DELETE_TASK) that have the EXACT SAME timestamp as the reset.
-    // These are "tombstones" generated by the server during the reset process.
-    if (op.type != 'RESET_DATA' &&
-        _latestIgnoredResetTimestamp != null &&
-        op.timestamp == _latestIgnoredResetTimestamp) {
-      // print('SyncClient: Ignoring side-effect operation ${op.type} (ts=${op.timestamp}) because it matches ignored Reset.');
-      return;
-    }
-
-    // Removed actorId check as it is unreliable when server overwrites it
+    final lastReset = _protocolState.lastResetTimestamp;
+    if (op.type != 'RESET_DATA' && lastReset != null && op.timestamp <= lastReset) return;
 
     final data = op.data;
     final taskData = data;
@@ -2887,7 +2890,7 @@ class GanttViewModel extends ChangeNotifier {
           baselineEnd:
               parseDate(innerData['baseline_end']) ?? parseDate(innerData['baselineEnd']) ?? existingTask.baselineEnd,
           notes: innerData['notes'] as String? ?? existingTask.notes,
-          parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String? ?? existingTask.parentId,
+          parentId: _optionalId(innerData['parentId'] ?? innerData['parent_id']) ?? existingTask.parentId,
           usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true
               ? true
               : (innerData['uses_work_calendar'] == false ? false : existingTask.usesWorkCalendar),
@@ -2940,7 +2943,7 @@ class GanttViewModel extends ChangeNotifier {
               parseDate(innerData['baseline_start'] ?? innerData['baselineStart'] ?? innerData['baseline_start']),
           baselineEnd: parseDate(innerData['baseline_end'] ?? innerData['baselineEnd'] ?? innerData['baseline_end']),
           notes: innerData['notes'] as String?,
-          parentId: innerData['parentId'] as String? ?? innerData['parent_id'] as String?,
+          parentId: _optionalId(innerData['parentId'] ?? innerData['parent_id']),
           usesWorkCalendar: innerData['uses_work_calendar'] == true || innerData['usesWorkCalendar'] == true,
           isAutoScheduled: innerData['is_auto_scheduled'] != false,
           lastUpdated: op.timestamp,
@@ -2998,7 +3001,7 @@ class GanttViewModel extends ChangeNotifier {
         baselineStart: parseDate(data['baseline_start'] ?? data['baselineStart']),
         baselineEnd: parseDate(data['baseline_end'] ?? data['baselineEnd']),
         notes: data['notes'] as String?,
-        parentId: (data['parentId'] ?? data['parent_id']) as String?,
+        parentId: _optionalId(data['parentId'] ?? data['parent_id']),
         usesWorkCalendar: data['uses_work_calendar'] == true,
         isAutoScheduled: data['is_auto_scheduled'] != false,
         lastUpdated: op.timestamp,
@@ -3062,7 +3065,7 @@ class GanttViewModel extends ChangeNotifier {
       if (followedUserId == userId) {
         _applyFollowedUserView(_connectedUsers[userId]!);
       }
-    } else if (op.type == 'INSERT_DEPENDENCY') {
+    } else if (op.type == 'INSERT_DEPENDENCY' || op.type == 'UPDATE_DEPENDENCY') {
       final data = op.data;
       final dependencyTypeString = (data['dependency_type'] ?? data['type'] ?? 'finishToStart').toString();
       final dependencyType = DependencyType.values.firstWhere(
@@ -3134,7 +3137,7 @@ class GanttViewModel extends ChangeNotifier {
       final resource = LocalResource(
         id: data['id'],
         name: data['name'],
-        parentId: data['parent_id'] ?? data['parentId'],
+        parentId: _optionalId(data['parent_id'] ?? data['parentId']),
         isExpanded: data['isExpanded'] == true || data['is_expanded'] == true,
       );
 
@@ -3187,13 +3190,21 @@ class GanttViewModel extends ChangeNotifier {
         _dependencies.clear();
         _ganttTasks.clear();
         _allGanttTasks.clear();
+        _localResources.clear();
         _gridData.clear();
+        _cachedVisibleFlatGridData = null;
+        _rowMaxStackDepth.clear();
         _cachedFlatGridData = null;
         _conflictIndicators.clear();
       }
 
       if (notify) notifyListeners();
     }
+  }
+
+  String? _optionalId(dynamic value) {
+    final id = value?.toString();
+    return id == null || id.isEmpty ? null : id;
   }
 
   Color? _parseColor(dynamic value) {
