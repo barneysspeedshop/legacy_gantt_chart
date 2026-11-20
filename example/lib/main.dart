@@ -29,6 +29,7 @@ import 'utils/csv_importer.dart';
 import 'services/gantt_natural_language_service.dart';
 import 'ui/widgets/gantt_assistant_widget.dart';
 import 'data/local/local_gantt_repository.dart'; // For LocalResource
+import 'demo_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -96,7 +97,7 @@ class _GanttViewState extends State<GanttView> {
   void initState() {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
-    _uriController = TextEditingController(text: 'http://localhost:8080');
+    _uriController = TextEditingController(text: defaultSyncServerUrl);
     _tenantIdController = TextEditingController(text: 'legacy');
     _usernameController = TextEditingController();
     _passwordController = TextEditingController();
