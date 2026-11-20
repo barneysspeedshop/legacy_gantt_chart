@@ -326,6 +326,9 @@ To see a full-featured demo of the `legacy_gantt_chart` in action, you can run t
     flutter run
     ```
 
+The example pre-fills the public demo account: tenant `legacy`, username `patrick`,
+and password `password`. Select **Connect** to load the shared demo.
+
 The sync server field defaults to `https://api.gantt-sync.com`. To use a local
 server instead, run:
 
