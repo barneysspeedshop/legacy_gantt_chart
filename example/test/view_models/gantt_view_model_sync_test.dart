@@ -367,11 +367,9 @@ void main() {
       expect(viewModel.allTasks.map((task) => task.id).toList(), ['replacement']);
     });
 
-    test('Merkle replay applies buffered task and resource batches', () async {
+    test('remote reset replacements are visible while Merkle repair is paused', () async {
       await viewModel.connectSync(uri: 'http://localhost:8080', tenantId: 'tenant1',
           username: 'valid', password: 'password');
-      await viewModel.handleIncomingOperationForTesting(Operation(
-        type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(1000), actorId: 'client-a'));
       fakeClient.simulateConnectionDrop();
       await Future<void>.delayed(Duration.zero);
       fakeClient.merkleGate = Completer<void>();
@@ -379,6 +377,8 @@ void main() {
       fakeClient.simulateReconnect();
       await request.timeout(const Duration(seconds: 5));
       try {
+        await viewModel.handleIncomingOperationForTesting(Operation(
+          type: 'RESET_DATA', data: {}, timestamp: Hlc.fromIntTimestamp(1000), actorId: 'client-a'));
         await viewModel.handleIncomingOperationForTesting(Operation(
           type: 'SYNC_METADATA', data: {'totalOperations': 2},
           timestamp: Hlc.fromIntTimestamp(1001), actorId: 'server'));
@@ -390,8 +390,7 @@ void main() {
               'start': '2026-11-17T00:00:00.000Z', 'end': '2026-11-18T00:00:00.000Z'},
               'timestamp': Hlc.fromIntTimestamp(1003).toString(), 'actorId': 'client-b'},
           ]}, timestamp: Hlc.fromIntTimestamp(1004), actorId: 'server'));
-        expect(viewModel.allTasks, isEmpty);
-        await viewModel.finalizeMerkleSync();
+        expect(fakeClient.merkleGate!.isCompleted, isFalse);
         expect(viewModel.allTasks.map((task) => task.id).toList(), ['remote-task']);
         expect(viewModel.localResources.map((resource) => resource.id).toList(), ['row']);
         expect(viewModel.gridData.map((row) => row.name).toList(), ['Resource']);
