@@ -96,24 +96,30 @@ class ProtocolStateStore {
       }
       flush();
       final previous = {for (final row in rows) '${row['entity_type']}:${row['entity_id']}': row['payload']};
-      Future<void> save(String type, String id, String payload) async {
+      final changedRows = <Map<String, String>>[];
+      void save(String type, String id, String payload) {
         if (previous['$type:$id'] == payload) return;
-        await transaction.execute(
-          'INSERT OR REPLACE INTO canonical_protocol_state (scope, entity_type, entity_id, payload) VALUES (?, ?, ?, ?)',
-          [scope, type, id, payload],
-        );
+        changedRows.add({'type': type, 'id': id, 'payload': payload});
       }
 
       for (final task in state.tasks) {
-        await save('task', task.id, base64Encode(task.writeToBuffer()));
+        save('task', task.id, base64Encode(task.writeToBuffer()));
       }
       for (final resource in state.resources) {
-        await save('resource', resource.id, base64Encode(resource.writeToBuffer()));
+        save('resource', resource.id, base64Encode(resource.writeToBuffer()));
       }
       for (final entry in state.dependencies.entries) {
-        await save('dependency', entry.key, base64Encode(entry.value.writeToBuffer()));
+        save('dependency', entry.key, base64Encode(entry.value.writeToBuffer()));
       }
-      if (state.lastReset != null) await save('control', 'reset', state.lastReset.toString());
+      if (state.lastReset != null) save('control', 'reset', state.lastReset.toString());
+      if (changedRows.isNotEmpty) {
+        await transaction.execute(
+          r'''INSERT OR REPLACE INTO canonical_protocol_state (scope, entity_type, entity_id, payload)
+          SELECT ?1, json_extract(value, '$.type'), json_extract(value, '$.id'), json_extract(value, '$.payload')
+          FROM json_each(?2)''',
+          [scope, jsonEncode(changedRows)],
+        );
+      }
     });
   });
 
