@@ -19,8 +19,8 @@ void main() {
     // 2. Insert initial data (One parent, collapsed)
     final repo = LocalGanttRepository();
     await repo.init();
-    await repo.insertOrUpdateResource(const LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
-    await repo.insertOrUpdateResource(const LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
+    await repo.insertOrUpdateResource(LocalResource(id: 'p1', name: 'Parent 1', isExpanded: false));
+    await repo.insertOrUpdateResource(LocalResource(id: 'c1', name: 'Child 1', parentId: 'p1', isExpanded: true));
 
     // Add a task to ensure grid data is built (otherwise logic might skip)
     await repo.insertOrUpdateTask(LegacyGanttTask(
@@ -34,17 +34,15 @@ void main() {
     final vm = GanttViewModel(useLocalDatabase: true);
 
     // Wait for initial load (seedVersion increments on init)
-    await Future.delayed(const Duration(milliseconds: 500));
+    await vm.initialized;
     final initialSignature = vm.expansionSignature;
     expect(vm.gridData.length, greaterThan(0));
     expect(vm.gridData.first.isExpanded, isFalse);
 
-    // 4. Simulate Remote Update (Update DB directly)
-    // Expand p1
-    await repo.updateResourceExpansion('p1', true, Hlc.fromDate(DateTime.now(), 'test'));
-
-    // Wait for listener to fire
-    await Future.delayed(const Duration(milliseconds: 500));
+    await vm.handleIncomingOperationForTesting(Operation(
+      type: 'UPDATE_RESOURCE', data: {'id': 'p1', 'name': 'Parent 1', 'isExpanded': true},
+      timestamp: vm.syncClient!.currentHlc, actorId: 'remote-client',
+    ));
 
     // 5. Verify expansionSignature changed
     // If it changed, the main.dart ValueKey will change and grid will rebuild.
@@ -53,7 +51,8 @@ void main() {
     // Verify grid data updated
     expect(vm.gridData.first.isExpanded, isTrue);
 
-    vm.dispose();
+    await vm.disposeAsync();
+    await GanttDb.reset();
   });
 
   test('reorderResources allows nesting into immediate neighbor (neutral index change)', () async {
@@ -67,8 +66,8 @@ void main() {
     // Insert initial data (Two siblings)
     // p1 at index 0, p2 at index 1
     await repo.insertResources([
-      const LocalResource(id: 'p1', name: 'Parent 1', sortOrder: 100.0),
-      const LocalResource(id: 'p2', name: 'Parent 2', sortOrder: 200.0),
+      LocalResource(id: 'p1', name: 'Parent 1', sortOrder: 100.0),
+      LocalResource(id: 'p2', name: 'Parent 2', sortOrder: 200.0),
     ]);
 
     // Add tasks to ensure grid data builds
@@ -81,7 +80,7 @@ void main() {
 
     // 2. Init ViewModel
     final vm = GanttViewModel(useLocalDatabase: true);
-    await Future.delayed(const Duration(milliseconds: 500));
+    await vm.initialized;
 
     // Verify initial positions
     final flat = vm.flatGridData;
@@ -99,13 +98,14 @@ void main() {
     );
 
     // Wait for async reorder to complete and repository watch to trigger
-    await Future.delayed(const Duration(milliseconds: 800));
+
 
     // 4. Verify result
     final updatedResources = await repo.getAllResources();
     final p2 = updatedResources.firstWhere((r) => r.id == 'p2');
     expect(p2.parentId, equals('p1'));
 
-    vm.dispose();
+    await vm.disposeAsync();
+    await GanttDb.reset();
   });
 }

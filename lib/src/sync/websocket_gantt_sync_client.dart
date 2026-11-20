@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:synchronized/synchronized.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
@@ -109,8 +110,6 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               return;
             }
 
-            _lastOperationReceivedAt = DateTime.now();
-
             final type = envelope['type'] as String?;
             if (type == null) {
               print('Invalid message format: missing type');
@@ -186,13 +185,19 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
               }
 
               _operationController.add(op);
+              final prefix = envelope['channel'];
+              if (prefix is String && _pendingRecoveryPrefixes.remove(prefix) && _pendingRecoveryPrefixes.isEmpty) {
+                _recoveriesComplete?.complete();
+              }
               return;
             }
 
             if (type == 'MERKLE_ROOT') {
               if (dataMap != null && dataMap['root'] is String) {
                 final root = dataMap['root'] as String;
-                if (_merkleRootCompleter != null && !_merkleRootCompleter!.isCompleted) {
+                if (envelope['channel'] == _merkleRootRequestChannel &&
+                    _merkleRootCompleter != null &&
+                    !_merkleRootCompleter!.isCompleted) {
                   _merkleRootCompleter!.complete(root);
                 }
               }
@@ -290,68 +295,74 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
   Stream<SyncProgress> get inboundProgress => _inboundProgressController.stream;
 
   Completer<String>? _merkleRootCompleter;
+  final _merkleRootLock = Lock();
+  String? _merkleRootRequestChannel;
+  int _merkleRootSequence = 0;
 
   @override
-  Future<String> getMerkleRoot() async {
-    if (_channel == null) {
-      throw Exception('Not connected');
+  Future<String> getMerkleRoot() => _merkleRootLock.synchronized(() async {
+    final channel = _channel;
+    if (channel == null) throw StateError('Not connected');
+    final completer = Completer<String>();
+    _merkleRootCompleter = completer;
+    _merkleRootRequestChannel = 'merkle-root:$_nodeId:${++_merkleRootSequence}';
+    try {
+      channel.sink.add(
+        ProtobufMapper.toProtobuf({'type': 'GET_MERKLE_ROOT', 'channel': _merkleRootRequestChannel}).writeToBuffer(),
+      );
+      return await completer.future.timeout(const Duration(seconds: 10));
+    } finally {
+      _merkleRootCompleter = null;
+      _merkleRootRequestChannel = null;
     }
-    _merkleRootCompleter = Completer<String>();
-    _channel!.sink.add(ProtobufMapper.toProtobuf({'type': 'GET_MERKLE_ROOT'}).writeToBuffer());
-    return _merkleRootCompleter!.future.timeout(const Duration(seconds: 10));
-  }
+  });
 
   final Map<String, Completer<Map<String, String>>> _merkleNodeCompleters = {};
 
-  int _pendingRecoveryCount = 0;
-  DateTime _lastOperationReceivedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  final _pendingRecoveryPrefixes = <String>{};
+  int _merkleRangeSequence = 0;
+  Completer<void>? _recoveriesComplete;
 
   Future<Map<String, String>> _getMerkleNodeChildren(String prefix) async {
     final completer = Completer<Map<String, String>>();
     _merkleNodeCompleters[prefix] = completer;
 
-    _channel!.sink.add(
-      ProtobufMapper.toProtobuf({
-        'type': 'GET_MERKLE_NODE',
-        'data': {'prefix': prefix},
-      }).writeToBuffer(),
-    );
-
-    return completer.future.timeout(const Duration(seconds: 10));
+    try {
+      _channel!.sink.add(
+        ProtobufMapper.toProtobuf({
+          'type': 'GET_MERKLE_NODE',
+          'data': {'prefix': prefix},
+        }).writeToBuffer(),
+      );
+      return await completer.future.timeout(const Duration(seconds: 10));
+    } finally {
+      if (identical(_merkleNodeCompleters[prefix], completer)) {
+        _merkleNodeCompleters.remove(prefix);
+      }
+    }
   }
 
   void _getEntitiesInPrefix(String prefix) {
-    _pendingRecoveryCount++;
+    if (_pendingRecoveryPrefixes.isEmpty) _recoveriesComplete = Completer<void>();
+    final channel = 'merkle-range:$_nodeId:${++_merkleRangeSequence}';
+    _pendingRecoveryPrefixes.add(channel);
     _channel!.sink.add(
       ProtobufMapper.toProtobuf({
         'type': 'GET_ENTITIES_IN_RANGE',
+        'channel': channel,
         'data': {'prefix': prefix},
       }).writeToBuffer(),
     );
   }
 
   Future<void> _waitForRecoveries() async {
-    if (_pendingRecoveryCount == 0) return;
-
-    print('Merkle Sync: Waiting for $_pendingRecoveryCount recovery requests...');
-
+    final completion = _recoveriesComplete;
+    if (_pendingRecoveryPrefixes.isEmpty || completion == null) return;
     try {
-      // We wait for all requests to be followed by some period of inactivity (quiescence)
-      // or at least a hard timeout.
-      int attempts = 0;
-      while (attempts < 50) {
-        // 10 second hard limit (50 * 200ms)
-        await Future.delayed(const Duration(milliseconds: 200));
-        final elapsed = DateTime.now().difference(_lastOperationReceivedAt);
-        if (elapsed > const Duration(seconds: 2)) {
-          // If we haven't received anything for 2 seconds, assume the server is done
-          // (or at least that this batch is over)
-          break;
-        }
-        attempts++;
-      }
+      await completion.future.timeout(const Duration(seconds: 10));
     } finally {
-      _pendingRecoveryCount = 0;
+      _pendingRecoveryPrefixes.clear();
+      _recoveriesComplete = null;
     }
   }
 
@@ -366,12 +377,17 @@ class WebSocketGanttSyncClient implements GanttSyncClient {
     }
 
     print('Merkle Sync: Root mismatch, starting traversal');
-    await _traverseMerkleNode('', localTree);
-    await _waitForRecoveries();
+    try {
+      await _traverseMerkleNode('', localTree);
+      await _waitForRecoveries();
+    } finally {
+      _pendingRecoveryPrefixes.clear();
+      _recoveriesComplete = null;
+    }
   }
 
   Future<void> _traverseMerkleNode(String prefix, MerkleTree localTree) async {
-    if (prefix.length == 13) {
+    if (prefix.length == 16) {
       print('Merkle Sync: Mismatch at deepest level $prefix, fetching entities');
       _getEntitiesInPrefix(prefix);
       return;

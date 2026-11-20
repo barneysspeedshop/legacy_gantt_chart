@@ -13,8 +13,10 @@ class BlockingSyncClient implements GanttSyncClient {
   final release = Completer<void>();
   final sentOperations = <Operation>[];
 
+  Hlc _clock = Hlc.fromDate(DateTime.now(), 'blocked');
+
   @override
-  Hlc get currentHlc => Hlc.fromDate(DateTime.now(), 'blocked');
+  Hlc get currentHlc => _clock = _clock.send(DateTime.now().millisecondsSinceEpoch);
 
   @override
   String get actorId => 'blocked';
@@ -81,13 +83,16 @@ void main() {
     GanttDb.overridePath = ':memory:';
     await GanttDb.reset();
     final db = await GanttDb.db;
-    await db.execute('INSERT INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)',
-        ['canonical_scope', 'bound-tenant']);
+    await db.execute('INSERT INTO sync_metadata (meta_key, meta_value) VALUES (?, ?)', [
+      'canonical_scope',
+      'bound-tenant',
+    ]);
     final vm = GanttViewModel(useLocalDatabase: true);
     final ready = Completer<void>();
     void onChange() {
       if (!vm.isLoading && !ready.isCompleted) ready.complete();
     }
+
     vm.addListener(onChange);
     try {
       onChange();

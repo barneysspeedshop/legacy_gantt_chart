@@ -16,7 +16,7 @@ The example app features a robust CSV importer (`_handleCsvImport`). Because par
 > If modifying the CSV importer, be extremely wary of the `_rollbackImport` function; it manually deletes tasks and resources via the view model if the user cancels. Breaking the isolate messaging protocol or the rollback iteration order will silently corrupt the local SQLite cache.
 
 ### 3. Bulk Optimization Routines
-The `GanttViewModel` implements `updateTasksBulk` and `deleteTasksBulk`. For performance during heavy edits, these functions **optimistically patch the in-memory list** (`_allGanttTasks`) while side-loading the database writes and network Sync messages `unawaited`. If you alter state updates, adhere to this optimistic pattern to prevent the UI from stuttering during heavy re-stack computations.
+The `GanttViewModel` implements `updateTasksBulk` and `deleteTasksBulk` through the canonical local state store. Commit canonical entities, display projections, and outgoing operations atomically, then publish one coherent snapshot. Network delivery must not delay local rendering. Do not independently mutate entity lists or write entity repositories from the view model.
 
 ### 4. "Snap To Task" Math
 In `main.dart`, the `_handleSnapToTask` method scales the Gantt chart Scrubber Window to precisely 3x the target task's duration (or 1 day for a 0-duration milestone) to center it optimally without losing contextual overview. Modifying the date math here can easily cause division-by-zero exceptions or inverted date domains if `newWindowDuration` evaluates backwards.

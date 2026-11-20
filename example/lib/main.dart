@@ -819,9 +819,11 @@ class _GanttViewState extends State<GanttView> {
                         username: _usernameController.text,
                         password: _passwordController.text,
                       );
-                      _showSnackbar('Connected to Sync Server');
+                      if (mounted && vm.isSyncConnected) {
+                        _showSnackbar('Connected to Sync Server');
+                      }
                     } catch (e) {
-                      _showSnackbar('Connection Failed: $e');
+                      if (mounted) _showSnackbar('Connection Failed: $e');
                     }
                   },
                   child: const Text('Connect'),
@@ -1538,7 +1540,7 @@ class _GanttViewState extends State<GanttView> {
                                                       controller: vm.controller,
                                                       loadingIndicatorType: vm.loadingIndicatorType,
                                                       loadingIndicatorPosition: vm.loadingIndicatorPosition,
-                                                      syncClient: vm.syncClient,
+                                                      syncClient: vm.presenceSyncClient,
                                                       onTaskSecondaryTap: (task, position) =>
                                                           _showTaskContextMenu(context, task, position),
                                                       onTaskLongPress: (task, position) =>

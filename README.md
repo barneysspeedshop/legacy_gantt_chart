@@ -119,7 +119,7 @@ Add this to your package's `pubspec.yaml` file:
 
 ```yaml
 dependencies:
-  legacy_gantt_chart: ^10.0.0
+  legacy_gantt_chart: ^11.0.0
   material_ui: ^1.11.1
 ```
 
@@ -648,15 +648,21 @@ To utilize these features, you need a compatible backend. We offer **Gantt Sync*
 
 *   **Sovereign Sync:** Own your data. Run the binary on your own infrastructure (Docker, Kubernetes, or Air-gapped).
 *   **Offline-First:** Clients can work offline indefinitely. Changes sync automatically when connection is restored.
-*   **Conflict-Free:** Uses Hybrid Logical Clocks (HLC) and Merkle Trees to ensure strong consistency without manual conflict resolution.
+*   **Conflict-Free:** Uses Hybrid Logical Clocks (HLC) and Merkle Trees to reconcile replicas through eventual consistency.
 
 [**Get the Server at gantt-sync.com →**](https://gantt-sync.com)
 
 ### Key Components
 
 *   **`WebSocketGanttSyncClient`**: Connects to the backend to push and receive updates in real-time.
-*   **`OfflineGanttSyncClient`**: Queues operations when offline and syncs them when the connection is restored.
+*   **`OfflineGanttSyncClient`**: Persists operations before sending, including while connected, and flushes the queue when a connection is available.
 *   **`CrdtEngine`**: The core logic that handles the merging of concurrent edits.
+
+Version 11 requires protocol 4 and a compatible updated server. Resource updates replace the complete resource record, including metadata; construct each update from the current resource and apply the desired changes before sending. Resource and dependency deletions retain minimal tombstones rather than the previous payload. Tasks retain per-field clocks and historical task fields while deleted.
+
+The persistent example commits canonical entities, its display projection, and outgoing operations in one local transaction. Local edits appear after that commit, without waiting for the network. Incoming live updates and synchronization replays use the same merge path. Automatic sample previews stay local until an explicit edit or reseed.
+
+The outgoing queue removes operations after WebSocket handoff; the protocol does not provide a durable server acknowledgement. The persistent example also reconciles canonical state in both directions when connecting. If a handoff was lost, it requeues the accepted local records with their original clocks, then pulls missing server state and verifies the resulting roots. Checksums include task field clocks, entity clocks, and the reset fence, so identical displayed values cannot hide different causal histories. Recovery completes on correlated responses, with a bounded timeout; a successful send alone does not prove server persistence.
 
 ### Usage
 

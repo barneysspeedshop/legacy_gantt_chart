@@ -27,6 +27,6 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] Any dependent changes have been merged and published in downstream modules
 
-## License Assignment sign-off
+## Contribution license
 
-- [ ] I agree to assign the copyright of my contribution to the project maintainer, Patrick Legacy, as per the [CONTRIBUTING.md](https://github.com/barneysspeedshop/legacy_gantt_chart/blob/main/CONTRIBUTING.md) guidelines.
+- [ ] This contribution is provided under the project's MIT License. Contributors retain copyright; no assignment is required, as described in [CONTRIBUTING.md](https://github.com/barneysspeedshop/legacy_gantt_chart/blob/main/CONTRIBUTING.md).

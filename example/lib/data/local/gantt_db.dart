@@ -31,6 +31,11 @@ class GanttDb {
       path = join(dir.path, 'gantt_local.db');
     }
 
+    return open(path);
+  }
+
+  /// Opens an independent local client database using the application's schema.
+  static Future<SqliteCrdt> open(String path) async {
     final db = await SqliteCrdt.open(
       path,
       onCreate: (db, version) async {

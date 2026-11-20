@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:synchronized/synchronized.dart';
+import 'package:flutter/foundation.dart' show protected;
 import 'package:sqlite_crdt/sqlite_crdt.dart' hide Hlc;
 import 'package:legacy_gantt_protocol/legacy_gantt_protocol.dart';
 
@@ -25,6 +26,19 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   StreamSubscription? _innerConnectionSubscription;
   StreamSubscription? _innerOperationSubscription;
   Future<void>? _activeFlushFuture;
+  bool _flushRequested = false;
+  bool _disposed = false;
+  int _connectionGeneration = 0;
+
+  Future<void> get ready => _dbInitFuture;
+
+  bool get isConnected => _isConnected && !_disposed;
+
+  int get connectionGeneration => _connectionGeneration;
+
+  void observeClock(Hlc clock) {
+    _clock = _clock.receive(clock, DateTime.now().millisecondsSinceEpoch);
+  }
 
   late Future<void> _dbInitFuture;
   final Future<SqliteCrdt> _dbFuture;
@@ -40,13 +54,15 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   Future<void> setInnerClient(WebSocketGanttSyncClient client) async {
     if (_innerClient == client) return;
+    _connectionGeneration++;
     await _detachInnerClient();
-    _innerClient?.dispose(); // Close previous connection
+    await _innerClient?.dispose();
     _innerClient = client;
     _attachInnerClient(client);
   }
 
   Future<void> removeInnerClient() async {
+    _connectionGeneration++;
     await _detachInnerClient();
     await _innerClient?.dispose();
     _innerClient = null;
@@ -61,12 +77,12 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       _connectionStateController.add(isConnected);
       if (isConnected) {
         print('OfflineClient: Connected, triggering flush...');
-        _flushQueue();
+        _scheduleFlush();
       }
     });
 
     _innerOperationSubscription = client.operationStream.listen((op) {
-      _clock = _clock.receive(op.timestamp, client.correctedTimestamp);
+      observeClock(op.timestamp);
       _operationController.add(op);
     });
   }
@@ -94,10 +110,19 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           )
         ''');
 
+      final rows = await _db.query('SELECT timestamp FROM offline_queue WHERE is_deleted = 0');
+      for (final row in rows) {
+        try {
+          observeClock(Hlc.parse(row['timestamp'] as String));
+        } catch (_) {
+          // Keep malformed entries for recovery; never discard durable edits.
+        }
+      }
       print('OfflineClient: GanttDb initialized');
       _isDbReady = true;
     } catch (e) {
       print('OfflineClient: Error initializing GanttDb: $e');
+      rethrow;
     }
   }
 
@@ -137,30 +162,58 @@ class OfflineGanttSyncClient implements GanttSyncClient {
         () => _db.query('SELECT COUNT(*) FROM offline_queue WHERE is_deleted = 0'),
       );
       final count = result.firstOrNull?['COUNT(*)'] as int? ?? result.firstOrNull?.values.first as int? ?? 0;
-      _outboundPendingCountController.add(count);
+      if (!_outboundPendingCountController.isClosed) _outboundPendingCountController.add(count);
     } catch (e) {
       print('OfflineClient: Error updating pending count: $e');
     }
   }
 
-  Future<void> _flushQueue() async {
-    if (_activeFlushFuture != null) {
-      return _activeFlushFuture;
+  /// Attempts socket handoff of persisted operations. This protocol has no
+  /// server acknowledgement; successful handoff is not durable server receipt.
+  Future<void> flushPending() async {
+    if (_disposed) return;
+    _flushRequested = true;
+    while (_flushRequested && !_disposed) {
+      final active = _activeFlushFuture;
+      if (active != null) {
+        await active;
+        continue;
+      }
+      final drain = _drainRequestedFlushes();
+      _activeFlushFuture = drain;
+      try {
+        await drain;
+      } finally {
+        if (identical(_activeFlushFuture, drain)) _activeFlushFuture = null;
+      }
     }
-    _activeFlushFuture = _performFlush();
-    try {
-      await _activeFlushFuture;
-    } finally {
-      _activeFlushFuture = null;
-      _updatePendingCount();
+    await _updatePendingCount();
+  }
+
+  Future<void> _drainRequestedFlushes() async {
+    while (_flushRequested && !_disposed) {
+      _flushRequested = false;
+      await _performFlush();
     }
   }
+
+  void _scheduleFlush() {
+    unawaited(
+      flushPending().catchError((Object error) {
+        print('OfflineClient: Flush failed; durable queue retained: $error');
+      }),
+    );
+  }
+
+  @protected
+  Future<List<Map<String, Object?>>> loadPendingOperations() =>
+      _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500');
 
   Future<void> _performFlush() async {
     print('OfflineClient: Starting flush perform...');
     while (true) {
       // Re-check conditions at start of each iteration
-      if (!_isConnected || _innerClient == null) {
+      if (_disposed || !_isConnected || _innerClient == null) {
         print('OfflineClient: Not connected or no inner client, stopping flush.');
         break;
       }
@@ -171,9 +224,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
       List<Map<String, Object?>> rows;
       try {
-        rows = await _lock.synchronized(
-          () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'),
-        );
+        rows = await _lock.synchronized(loadPendingOperations);
       } catch (e) {
         print('OfflineClient: Error querying queue: $e');
         break;
@@ -185,6 +236,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
       }
       print('OfflineClient: Found ${rows.length} rows to flush.');
 
+      final sendingClient = _innerClient;
       final opsToSend = <Operation>[];
       final idsToDelete = <int>[];
 
@@ -212,21 +264,17 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           opsToSend.add(Operation(type: type, data: data, timestamp: timestamp, actorId: actorId));
           idsToDelete.add(id);
         } catch (e) {
-          print('OfflineClient: Failed to convert queued op id $id: $e');
-          if (e.toString().contains('FormatException') || e.toString().contains('subtype')) {
-            print('OfflineClient: Deleting malformed op $id');
-            idsToDelete.add(id);
-          }
+          print('OfflineClient: Cannot send queued op id $id; retained for recovery: $e');
+          return;
         }
       }
 
       if (idsToDelete.isNotEmpty) {
         final placeholder = List.filled(idsToDelete.length, '?').join(',');
         try {
-          if (opsToSend.isNotEmpty && _innerClient != null && _isConnected) {
-            print('OfflineClient: Flushing batch of ${opsToSend.length} operations...');
-            await _innerClient!.sendOperations(opsToSend);
-          }
+          if (!_isConnected || sendingClient == null || _innerClient != sendingClient || _disposed) return;
+          await sendingClient.sendOperations(opsToSend);
+          if (!_isConnected || _innerClient != sendingClient || _disposed) return;
 
           await _lock.synchronized(
             () => _db.execute('DELETE FROM offline_queue WHERE id IN ($placeholder)', idsToDelete),
@@ -239,12 +287,6 @@ class OfflineGanttSyncClient implements GanttSyncClient {
           print('OfflineClient: Error during flush batch/delete: $e');
           break;
         }
-      }
-
-      // If we got exactly 500 rows, there might be more. Otherwise, we are done.
-      if (rows.length < 500) {
-        print('OfflineClient: Processed last batch, breaking.');
-        break;
       }
     }
     print('OfflineClient: Flush perform finished.');
@@ -279,40 +321,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
   }
 
   @override
-  Future<void> sendOperation(Operation operation) async {
-    const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
-    if (transientOps.contains(operation.type)) {
-      if (_innerClient != null && _isConnected) {
-        await _innerClient!.sendOperation(operation);
-        return;
-      }
-      print('OfflineClient: Dropping transient operation ${operation.type} because offline');
-      return;
-    }
-
-    if (operation.data.containsKey('start')) {
-      final startVal = operation.data['start'];
-      if (startVal is String || startVal is int) {
-        operation.data['start_date'] = startVal;
-        operation.data.remove('start');
-      }
-    }
-    if (operation.data.containsKey('end')) {
-      final endVal = operation.data['end'];
-      if (endVal is String || endVal is int) {
-        operation.data['end_date'] = endVal;
-        operation.data.remove('end');
-      }
-    }
-
-    // When connected, send directly to avoid the expensive queue round-trip.
-    if (_innerClient != null && _isConnected) {
-      await _innerClient!.sendOperation(operation);
-    } else {
-      await _queueOperation(operation);
-      _flushQueue();
-    }
-  }
+  Future<void> sendOperation(Operation operation) => sendOperations([operation]);
 
   Future<void> clearQueue() async {
     if (!_isDbReady) await _dbInitFuture;
@@ -325,69 +334,62 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
   @override
   Future<void> sendOperations(List<Operation> operations) async {
+    if (_disposed) throw StateError('Offline client is disposed');
     const transientOps = {'CURSOR_MOVE', 'GHOST_UPDATE', 'PRESENCE_UPDATE'};
-    final opsToQueue = <Operation>[];
-
-    for (final op in operations) {
-      if (transientOps.contains(op.type)) {
-        if (_innerClient != null && _isConnected) {
-          await _innerClient!.sendOperation(op);
-        } else {
-          print('OfflineClient: Dropping transient operation ${op.type} because offline');
-        }
+    final durable = <Operation>[];
+    for (final operation in operations) {
+      if (transientOps.contains(operation.type)) {
+        final inner = _innerClient;
+        if (inner != null && _isConnected) await inner.sendOperation(operation);
       } else {
-        opsToQueue.add(op);
+        durable.add(operation);
       }
     }
+    if (durable.isEmpty) return;
+    await ready;
+    await persistOperations(durable);
+    await _updatePendingCount();
+    _scheduleFlush();
+  }
 
-    if (opsToQueue.isNotEmpty) {
-      // When connected, send directly to avoid the expensive
-      // sqlite_crdt queue round-trip (especially slow on web).
-      if (_innerClient != null && _isConnected) {
-        print('OfflineClient: Sending ${opsToQueue.length} operations directly (connected)');
-        await _innerClient!.sendOperations(opsToQueue);
-      } else {
-        await _queueOperations(opsToQueue);
-        _flushQueue();
-      }
+  /// Subclasses may atomically persist canonical state and the same outbox.
+  /// This must finish before any durable operation is handed to the network.
+  @protected
+  Future<void> persistOperations(List<Operation> operations) async {
+    await ready;
+    final rows = operations
+        .map(
+          (operation) => {
+            'type': operation.type,
+            'data': operation.data,
+            'timestamp': operation.timestamp.toString(),
+            'actor_id': operation.actorId,
+          },
+        )
+        .toList();
+    await _lock.synchronized(
+      () => _db.execute(
+        r'''INSERT INTO offline_queue (type, data, timestamp, actor_id)
+      SELECT json_extract(value, '$.type'), json_extract(value, '$.data'),
+             json_extract(value, '$.timestamp'), json_extract(value, '$.actor_id')
+      FROM json_each(?)''',
+        [jsonEncode(rows)],
+      ),
+    );
+    for (final operation in operations) {
+      observeClock(operation.timestamp);
     }
-  }
-
-  Future<void> _queueOperation(Operation operation) async {
-    if (!_isDbReady) await _dbInitFuture;
-    print('OfflineClient: Queuing operation ${operation.type}');
-    await _lock.synchronized(() async {
-      await _db.execute('INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)', [
-        operation.type,
-        jsonEncode(operation.data),
-        operation.timestamp.toString(),
-        operation.actorId,
-      ]);
-    });
-    _updatePendingCount();
-  }
-
-  Future<void> _queueOperations(List<Operation> operations) async {
-    if (!_isDbReady) await _dbInitFuture;
-    print('OfflineClient: Queuing ${operations.length} operations');
-    await _lock.synchronized(() async {
-      final batch = _db.batch();
-      for (final operation in operations) {
-        batch.execute('INSERT INTO offline_queue (type, data, timestamp, actor_id) VALUES (?, ?, ?, ?)', [
-          operation.type,
-          jsonEncode(operation.data),
-          operation.timestamp.toString(),
-          operation.actorId,
-        ]);
-      }
-      await batch.commit();
-    });
-    _updatePendingCount();
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _connectionGeneration++;
     print('OfflineClient: Disposing...');
     await _detachInnerClient();
+    final inner = _innerClient;
+    _innerClient = null;
+    await inner?.dispose();
     if (_activeFlushFuture != null) {
       try {
         print('OfflineClient: Waiting for active flush to finish during dispose...');
@@ -398,6 +400,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     }
     await _operationController.close();
     await _connectionStateController.close();
+    await _outboundPendingCountController.close();
     print('OfflineClient: Disposal complete.');
   }
 }
