@@ -1,3 +1,8 @@
+## 10.0.2
+
+* Preserve reset and other control operations in mixed outgoing updates, keeping their order between entity batches so reseeding replaces the remote dataset correctly.
+* Default both public demo entry points to the hosted server and prefill the shared demo account.
+
 ## 10.0.1
 
 * Apply Dart3.13 formatting to library sources and enforce it in CI so formatter differences do not reduce pub points.
