@@ -55,7 +55,6 @@ class GanttViewModel extends ChangeNotifier {
       await (_syncClient as OfflineGanttSyncClient).removeInnerClient();
     }
     await _incomingOperationChain;
-    _isMerkleSyncing = false;
     _initialSyncExpected = 0;
     _initialSyncReceived = 0;
     final db = await _database;
@@ -83,7 +82,6 @@ class GanttViewModel extends ChangeNotifier {
       bindScope: true,
     );
     if (previousScope != scope && pending.isEmpty) {
-      _isMerkleSyncing = false;
       _initialSyncExpected = 0;
       _initialSyncReceived = 0;
       _dependencies.clear();
@@ -374,7 +372,7 @@ class GanttViewModel extends ChangeNotifier {
     if (_syncClient case final OfflineGanttSyncClient client) {
       if (snapshot.latestClock != null) client.observeClock(snapshot.latestClock!);
     }
-    if (!force && (_isMerkleSyncing || _isInitialSyncing)) return;
+    if (!force && _isInitialSyncing) return;
     _allGanttTasks = List.of(snapshot.tasks);
     _localResources = List.of(snapshot.resources);
     _dependencies = List.of(snapshot.dependencies);
@@ -2228,8 +2226,6 @@ class GanttViewModel extends ChangeNotifier {
   StreamSubscription<Operation>? _syncOperationsSubscription;
   StreamSubscription<bool>? _connectionStateSubscription;
 
-  bool _isMerkleSyncing = false;
-
   /// Tracks the number of operations expected during initial server sync.
   /// Set when SYNC_METADATA arrives, reset when all ops have been processed.
   int _initialSyncExpected = 0;
@@ -2414,19 +2410,15 @@ class GanttViewModel extends ChangeNotifier {
 
       print('Local Merkle Root is ${localTree.root.hash}');
 
-      _isMerkleSyncing = true;
-
       try {
         await client.syncWithMerkle(localTree: localTree);
       } finally {
         if (generation == _syncGeneration) {
           await finalizeMerkleSync();
-          _isMerkleSyncing = false;
         }
       }
     } catch (e) {
       print('Failed to perform Merkle Sync: $e');
-      if (generation == _syncGeneration) _isMerkleSyncing = false;
     }
   }
 
@@ -2437,7 +2429,6 @@ class GanttViewModel extends ChangeNotifier {
   Future<void> disconnectSync() {
     _connectionAttempt++;
     _syncGeneration++;
-    _isMerkleSyncing = false;
     return _localMutations.synchronized(_disconnectCurrentSync);
   }
 
