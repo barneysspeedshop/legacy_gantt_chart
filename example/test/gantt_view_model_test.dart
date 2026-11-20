@@ -1,15 +1,26 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:example/view_models/gantt_view_model.dart';
+import 'package:example/data/local/gantt_db.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqlite_crdt/sqlite_crdt.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   group('GanttViewModel State Persistence', () {
     late GanttViewModel viewModel;
+    late SqliteCrdt database;
 
     setUp(() async {
-      viewModel = GanttViewModel();
-      // Wait for initial data load
-      await viewModel.fetchScheduleData();
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      database = await GanttDb.open(':memory:');
+      viewModel = GanttViewModel(database: Future.value(database));
+      await viewModel.initialized;
+    });
+
+    tearDown(() async {
+      await viewModel.disposeAsync();
+      await database.close();
     });
 
     test('Moving a second task does not revert the first task position', () async {
@@ -25,25 +36,28 @@ void main() {
       final newStart1 = initialStart1.add(const Duration(days: 2));
       final newEnd1 = task1.end.add(const Duration(days: 2));
 
-      viewModel.handleTaskUpdate(task1, newStart1, newEnd1);
+      await viewModel.handleTaskUpdate(task1, newStart1, newEnd1);
 
       // Verify Task 1 moved in the view model
       final task1AfterMove = viewModel.ganttTasks.firstWhere((t) => t.id == task1.id);
       expect(task1AfterMove.start, newStart1);
+      expect(task1AfterMove.end, newEnd1);
 
       // 3. Move Task 2
       final newStart2 = initialStart2.add(const Duration(days: 3));
       final newEnd2 = task2.end.add(const Duration(days: 3));
 
-      viewModel.handleTaskUpdate(task2, newStart2, newEnd2);
+      await viewModel.handleTaskUpdate(task2, newStart2, newEnd2);
 
       // Verify Task 2 moved
       final task2AfterMove = viewModel.ganttTasks.firstWhere((t) => t.id == task2.id);
       expect(task2AfterMove.start, newStart2);
+      expect(task2AfterMove.end, newEnd2);
 
       // 4. CRITICAL: Verify Task 1 is STILL at its new position
       final task1AfterSecondMove = viewModel.ganttTasks.firstWhere((t) => t.id == task1.id);
-      expect(task1AfterSecondMove.start, newStart1, reason: 'Task 1 should NOT snap back after Task 2 is moved');
+      expect(task1AfterSecondMove.start, newStart1, reason: 'Moving task 2 must retain task 1 start');
+      expect(task1AfterSecondMove.end, newEnd1, reason: 'Moving task 2 must retain task 1 end');
     });
   });
 }

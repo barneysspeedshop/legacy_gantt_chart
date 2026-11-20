@@ -39,6 +39,7 @@ class ProtocolStateStore {
     final database = await _ready;
     late ProtocolCommit commit;
     await database.transaction((transaction) async {
+      final replaceProjection = await _validateBinding(transaction, allowRebind: bindScope);
       final rows = await transaction.query(
         'SELECT entity_type, entity_id, payload FROM canonical_protocol_state WHERE scope = ?',
         [scope],
@@ -166,6 +167,11 @@ class ProtocolStateStore {
           FROM json_each(?2)''',
           [scope, jsonEncode(changedRows)],
         );
+      }
+      if (replaceProjection) {
+        await transaction.execute("DELETE FROM sync_metadata WHERE meta_key = 'last_server_sync'");
+      }
+      if (changedRows.isNotEmpty || replaceProjection) {
         await ProtocolProjection.write(
           transaction,
           snapshot,
@@ -181,6 +187,7 @@ class ProtocolStateStore {
             for (final key in changedKeys)
               if (key.startsWith('dependency:')) key.substring(11),
           },
+          replace: replaceProjection,
         );
       }
       if (outgoing.isNotEmpty) {
@@ -199,7 +206,11 @@ class ProtocolStateStore {
           scope,
         ]);
       }
-      commit = ProtocolCommit(state: snapshot, changed: changedRows.isNotEmpty, acceptedReset: acceptedReset);
+      commit = ProtocolCommit(
+        state: snapshot,
+        changed: changedRows.isNotEmpty || replaceProjection,
+        acceptedReset: acceptedReset,
+      );
     });
     _lastResetTimestamp = commit.state.lastReset;
     if (commit.changed && !_snapshots.isClosed) _snapshots.add(commit.state);
@@ -223,12 +234,7 @@ class ProtocolStateStore {
   Future<void> enqueueRepair() => _lock.synchronized(() async {
     final database = await _ready;
     await database.transaction((transaction) async {
-      final binding = await transaction.query(
-        "SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0",
-      );
-      if (binding.isNotEmpty && binding.single['meta_value'] != scope) {
-        throw StateError('The active tenant changed before canonical repair could be queued.');
-      }
+      await _validateBinding(transaction);
       final state = _ProtocolState.fromRows(
         await transaction.query(
           'SELECT entity_type, entity_id, payload FROM canonical_protocol_state WHERE scope = ?',
@@ -247,6 +253,33 @@ class ProtocolStateStore {
       );
     });
   });
+
+  Future<List<Map<String, Object?>>> loadPendingOperations() => _lock.synchronized(() async {
+    final database = await _ready;
+    late List<Map<String, Object?>> rows;
+    await database.transaction((transaction) async {
+      await _validateBinding(transaction);
+      rows = await transaction.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500');
+    });
+    return rows;
+  });
+
+  Future<bool> _validateBinding(CrdtExecutor transaction, {bool allowRebind = false}) async {
+    final binding = await transaction.query(
+      "SELECT meta_value FROM sync_metadata WHERE meta_key = 'canonical_scope' AND is_deleted = 0",
+    );
+    final activeScope = binding.firstOrNull?['meta_value'];
+    if (activeScope == scope) return false;
+    if (!allowRebind) {
+      if (activeScope == null) return false;
+      throw StateError('The active tenant changed before this synchronization operation could be applied.');
+    }
+    final pending = await transaction.query('SELECT id FROM offline_queue WHERE is_deleted = 0 LIMIT 1');
+    if (activeScope != null && pending.isNotEmpty) {
+      throw StateError('Synchronize pending changes with their original tenant before changing the active tenant.');
+    }
+    return pending.isEmpty;
+  }
 
   static List<Operation> _repairOperations(_ProtocolState state) => [
     if (state.lastReset case final reset?) Operation(type: 'RESET_DATA', data: {}, timestamp: reset, actorId: 'reset'),
@@ -280,6 +313,7 @@ class ProtocolStateStore {
       final database = await _ready;
       late ProtocolSnapshot snapshot;
       await database.transaction((transaction) async {
+        await _validateBinding(transaction);
         final state = _ProtocolState.fromRows(
           await transaction.query(
             'SELECT entity_type, entity_id, payload FROM canonical_protocol_state WHERE scope = ?',

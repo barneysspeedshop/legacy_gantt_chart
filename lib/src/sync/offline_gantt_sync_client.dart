@@ -205,6 +205,10 @@ class OfflineGanttSyncClient implements GanttSyncClient {
     );
   }
 
+  @protected
+  Future<List<Map<String, Object?>>> loadPendingOperations() =>
+      _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500');
+
   Future<void> _performFlush() async {
     print('OfflineClient: Starting flush perform...');
     while (true) {
@@ -220,9 +224,7 @@ class OfflineGanttSyncClient implements GanttSyncClient {
 
       List<Map<String, Object?>> rows;
       try {
-        rows = await _lock.synchronized(
-          () => _db.query('SELECT * FROM offline_queue WHERE is_deleted = 0 ORDER BY id ASC LIMIT 500'),
-        );
+        rows = await _lock.synchronized(loadPendingOperations);
       } catch (e) {
         print('OfflineClient: Error querying queue: $e');
         break;

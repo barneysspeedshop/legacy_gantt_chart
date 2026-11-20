@@ -67,13 +67,22 @@ class GanttViewModel extends ChangeNotifier {
     if (previousScope != null && previousScope != scope && pending.isNotEmpty) {
       throw StateError('Synchronize pending changes with their original tenant before switching servers or tenants.');
     }
+    final state = ProtocolStateStore(_database, scope: scope);
+    await state.applyOperations(
+      pending
+          .map(
+            (row) => Operation(
+              type: row['type'] as String,
+              data: jsonDecode(row['data'] as String) as Map<String, dynamic>,
+              timestamp: Hlc.parse(row['timestamp'] as String),
+              actorId: row['actor_id'] as String,
+            ),
+          )
+          .toList(),
+      local: true,
+      bindScope: true,
+    );
     if (previousScope != scope && pending.isEmpty) {
-      await db.transaction((transaction) async {
-        await transaction.execute('DELETE FROM dependencies');
-        await transaction.execute('DELETE FROM tasks');
-        await transaction.execute('DELETE FROM resources');
-        await transaction.execute("DELETE FROM sync_metadata WHERE meta_key = 'last_server_sync'");
-      });
       _isMerkleSyncing = false;
       _initialSyncExpected = 0;
       _initialSyncReceived = 0;
@@ -92,21 +101,6 @@ class GanttViewModel extends ChangeNotifier {
       _syncToController();
       notifyListeners();
     }
-    final state = ProtocolStateStore(_database, scope: scope);
-    await state.applyOperations(
-      pending
-          .map(
-            (row) => Operation(
-              type: row['type'] as String,
-              data: jsonDecode(row['data'] as String) as Map<String, dynamic>,
-              timestamp: Hlc.parse(row['timestamp'] as String),
-              actorId: row['actor_id'] as String,
-            ),
-          )
-          .toList(),
-      local: true,
-      bindScope: true,
-    );
     await _stateSubscription?.cancel();
     await _canonicalState?.close();
     _canonicalState = state;
@@ -458,8 +452,11 @@ class GanttViewModel extends ChangeNotifier {
         throw StateError('The active tenant changed before this edit could be committed.');
       }
       if (committedOperations.isEmpty) return;
+      final client = _syncClient;
+      ProtocolSnapshot? promotedSnapshot;
       if (_isLocalPreview) {
-        final preview = await _protocolState.readState();
+        final previewState = _protocolState;
+        final preview = await previewState.readState();
         committedOperations = [
           for (final resource in preview.resources)
             _resourceOperation(resource, timestamp: resource.lastUpdated ?? Hlc.zero),
@@ -467,18 +464,46 @@ class GanttViewModel extends ChangeNotifier {
           for (final dep in preview.dependencies) _dependencyOperation(dep, timestamp: dep.lastUpdated),
           ...committedOperations,
         ];
-        _isLocalPreview = false;
+        final candidate = ProtocolStateStore(_database, scope: 'local');
+        try {
+          if (client is PersistedGanttSyncClient) await client.ready;
+          final commit = await candidate.applyOperations(
+            committedOperations,
+            local: true,
+            enqueue: client is PersistedGanttSyncClient,
+          );
+          promotedSnapshot = commit.state;
+        } catch (_) {
+          await candidate.close();
+          _acceptSnapshot(await previewState.readState(), force: true);
+          rethrow;
+        }
+        final latestClock = promotedSnapshot.latestClock;
+        if (client is PersistedGanttSyncClient && latestClock != null) {
+          client.observeClock(latestClock);
+        }
         await _stateSubscription?.cancel();
-        await _canonicalState?.close();
-        _canonicalState = ProtocolStateStore(_database, scope: 'local');
+        await previewState.close();
+        _canonicalState = candidate;
+        _isLocalPreview = false;
         await _subscribeToState();
+        _acceptSnapshot(promotedSnapshot, force: true);
       }
-      final client = _syncClient;
       try {
         if (client is PersistedGanttSyncClient) {
-          await client.sendOperations(committedOperations);
+          if (promotedSnapshot == null) {
+            await client.sendOperations(committedOperations);
+          } else {
+            unawaited(
+              client.flushPending().catchError((Object error) {
+                debugPrint('Preview promotion flush failed; durable queue retained: $error');
+              }),
+            );
+          }
         } else {
-          await _protocolState.applyOperations(committedOperations, local: true);
+          if (promotedSnapshot == null) {
+            await _protocolState.applyOperations(committedOperations, local: true);
+          }
           await client?.sendOperations(committedOperations);
         }
       } catch (_) {
