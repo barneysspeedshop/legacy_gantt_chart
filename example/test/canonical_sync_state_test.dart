@@ -230,6 +230,26 @@ void main() {
     );
   });
 
+  test('large local reseed persists every record and retains hashes after reopening', () async {
+    final tasks = List.generate(1000, (i) => _task()
+      ..id = 'task-$i'
+      ..name = 'Task "$i" – local');
+    await store.applyOperations([
+      for (final task in tasks)
+        _operation('INSERT_TASK', ProtobufMapper.taskToJson(task), _clock(1)),
+    ], local: true);
+    final rows = await db.query(
+      "SELECT entity_id FROM canonical_protocol_state WHERE scope = 'local' AND entity_type = 'task' ORDER BY entity_id");
+    expect(rows.map((row) => row['entity_id']).toSet(),
+        {for (var i = 0; i < 1000; i++) 'task-$i'});
+    final expected = MerkleTree.build([
+      for (final task in tasks) MapEntry(task.lastUpdated, task.contentHash),
+    ]).root.hash;
+    expect((await store.computeMerkleTree()).root.hash, expected);
+    await reopen();
+    expect((await store.computeMerkleTree()).root.hash, expected);
+  });
+
   test('canonical records are isolated by synchronization scope', () async {
     final first = ProtocolStateStore(Future.value(db), scope: 'tenant-a');
     final second = ProtocolStateStore(Future.value(db), scope: 'tenant-b');
