@@ -98,9 +98,9 @@ class _GanttViewState extends State<GanttView> {
     super.initState();
     _viewModel = GanttViewModel(initialLocale: _selectedLocale, useLocalDatabase: true);
     _uriController = TextEditingController(text: defaultSyncServerUrl);
-    _tenantIdController = TextEditingController(text: 'legacy');
-    _usernameController = TextEditingController();
-    _passwordController = TextEditingController();
+    _tenantIdController = TextEditingController(text: demoTenantId);
+    _usernameController = TextEditingController(text: demoUsername);
+    _passwordController = TextEditingController(text: demoPassword);
   }
 
   final GanttNaturalLanguageService _nlService = GanttNaturalLanguageService();

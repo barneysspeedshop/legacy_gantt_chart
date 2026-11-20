@@ -27,9 +27,9 @@ class MinimalSyncView extends StatefulWidget {
 
 class _MinimalSyncViewState extends State<MinimalSyncView> {
   final _uriController = TextEditingController(text: defaultSyncServerUrl);
-  final _userController = TextEditingController();
-  final _passController = TextEditingController();
-  final _tenantController = TextEditingController(text: 'debug');
+  final _userController = TextEditingController(text: demoUsername);
+  final _passController = TextEditingController(text: demoPassword);
+  final _tenantController = TextEditingController(text: demoTenantId);
 
   WebSocketGanttSyncClient? _client;
   final List<String> _logs = [];
