@@ -1,3 +1,8 @@
+## 11.0.1
+
+- Update dependencies to current stable releases and verify with the latest stable SDK.
+- Migrate the demo CSV importer to CSV 8 and cover quoted fields and line endings.
+
 ## 11.0.0
 
 * **BREAKING**: Require `legacy_gantt_protocol: ^4.0.0`. Resource updates are complete LWW records; send every resource field and the complete metadata map. Deleted resource and dependency payloads use canonical minimal tombstones. Upgrade the server alongside clients.

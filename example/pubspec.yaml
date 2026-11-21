@@ -8,14 +8,14 @@ environment:
 
 dependencies:
   collection: ^1.19.1
-  csv: ^6.0.0
+  csv: ^8.0.0
   flutter:
     sdk: flutter
   material_ui: ^1.11.1
-  file_selector: ^1.0.3
+  file_selector: ^1.1.0
   google_generative_ai: ^0.4.7
   http: ^1.6.0
-  intl: ^0.20.2
+  intl: ^0.20.3
   legacy_context_menu: ^3.0.0
   legacy_gantt_chart:
     path: ../
@@ -23,21 +23,21 @@ dependencies:
   legacy_timeline_scrubber: ^4.0.0
   legacy_tree_grid: ^0.15.0
   path: ^1.9.1
-  path_provider: ^2.1.0
-  provider: ^6.1.2
-  sqflite_common_ffi: ^2.3.0
-  sqflite_common_ffi_web: ^1.1.0
-  sqlite_crdt: ^3.0.0
-  synchronized: ^3.3.0+3
-  uuid: ^4.0.0
+  path_provider: ^2.1.6
+  provider: ^6.1.5+1
+  sqflite_common_ffi: ^2.4.7
+  sqflite_common_ffi_web: ^1.2.2
+  sqlite_crdt: ^3.0.4
+  synchronized: ^3.6.1+1
+  uuid: ^4.6.0
   web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
   stream_channel: ^2.1.4
-  mocktail: ^1.0.4
+  mocktail: ^1.0.5
 
 flutter:
   uses-material-design: true
