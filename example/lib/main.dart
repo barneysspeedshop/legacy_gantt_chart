@@ -20,7 +20,6 @@ import 'ui/dialogs/create_task_dialog.dart';
 import 'platform/platform_init.dart'
     if (dart.library.io) 'platform/platform_init_io.dart'
     if (dart.library.js_interop) 'platform/platform_init_web.dart';
-import 'package:csv/csv.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart'; // For compute
 import 'ui/dialogs/csv_import_dialog.dart';
@@ -408,13 +407,7 @@ class _GanttViewState extends State<GanttView> {
 
       final contents = await file.readAsString();
 
-      // Step 1: Parse CSV structure in background (using compute as before)
-      // This gives us the rows to show in the mapping dialog.
-      // Optimization: We could stream this too, but for now getting the rows for the dialog is okay.
-      // If the file is HUGE, we might want to only parse the first N rows for the dialog,
-      // but CsvToListConverter parses all.
-      // For now, keep this step.
-      final rows = await compute(_parseCsvBackground, contents);
+      final rows = await compute(CsvImporter.parseRows, contents);
 
       if (!mounted) return;
 
@@ -1912,19 +1905,6 @@ class _GanttViewState extends State<GanttView> {
   }
 }
 // --- Isolate Helpers ---
-
-List<List<dynamic>> _parseCsvBackground(String contents) {
-  // smart detect EOL
-  String? eol;
-  if (contents.contains('\r\n')) {
-    eol = '\r\n';
-  } else if (contents.contains('\n')) {
-    eol = '\n';
-  } else if (contents.contains('\r')) {
-    eol = '\r';
-  }
-  return CsvToListConverter(eol: eol).convert(contents);
-}
 
 // Helper for background processing
 /// Isolate entry point for streaming task conversion.

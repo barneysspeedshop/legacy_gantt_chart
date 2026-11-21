@@ -4,6 +4,18 @@ import 'package:example/utils/csv_importer.dart';
 
 void main() {
   group('CsvImporter', () {
+    for (final ending in ['\n', '\r\n', '\r']) {
+      test('parses quoted CSV fields with ${ending.codeUnits} line endings', () {
+        final contents = 'Key,Summary,Progress${ending}001,"Task, one",50'
+            '${ending}002,"Line 1${ending}Line 2",false';
+        expect(CsvImporter.parseRows(contents), [
+          ['Key', 'Summary', 'Progress'],
+          ['001', 'Task, one', '50'],
+          ['002', 'Line 1${ending}Line 2', 'false'],
+        ]);
+      });
+    }
+
     test('streamConvertRowsToTasks parses rows correctly in chunks', () async {
       final rows = [
         [

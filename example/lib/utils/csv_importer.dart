@@ -1,3 +1,4 @@
+import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 import 'package:legacy_gantt_chart/legacy_gantt_chart.dart';
 import '../data/local/local_gantt_repository.dart';
@@ -34,6 +35,9 @@ class CsvImportMapping {
 
 class CsvImporter {
   static const _uuid = Uuid();
+
+  static List<List<dynamic>> parseRows(String contents) =>
+      const CsvDecoder(fieldDelimiter: ',', skipEmptyLines: false).convert(contents);
 
   /// Parses a list of CSV rows into [LegacyGanttTask]s based on the provided [mapping].
   ///
